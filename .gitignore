@@ -1,5 +1,6 @@
 # Artifacts and data
 /data
+.cache/
 
 # Temporary Markdown files
 CLAUDE.md
