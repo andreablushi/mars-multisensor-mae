@@ -1,0 +1,39 @@
+[project]
+name = "mars-multisensor-mae"
+version = "0.1.0"
+description = "A multimodal, multisensor, multiresolution masked autoencoder over Mars remote sensing data."
+readme = "README.md"
+authors = [
+    { name = "Andrea Blushi", email = "andreablushi@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5.2",
+    "pyyaml>=6.0.3",
+    "rich>=14.0.0",
+    "wandb>=0.22",
+    "zarr>=3.3",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.2",
+]
+digitalhub = [
+    "digitalhub>=0.15,<0.16",
+    "digitalhub-runtime-python>=0.15,<0.16",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "D"]
+ignore = ["D100", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
