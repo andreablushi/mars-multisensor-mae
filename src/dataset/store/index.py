@@ -1,4 +1,4 @@
-"""The index of a build, read into the samples a run draws its patches from."""
+"""The index of a build, read into the observations a run draws its patches from."""
 
 from __future__ import annotations
 
@@ -10,15 +10,10 @@ from collections.abc import Iterable, Sequence
 
 import pyarrow.parquet as pq
 from building import paths as built
-from building.metadata.feature import FeatureMetadata
 from building.metadata.observation import ObservationMetadata
 from shared.disk import parquet
-from shared.models.feature import Feature
 
-from dataset.models.sample import Sample
-from dataset.models.settings import Settings
-from dataset.seed import seeded_number
-from dataset.store.artifact import Build
+from dataset.store.dh.build import Build
 
 
 def read_manifest(build: Build) -> dict:
@@ -29,7 +24,6 @@ def read_manifest(build: Build) -> dict:
 
     Returns:
         manifest: When it was built, from what, and which instruments it reached.
-            A build that published no format version carries none here either.
     """
     return json.loads(build.read(built.DATASET_MANIFEST_NAME))
 
@@ -41,22 +35,12 @@ def read_observations(build: Build) -> list[ObservationMetadata]:
         build: The published build to read.
 
     Returns:
-        records: One row per crop, in the order the index holds them.
+        records: One row per crop, in the order the index holds them. The file
+            is read under no schema, so a build carrying columns the row model
+            does not declare is read all the same.
     """
-    return _rows(build, built.OBSERVATION_METADATA_NAME, ObservationMetadata)
-
-
-def read_features(build: Build) -> dict[tuple[str, str], FeatureMetadata]:
-    """Return every feature the build considered, keyed by what tells it apart.
-
-    Args:
-        build: The published build to read.
-
-    Returns:
-        features: One row per feature, keyed by its class and its name.
-    """
-    rows = _rows(build, built.FEATURE_METADATA_NAME, FeatureMetadata)
-    return {one.identity: one for one in rows}
+    held = pq.read_table(io.BytesIO(build.read(built.OBSERVATION_METADATA_NAME)))
+    return [parquet.build(ObservationMetadata, row) for row in held.to_pylist()]
 
 
 def observations_by_feature(
@@ -76,54 +60,30 @@ def observations_by_feature(
     return dict(standing)
 
 
-def drawn_sample(
-    frame: Feature,
-    observations: Sequence[ObservationMetadata],
-    settings: Settings,
-    epoch: int = 0,
-) -> Sample:
-    """Return one feature and a draw of the crops the build holds of it.
+def drawn_observations(
+    observations: Sequence[ObservationMetadata], config: dict
+) -> list[ObservationMetadata]:
+    """Return a draw of the crops the build holds of one feature.
 
     Args:
-        frame: The feature every one of them was cropped to.
-        observations: Its own index rows, which the draw is made from.
-        settings: The settled choices, which say how many of each instrument a
-            sample draws and what number fixes that draw.
-        epoch: Which pass over the dataset this is, so one feature draws
-            differently from one pass to the next and the same within one.
+        observations: One feature's own index rows, which the draw is made from.
+        config: The choices a read is made with, which say how many of each
+            instrument a sample draws and what number fixes that draw.
 
     Returns:
-        sample: The feature and what was drawn of it, at most as many of each
-            instrument as the config asks for, the instruments in name order.
+        drawn: At most as many of each instrument as the config asks for, the
+            instruments in name order. The draw is fixed by the feature's own
+            name, so every process draws the same crops of it.
     """
     standing: dict[str, list[ObservationMetadata]] = defaultdict(list)
     for one in observations:
         standing[one.instrument].append(one)
-    identity = (frame.feature_class, frame.feature_name)
-    drawing = random.Random(seeded_number("/".join(identity), settings.seed + epoch))
-    drawn = [
+    drawing = random.Random(f"{config['seed']}/{'/'.join(observations[0].feature)}")
+    return [
         one
         for instrument in sorted(standing)
         for one in drawing.sample(
             standing[instrument],
-            min(settings.per_instrument, len(standing[instrument])),
+            min(config["per_instrument"], len(standing[instrument])),
         )
     ]
-    return Sample(feature=frame, observations=tuple(drawn))
-
-
-def _rows[Row](build: Build, name: str, model: type[Row]) -> list[Row]:
-    """Return one parquet file of the index, built back into its own rows.
-
-    Args:
-        build: The published build to read it off.
-        name: What the file is called at the build's own root.
-        model: The row model to build each row into.
-
-    Returns:
-        rows: The rows, in the order the file holds them. The file is read under
-            no schema, so a build carrying columns the model does not declare is
-            read all the same.
-    """
-    held = pq.read_table(io.BytesIO(build.read(name)))
-    return [parquet.build(model, row) for row in held.to_pylist()]

@@ -6,12 +6,15 @@ from __future__ import annotations
 import argparse
 import math
 
+from building.metadata.observation import ObservationMetadata
 from rich.console import Console
 
-from dataset import configs, split, stats
-from dataset.models.sample import Sample
+from dataset import config as settings
+from dataset import split, stats
+from dataset.models.patch import Patch
 from dataset.patches import grid
-from dataset.store import artifact, index, load
+from dataset.store import index, load
+from dataset.store.dh import build as opened
 
 
 def describe_build(build_name: str | None, per_instrument: int) -> int:
@@ -22,84 +25,80 @@ def describe_build(build_name: str | None, per_instrument: int) -> int:
         per_instrument: How many observations of each instrument the sample draws.
 
     Returns:
-        code: A process exit code, non zero when the build holds no sample.
+        code: A process exit code, non zero when the build holds no crop.
     """
     console = Console()
-    choices = configs.load(build=build_name, per_instrument=per_instrument)
-    build = artifact.opened_build(choices)
-    console.print(f"reading [bold]{choices.artifact}[/bold] from {build.bucket}")
+    config = settings.load_config()
+    config["build"] = build_name or config["build"]
+    config["per_instrument"] = per_instrument
+    build = opened.opened_build(config)
+    console.print(f"reading [bold]dataset-{config['build']}[/bold] from {build.bucket}")
 
     manifest = index.read_manifest(build)
     observations = index.read_observations(build)
-    version = manifest.get("version", "unwritten")
     console.print(
-        f"built {manifest['built_at']}, version {version}, "
-        f"{len(observations):,} crops over {', '.join(manifest['instruments'])}"
+        f"built {manifest['built_at']}, {len(observations):,} crops "
+        f"over {', '.join(manifest['instruments'])}"
     )
     for instrument, held in stats.pooled_statistics(observations).items():
-        tiles = choices.tiles_of(instrument)
+        tiles = settings.tiles_of(config, instrument)
         counted = sum(
             grid.patch_count(one.shape, one.axes, tiles)
             for one in observations
             if one.instrument == instrument
         )
-        banded = "" if held.band_mean is None else f", {len(held.band_mean)} bands"
         console.print(
             f"  {instrument:<7} {counted:>10,} patches   "
-            f"mean {held.mean:>12.4g}  sd {held.deviation:>10.4g}{banded}"
+            f"mean {held['mean']:>12.4g}  sd {held['deviation']:>10.4g}"
         )
 
-    features = index.read_features(build)
     standing = index.observations_by_feature(observations)
     if not standing:
         console.print("[red]the build holds no crop[/red]")
         return 1
-    placed = split.split_features(standing, choices)
+    placed = split.split_features(standing, config)
     counted = {name: len(held) for name, held in placed.items()}
     console.print(f"{len(standing):,} features with crops, split {counted}")
 
-    samples = [
-        index.drawn_sample(features[identity].frame, held, choices)
-        for identity, held in standing.items()
-        if identity in features
-    ]
-    sample = _smallest_multisensor(samples)
-    weight = sum(math.prod(one.shape) for one in sample.observations)
+    identity, rows = _smallest_multisensor(standing)
+    drawn = index.drawn_observations(rows, config)
+    weight = sum(math.prod(one.shape) for one in drawn)
     console.print(
-        f"loading [bold]{' '.join(sample.identity)}[/bold], "
-        f"{len(sample.observations)} crops of {', '.join(sample.instruments)}, "
+        f"loading [bold]{' '.join(identity)}[/bold], {len(drawn)} crops of "
+        f"{', '.join(sorted({one.instrument for one in drawn}))}, "
         f"{weight / 1e6:.1f}M values"
     )
-    for line in _by_instrument(load.load_patches(sample, build, choices)):
+    for line in _by_instrument(load.load_patches(drawn, build, config)):
         console.print(line)
     return 0
 
 
-def _smallest_multisensor(samples: list[Sample]) -> Sample:
-    """Return the lightest sample that still reaches more than one instrument.
+def _smallest_multisensor(
+    standing: dict[tuple[str, str], list[ObservationMetadata]],
+) -> tuple[tuple[str, str], list[ObservationMetadata]]:
+    """Return the lightest feature that still reaches more than one instrument.
 
     Args:
-        samples: Every sample the index was read into.
+        standing: The crops of each feature, keyed by what tells it apart.
 
     Returns:
-        sample: The one holding the fewest values of those covering the most
-            instruments a light sample can, so a check stays short rather than
-            taking the largest feature of the build.
-
-    Raises:
-        ValueError: When there is no sample to pick from.
+        identity: What tells the feature apart, its class and its name.
+        observations: Its own index rows, the fewest values of those covering
+            more than one instrument, so a check stays short rather than taking
+            the largest feature of the build.
     """
-    if not samples:
-        raise ValueError("no sample to pick from")
-    reached = max(min(len(one.instruments) for one in samples), 2)
-    covering = [one for one in samples if len(one.instruments) >= reached]
+    covering = {
+        identity: held
+        for identity, held in standing.items()
+        if len({one.instrument for one in held}) > 1
+    }
     return min(
-        covering or samples,
-        key=lambda one: sum(math.prod(held.shape) for held in one.observations),
+        (covering or standing).items(),
+        key=lambda one: sum(math.prod(held.shape) for held in one[1]),
     )
 
 
-def _by_instrument(patches) -> list[str]:
+def _by_instrument(patches: list[Patch]) -> list[str]:
     """Return one line per instrument, saying what its patches came out as.
 
     Args:
@@ -108,7 +107,7 @@ def _by_instrument(patches) -> list[str]:
     Returns:
         lines: One line an instrument, in the order they were drawn.
     """
-    standing: dict[str, list] = {}
+    standing: dict[str, list[Patch]] = {}
     for one in patches:
         standing.setdefault(one.instrument, []).append(one)
     lines = []
@@ -130,7 +129,7 @@ def main() -> int:
     """Read one build and one small sample of it, and say what both hold.
 
     Returns:
-        code: A process exit code, non zero when the build holds no sample.
+        code: A process exit code, non zero when the build holds no crop.
     """
     parsed = argparse.ArgumentParser(description=__doc__)
     parsed.add_argument("--build", default=None, help="the build to read")

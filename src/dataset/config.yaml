@@ -34,10 +34,8 @@ tiles:
 # The share of a patch that must be measured for it to be kept.
 keep_valid: 0.5
 
-# How much of the fetched crops the run keeps on its own disk.
-cache_gb: 32
-
-# Where it keeps them, which a job is given a scratch directory for.
+# Where the run keeps the crops it has fetched, which a job is given a scratch
+# directory for.
 cache_dir: .cache/crops
 
 # The shares the features are split into, and the number that fixes the split.

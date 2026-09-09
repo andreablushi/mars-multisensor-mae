@@ -1,7 +1,8 @@
-"""How many patches one observation holds and where each sits, from its index row."""
+"""How many patches one observation holds and how far each runs, from its index row."""
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 
 
@@ -60,28 +61,4 @@ def patch_count(
         counted: How many whole patches it holds, before any of them is weighed
             against how much of it was measured.
     """
-    counted = 1
-    for held in patch_counts(shape, axes, tiles):
-        counted *= held
-    return counted
-
-
-def origin_of(
-    drawn: int, counts: Sequence[int], lengths: Sequence[int]
-) -> tuple[int, ...]:
-    """Return where the patch a number stands for starts, along each axis.
-
-    Args:
-        drawn: Which patch of the observation, counted over every axis at once
-            and running from zero, so one number names one patch.
-        counts: How many patches each axis holds.
-        lengths: How far a patch runs along each axis.
-
-    Returns:
-        origin: The first sample of that patch along each axis.
-    """
-    origin, held = [], drawn
-    for count, length in zip(reversed(counts), reversed(lengths), strict=True):
-        origin.append((held % count) * length)
-        held //= count
-    return tuple(reversed(origin))
+    return math.prod(patch_counts(shape, axes, tiles))

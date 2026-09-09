@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import digitalhub as dh
 from botocore.exceptions import ClientError
 
-from dataset import configs
-from dataset.models.settings import Settings
-from dataset.store.cache import Cache
+from dataset.store.dh import cache
 
 EXPIRED = frozenset(
     {"ExpiredToken", "ExpiredTokenException", "InvalidToken", "InvalidAccessKeyId"}
@@ -27,13 +26,13 @@ class Build:
         prefix: The key every path the index names hangs off.
         client: The client it is read with, minted again when the credentials
             behind it run out.
-        cache: What the run keeps of the crops it has already read.
+        cache_root: Where the run keeps the crops it has already read.
     """
 
     bucket: str
     prefix: str
     client: Any
-    cache: Cache
+    cache_root: Path
 
     def read(self, path: str) -> bytes:
         """Return what one object of the build holds, fetching it only once.
@@ -45,11 +44,11 @@ class Build:
         Returns:
             data: The bytes of that object.
         """
-        held = self.cache.kept(path)
+        held = cache.kept(self.cache_root, path)
         if held is not None:
             return held
         data = self._fetched(path)
-        self.cache.keep(path, data)
+        cache.keep(self.cache_root, path, data)
         return data
 
     def _fetched(self, path: str) -> bytes:
@@ -86,29 +85,29 @@ class Build:
         return held["Body"].read()
 
 
-def opened_build(settings: Settings) -> Build:
+def opened_build(config: dict) -> Build:
     """Return the published build one read is made against.
 
     Args:
-        settings: The settled choices, which name the project it belongs to and
-            the build to read.
+        config: The choices a read is made with, which name the project the
+            build belongs to, the build itself, and where its crops are kept.
 
     Returns:
-        build: The build, its prefix resolved off the platform and its cache
-            ready to take what it reads.
+        build: The build, its prefix resolved off the platform.
 
     Raises:
         ValueError: When the platform publishes the build somewhere other than
             the object store this reads from.
     """
-    project = dh.get_project(settings.project)
-    published = urlparse(project.get_artifact(settings.artifact).spec.path)
+    artifact = f"dataset-{config['build']}"
+    project = dh.get_project(config["project"])
+    published = urlparse(project.get_artifact(artifact).spec.path)
     if published.scheme != "s3":
-        raise ValueError(f"{settings.artifact} is published at {published.scheme}")
+        raise ValueError(f"{artifact} is published at {published.scheme}")
     prefix = published.path.lstrip("/")
     return Build(
         bucket=published.netloc,
         prefix=prefix if prefix.endswith("/") else f"{prefix}/",
         client=dh.get_s3_client(),
-        cache=Cache(root=configs.cache_root(), budget=settings.cache_bytes),
+        cache_root=Path(config["cache_dir"]).expanduser(),
     )

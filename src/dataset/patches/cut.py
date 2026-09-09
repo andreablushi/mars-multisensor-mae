@@ -2,37 +2,32 @@
 
 from __future__ import annotations
 
+import math
 import random
 
 import numpy as np
-from building.common.layout import WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 
+from dataset.config import tiles_of
 from dataset.models.crop import Crop
 from dataset.models.patch import Patch
-from dataset.models.settings import Settings
 from dataset.patches import grid, place
-from dataset.seed import seeded_number
 
 WAVELENGTHS = "wavelengths"
 
 CANDIDATES = 4
 
 
-def cut_patches(
-    crop: Crop, record: ObservationMetadata, settings: Settings, epoch: int = 0
-) -> list[Patch]:
+def cut_patches(crop: Crop, record: ObservationMetadata, config: dict) -> list[Patch]:
     """Return the patches drawn from one crop that carry enough measurement.
 
     Args:
         crop: The crop to cut, whose axes say which of them are tiled.
         record: What the index says the crop is, which carries the ground it
             spans and when it was taken.
-        settings: The settled choices, which say how far a patch of this
-            instrument runs along each kind of axis, how many are drawn, and
-            how much of one must be measured.
-        epoch: Which pass over the dataset this is, so one crop is cut
-            differently from one pass to the next and the same within one.
+        config: The choices a read is made with, which say how far a patch of
+            this instrument runs along each kind of axis, how many are drawn,
+            and how much of one must be measured.
 
     Returns:
         patches: The patches drawn and kept, as many as the config asks for and
@@ -40,40 +35,28 @@ def cut_patches(
             holds far more patches than a pass over it ever wants: one CTX scan
             runs to millions, so they are drawn rather than walked.
     """
-    shape = crop.values.shape
-    tiles = settings.tiles_of(crop.instrument)
-    lengths = grid.patch_lengths(shape, crop.axes, tiles)
-    counts = grid.patch_counts(shape, crop.axes, tiles)
-    held = grid.patch_count(shape, crop.axes, tiles)
+    tiles = tiles_of(config, crop.instrument)
+    lengths = grid.patch_lengths(crop.values.shape, crop.axes, tiles)
+    counts = grid.patch_counts(crop.values.shape, crop.axes, tiles)
+    held = math.prod(counts)
     if not held:
         return []
-    dims = crop.dims[crop.measurement]
-    spectral = WAVELENGTH in crop.axes
-    measured = crop.measured
-    drawing = random.Random(
-        seeded_number("/".join(record.identity), settings.seed + epoch)
-    )
-    asked = settings.per_observation
-    drawn = drawing.sample(range(held), min(held, asked * CANDIDATES))
-
-    def alongside(name: str, window: tuple[slice, ...]) -> np.ndarray:
-        """Return what one array beside the values keeps of the same patch."""
-        taken = dict(zip(dims, window, strict=True))
-        return crop.beside[name][
-            tuple(taken.get(one, slice(None)) for one in crop.dims[name])
-        ]
-
+    asked = config["per_observation"]
+    drawing = random.Random(f"{config['seed']}/{'/'.join(record.identity)}")
     patches = []
-    for one in drawn:
+    for one in drawing.sample(range(held), min(held, asked * CANDIDATES)):
         if len(patches) == asked:
             break
-        origin = grid.origin_of(one, counts, lengths)
+        origin = tuple(
+            int(at) * length
+            for at, length in zip(np.unravel_index(one, counts), lengths, strict=True)
+        )
         window = tuple(
             slice(start, start + length)
             for start, length in zip(origin, lengths, strict=True)
         )
-        valid = measured[tuple(window[at] for at in crop.ground)]
-        if not valid.size or valid.mean() < settings.keep_valid:
+        valid = crop.measured[tuple(window[at] for at in crop.ground)]
+        if not valid.size or valid.mean() < config["keep_valid"]:
             continue
         lon, lat = place.placement_of(crop, window)
         patches.append(
@@ -85,11 +68,7 @@ def cut_patches(
                 axes=crop.axes,
                 origin=origin,
                 ground_sample_m=record.ground_sample_m,
-                wavelengths_nm=(
-                    np.nanmean(alongside(WAVELENGTHS, window), axis=0)
-                    if spectral and WAVELENGTHS in crop.beside
-                    else None
-                ),
+                wavelengths_nm=_wavelengths(crop, window),
                 lon=lon,
                 lat=lat,
                 t_start=record.t_start,
@@ -97,3 +76,24 @@ def cut_patches(
             )
         )
     return patches
+
+
+def _wavelengths(crop: Crop, window: tuple[slice, ...]) -> np.ndarray | None:
+    """Return the centre wavelength of each band of one patch.
+
+    Args:
+        crop: The crop it was cut from, which stores them beside its values for
+            an instrument whose wavelengths vary along the ground.
+        window: What the patch keeps of each axis of the values.
+
+    Returns:
+        wavelengths: One wavelength per band, over the ground the patch keeps,
+            and None for an instrument that stores none.
+    """
+    if WAVELENGTHS not in crop.beside:
+        return None
+    taken = dict(zip(crop.dims[crop.measurement], window, strict=True))
+    held = crop.beside[WAVELENGTHS][
+        tuple(taken.get(one, slice(None)) for one in crop.dims[WAVELENGTHS])
+    ]
+    return np.nanmean(held, axis=0)

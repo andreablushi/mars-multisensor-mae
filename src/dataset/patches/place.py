@@ -5,12 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import numpy as np
+from building.preprocessing.common.store import DEGREES, EAST, NORTH
 from shared.maths import geodesy
 
 from dataset.models.crop import Crop
-from dataset.store.decode import EAST, NORTH
-
-DEGREES = "degrees"
 
 
 def placement_of(crop: Crop, window: Sequence[slice]) -> tuple[float, float]:

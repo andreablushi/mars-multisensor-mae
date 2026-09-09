@@ -1,36 +1,36 @@
-"""One sample's crops, fetched from the store and cut into the patches they hold."""
+"""The crops one sample drew, fetched from the store and cut into their patches."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
+from building.metadata.observation import ObservationMetadata
+
 from dataset.models.patch import Patch
-from dataset.models.sample import Sample
-from dataset.models.settings import Settings
 from dataset.patches import cut
 from dataset.store import decode
-from dataset.store.artifact import Build
+from dataset.store.dh.build import Build
 
 
 def load_patches(
-    sample: Sample, build: Build, settings: Settings, epoch: int = 0
+    observations: Iterable[ObservationMetadata], build: Build, config: dict
 ) -> list[Patch]:
-    """Return the patches drawn from the observations one sample drew.
+    """Return the patches drawn from the observations a sample drew.
 
     Args:
-        sample: The feature and the observations of it that were drawn, which
-            name the only crops this fetches.
+        observations: The index rows that were drawn, which name the only crops
+            this fetches.
         build: The published build the crops are read from.
-        settings: The settled choices, which say how each crop is cut.
-        epoch: Which pass over the dataset this is, so one crop is cut
-            differently from one pass to the next.
+        config: The choices a read is made with, which say how each crop is cut.
 
     Returns:
         patches: The patches of every drawn observation, in the order they were
-            drawn and then the order each crop was drawn in.
+            drawn and then the order each crop was cut in.
     """
     return [
         one
-        for record in sample.observations
+        for record in observations
         for one in cut.cut_patches(
-            decode.read_crop(build.read(record.path)), record, settings, epoch
+            decode.read_crop(build.read(record.path)), record, config
         )
     ]
