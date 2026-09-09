@@ -42,35 +42,26 @@ class Build:
 
         Returns:
             data: The bytes of that object.
-        """
-        held = self.cache_root / path
-        # What one pass fetched every later pass reads off the run's own disk.
-        if held.is_file():
-            return held.read_bytes()
-        data = self._fetched(path)
-        # Staged under a name of its own, so a killed run leaves no half object.
-        with atomic_path(held) as staged:
-            staged.write_bytes(data)
-        return data
-
-    def _fetched(self, path: str) -> bytes:
-        """Return one object of the build, minting a client again where one ran out.
-
-        Args:
-            path: Where it sits, relative to the build's own root.
-
-        Returns:
-            data: The bytes of that object.
 
         Raises:
             ClientError: When the store refused the read for any reason other
                 than credentials it had already handed out running out.
         """
+        held = self.cache_root / path
+        # What one pass fetched every later pass reads off the run's own disk.
+        if held.is_file():
+            return held.read_bytes()
+        key = self.prefix + path
         try:
-            held = self.client.get_object(Bucket=self.bucket, Key=self.prefix + path)
+            fetched = self.client.get_object(Bucket=self.bucket, Key=key)
         except ClientError as refused:
             if refused.response["Error"]["Code"] not in EXPIRED:
                 raise
+            # The credentials the platform handed out run out mid run.
             self.client = dh.get_s3_client()
-            held = self.client.get_object(Bucket=self.bucket, Key=self.prefix + path)
-        return held["Body"].read()
+            fetched = self.client.get_object(Bucket=self.bucket, Key=key)
+        data = fetched["Body"].read()
+        # Staged under a name of its own, so a killed run leaves no half object.
+        with atomic_path(held) as staged:
+            staged.write_bytes(data)
+        return data
