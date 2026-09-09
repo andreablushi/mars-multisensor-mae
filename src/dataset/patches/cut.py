@@ -1,52 +1,43 @@
-"""Drawing patches out of one crop, and keeping the ones that were measured."""
+"""Cutting one crop into the patches it holds that carry enough measurement."""
 
 from __future__ import annotations
 
 import math
-import random
+from collections.abc import Iterator
 
 import numpy as np
 from building.metadata.observation import ObservationMetadata
 
-from dataset.config import tiles_of
+from dataset.config import patchsize_of
 from dataset.models.crop import Crop
 from dataset.models.patch import Patch
 from dataset.patches import grid, place
 
 WAVELENGTHS = "wavelengths"
 
-CANDIDATES = 4
 
-
-def cut_patches(crop: Crop, record: ObservationMetadata, config: dict) -> list[Patch]:
-    """Return the patches drawn from one crop that carry enough measurement.
+def cut_patches(
+    crop: Crop, record: ObservationMetadata, config: dict
+) -> Iterator[Patch]:
+    """Yield every patch of one crop.
 
     Args:
         crop: The crop to cut, whose axes say which of them are tiled.
         record: What the index says the crop is, which carries the ground it
             spans and when it was taken.
         config: The choices a read is made with, which say how far a patch of
-            this instrument runs along each kind of axis, how many are drawn,
-            and how much of one must be measured.
+            this instrument runs along every axis it is cut on.
 
-    Returns:
-        patches: The patches drawn and kept, as many as the config asks for and
-            fewer where too little of the crop was measured to fill it. A crop
-            holds far more patches than a pass over it ever wants: one CTX scan
-            runs to millions, so they are drawn rather than walked.
+    Yields:
+        patch: Every whole patch of the crop, in the order its axes run, each
+            carrying which of its samples were measured. One CTX scan holds
+            tens of thousands, so they are yielded one at a time and never
+            gathered: a feature runs to over a million.
     """
-    tiles = tiles_of(config, crop.instrument)
-    lengths = grid.patch_lengths(crop.values.shape, crop.axes, tiles)
-    counts = grid.patch_counts(crop.values.shape, crop.axes, tiles)
-    held = math.prod(counts)
-    if not held:
-        return []
-    asked = config["per_observation"]
-    drawing = random.Random(f"{config['seed']}/{'/'.join(record.identity)}")
-    patches = []
-    for one in drawing.sample(range(held), min(held, asked * CANDIDATES)):
-        if len(patches) == asked:
-            break
+    patchsize = patchsize_of(config, crop.instrument)
+    lengths = grid.patch_lengths(crop.values.shape, crop.axes, patchsize)
+    counts = grid.patch_counts(crop.values.shape, crop.axes, patchsize)
+    for one in range(math.prod(counts)):
         origin = tuple(
             int(at) * length
             for at, length in zip(np.unravel_index(one, counts), lengths, strict=True)
@@ -56,26 +47,22 @@ def cut_patches(crop: Crop, record: ObservationMetadata, config: dict) -> list[P
             for start, length in zip(origin, lengths, strict=True)
         )
         valid = crop.measured[tuple(window[at] for at in crop.ground)]
-        if not valid.size or valid.mean() < config["keep_valid"]:
-            continue
         lon, lat = place.placement_of(crop, window)
-        patches.append(
-            Patch(
-                instrument=crop.instrument,
-                identifier=crop.identifier,
-                values=crop.values[window],
-                valid=valid,
-                axes=crop.axes,
-                origin=origin,
-                ground_sample_m=record.ground_sample_m,
-                wavelengths_nm=_wavelengths(crop, window),
-                lon=lon,
-                lat=lat,
-                t_start=record.t_start,
-                t_end=record.t_end,
-            )
+        yield Patch(
+            instrument=crop.instrument,
+            identifier=crop.identifier,
+            # Copied, so one patch does not hold the whole crop alive behind it.
+            values=crop.values[window].copy(),
+            valid=valid.copy(),
+            axes=crop.axes,
+            origin=origin,
+            ground_sample_m=record.ground_sample_m,
+            wavelengths_nm=_wavelengths(crop, window),
+            lon=lon,
+            lat=lat,
+            t_start=record.t_start,
+            t_end=record.t_end,
         )
-    return patches
 
 
 def _wavelengths(crop: Crop, window: tuple[slice, ...]) -> np.ndarray | None:

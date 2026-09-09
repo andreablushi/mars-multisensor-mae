@@ -3,38 +3,43 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
+
+from building.common.layout import WAVELENGTH
 
 
 def patch_lengths(
-    shape: Sequence[int], axes: Sequence[str], tiles: Mapping[str, int]
+    shape: Sequence[int], axes: Sequence[str], patchsize: int
 ) -> tuple[int, ...]:
     """Return how far one patch runs along each axis of an observation.
 
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        tiles: How far a patch runs along each kind of axis. An axis whose kind
-            is not named there is kept whole, which is how a wavelength axis
-            becomes the channels of every patch cut from it.
+        patchsize: How far a patch of this instrument runs along an axis it is
+            cut on.
 
     Returns:
-        lengths: One length per axis, in the axes' own order.
+        lengths: One length per axis, in the axes' own order. A wavelength axis
+            is kept whole, which is how its bands become the channels of every
+            patch cut from the observation.
     """
     return tuple(
-        tiles.get(holds, size) for size, holds in zip(shape, axes, strict=True)
+        size if holds == WAVELENGTH else patchsize
+        for size, holds in zip(shape, axes, strict=True)
     )
 
 
 def patch_counts(
-    shape: Sequence[int], axes: Sequence[str], tiles: Mapping[str, int]
+    shape: Sequence[int], axes: Sequence[str], patchsize: int
 ) -> tuple[int, ...]:
     """Return how many patches fit along each axis of an observation.
 
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        tiles: How far a patch runs along each kind of axis.
+        patchsize: How far a patch of this instrument runs along an axis it is
+            cut on.
 
     Returns:
         counts: How many whole patches each axis holds. What is left of an axis
@@ -43,22 +48,22 @@ def patch_counts(
     """
     return tuple(
         size // length
-        for size, length in zip(shape, patch_lengths(shape, axes, tiles), strict=True)
+        for size, length in zip(
+            shape, patch_lengths(shape, axes, patchsize), strict=True
+        )
     )
 
 
-def patch_count(
-    shape: Sequence[int], axes: Sequence[str], tiles: Mapping[str, int]
-) -> int:
+def patch_count(shape: Sequence[int], axes: Sequence[str], patchsize: int) -> int:
     """Return how many patches one observation holds, without reading it.
 
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        tiles: How far a patch runs along each kind of axis.
+        patchsize: How far a patch of this instrument runs along an axis it is
+            cut on.
 
     Returns:
-        counted: How many whole patches it holds, before any of them is weighed
-            against how much of it was measured.
+        counted: How many whole patches it holds.
     """
-    return math.prod(patch_counts(shape, axes, tiles))
+    return math.prod(patch_counts(shape, axes, patchsize))

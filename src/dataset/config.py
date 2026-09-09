@@ -21,14 +21,14 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def tiles_of(config: dict, instrument: str) -> dict[str, int]:
-    """Return how far a patch of one instrument runs along each kind of axis.
+def patchsize_of(config: dict, instrument: str) -> int:
+    """Return how far a patch of one instrument runs along every axis it is cut on.
 
     Args:
         config: The choices a read is made with.
         instrument: The instrument that took it, as ODE names it.
 
     Returns:
-        tiles: What that instrument is cut by, or what everything unnamed is.
+        patchsize: What that instrument is cut by, or what everything unnamed is.
     """
-    return config["tiles"].get(instrument, config["tiles"]["default"])
+    return config["patchsize"].get(instrument, config["patchsize"]["default"])

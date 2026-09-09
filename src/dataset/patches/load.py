@@ -1,35 +1,32 @@
-"""The crops one sample drew, fetched from the store and cut into their patches."""
+"""Every crop of one feature, fetched from the store and cut into its patches."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 from building.metadata.observation import ObservationMetadata
 
 from dataset.models.patch import Patch
-from dataset.patches import cut
+from dataset.patches.cut import cut_patches
 from dataset.store import Build, read_crop
 
 
 def load_patches(
     observations: Iterable[ObservationMetadata], build: Build, config: dict
-) -> list[Patch]:
-    """Return the patches drawn from the observations a sample drew.
+) -> Iterator[Patch]:
+    """Yield every patch of every observation of one feature.
 
     Args:
-        observations: The index rows that were drawn, which name the only crops
-            this fetches.
+        observations: The feature's own index rows, every crop the build holds
+            of it.
         build: The published build the crops are read from.
         config: The choices a read is made with, which say how each crop is cut.
 
-    Returns:
-        patches: The patches of every drawn observation, in the order they were
-            drawn and then the order each crop was cut in.
+    Yields:
+        patch: Every patch of every crop, one crop at a time, so only the crop
+            being cut is held in memory. A feature runs to over a million.
     """
-    return [
-        one
-        for record in observations
-        for one in cut.cut_patches(
+    for record in observations:
+        yield from cut_patches(
             read_crop(build.read_object(record.path)), record, config
         )
-    ]

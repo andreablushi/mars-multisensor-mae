@@ -6,33 +6,18 @@ project: mars-multisensor-features
 # The build to read, which is published as dataset-<build>.
 build: small
 
-# How many observations of each instrument a sample draws.
-per_instrument: 4
-
-# How many patches a sample draws of each of those observations.
-per_observation: 512
-
-# How far a patch runs along each kind of axis, for each instrument. An axis
-# unlisted is kept whole, and an instrument unlisted is cut by the default.
-tiles:
-  default:
-    ground: 16
+# How far a patch runs along every axis of an observation, for each instrument.
+# A wavelength axis is kept whole, as the channels of the patch.
+patchsize:
+  default: 16
   # A scan at about 6 m a pixel, so a wider patch still covers little ground.
-  CTX:
-    ground: 64
+  CTX: 64
   # A survey at about 200 m a pixel, its 400 odd bands the channels of a patch.
-  CRISM:
-    ground: 16
+  CRISM: 16
   # A radargram walks one line, and its other axis is depth rather than ground.
-  SHARAD:
-    ground: 16
-    elevation: 16
+  SHARAD: 16
   # A gridded tile at about 460 m a pixel, and coarser still towards a pole.
-  MOLA:
-    ground: 16
-
-# The share of a patch that must be measured for it to be kept.
-keep_valid: 0.5
+  MOLA: 16
 
 # Where the run keeps the crops it has fetched, which a job is given a scratch
 # directory for.

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import io
 import json
-import random
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -123,35 +122,6 @@ def observation_metadata_by_feature(
     for one in observations:
         standing[one.feature].append(one)
     return dict(standing)
-
-
-def drawn_observation_metadata(
-    observations: Sequence[ObservationMetadata], config: dict
-) -> list[ObservationMetadata]:
-    """Return a draw of the crops the build holds of one feature.
-
-    Args:
-        observations: One feature's own index rows, which the draw is made from.
-        config: The choices a read is made with, which say how many of each
-            instrument a sample draws and what number fixes that draw.
-
-    Returns:
-        drawn: At most as many of each instrument as the config asks for, the
-            instruments in name order. The draw is fixed by the feature's own
-            name, so every process draws the same crops of it.
-    """
-    standing: dict[str, list[ObservationMetadata]] = defaultdict(list)
-    for one in observations:
-        standing[one.instrument].append(one)
-    drawing = random.Random(f"{config['seed']}/{'/'.join(observations[0].feature)}")
-    return [
-        one
-        for instrument in sorted(standing)
-        for one in drawing.sample(
-            standing[instrument],
-            min(config["per_instrument"], len(standing[instrument])),
-        )
-    ]
 
 
 def read_crop(data: bytes) -> Crop:
