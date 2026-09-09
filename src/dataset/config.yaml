@@ -10,7 +10,7 @@ build: small
 per_instrument: 4
 
 # How many patches a sample draws of each of those observations.
-per_observation: 64
+per_observation: 512
 
 # How far a patch runs along each kind of axis, for each instrument. An axis
 # unlisted is kept whole, and an instrument unlisted is cut by the default.

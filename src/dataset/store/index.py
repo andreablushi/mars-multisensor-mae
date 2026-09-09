@@ -13,7 +13,7 @@ from building import paths as built
 from building.metadata.observation import ObservationMetadata
 from shared.disk import parquet
 
-from dataset.store.dh.build import Build
+from dataset.store.read_dh_volumes import Build
 
 
 def read_manifest(build: Build) -> dict:
@@ -25,7 +25,7 @@ def read_manifest(build: Build) -> dict:
     Returns:
         manifest: When it was built, from what, and which instruments it reached.
     """
-    return json.loads(build.read(built.DATASET_MANIFEST_NAME))
+    return json.loads(build.read_object(built.DATASET_MANIFEST_NAME))
 
 
 def read_observations(build: Build) -> list[ObservationMetadata]:
@@ -39,7 +39,7 @@ def read_observations(build: Build) -> list[ObservationMetadata]:
             is read under no schema, so a build carrying columns the row model
             does not declare is read all the same.
     """
-    held = pq.read_table(io.BytesIO(build.read(built.OBSERVATION_METADATA_NAME)))
+    held = pq.read_table(io.BytesIO(build.read_object(built.OBSERVATION_METADATA_NAME)))
     return [parquet.build(ObservationMetadata, row) for row in held.to_pylist()]
 
 

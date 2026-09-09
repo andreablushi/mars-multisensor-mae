@@ -9,7 +9,7 @@ from building.metadata.observation import ObservationMetadata
 from dataset.models.patch import Patch
 from dataset.patches import cut
 from dataset.store import decode
-from dataset.store.dh.build import Build
+from dataset.store.read_dh_volumes import Build
 
 
 def load_patches(
@@ -31,6 +31,6 @@ def load_patches(
         one
         for record in observations
         for one in cut.cut_patches(
-            decode.read_crop(build.read(record.path)), record, config
+            decode.read_crop(build.read_object(record.path)), record, config
         )
     ]
