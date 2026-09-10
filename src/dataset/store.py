@@ -14,14 +14,15 @@ from pathlib import Path
 import numpy as np
 import pyarrow.parquet as pq
 from building import paths as built
-from building.common.layout import GROUND
 from building.metadata.feature import FeatureMetadata
 from building.metadata.observation import ObservationMetadata
-from building.preprocessing.common.store import EAST, INSIDE, META, NORTH, VALID, native
+from building.preprocessing.common.store import EAST, META, NORTH
 from shared.disk import parquet
 from shared.disk.files import atomic_path
 
 from dataset.models.observation import Observation
+
+MEASURED = "measured"
 
 
 @dataclass(slots=True)
@@ -183,36 +184,20 @@ class DatasetBuild:
             path: Where that object sits, as the index names it.
 
         Returns:
-            observation: The observation, its values in the machine's byte order
-                and every sample counted as measured where the build stored no
-                mask.
+            observation: The observation, its arrays as the build wrote them.
         """
         with np.load(io.BytesIO(self.read_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
-            arrays = {name: native(held[name]) for name in held.files if name != META}
-        axes = tuple(described["axes"])
-        values = arrays.pop(described["measurement"])
-        # The masks run over the ground axes alone, not over bands or depth.
-        ground = tuple(
-            size
-            for size, holds in zip(values.shape, axes, strict=True)
-            if holds == GROUND
-        )
-        # A mask the build stored none of marked every sample, so one stands in.
-        measured = np.ones(ground, dtype=bool)
-        for name in (VALID, INSIDE):
-            mask = arrays.pop(name, None)
-            if mask is not None:
-                measured &= mask
+            arrays = {name: held[name] for name in held.files if name != META}
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
             measurement=described["measurement"],
-            values=values,
-            axes=axes,
+            values=arrays.pop(described["measurement"]),
+            axes=tuple(described["axes"]),
             dims={name: tuple(held) for name, held in described["dims"].items()},
-            measured=measured,
+            measured=arrays.pop(MEASURED),
             north=arrays.pop(NORTH),
             east=arrays.pop(EAST),
             # What the pops left is what the instrument stores beside its values.

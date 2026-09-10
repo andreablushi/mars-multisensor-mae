@@ -137,11 +137,9 @@ def patch_position(
     held = dict(zip(observation.dims[observation.measurement], window, strict=True))
 
     def middle(name: str) -> float:
-        """Return one offset array where the middle of the patch falls on it."""
-        taken = tuple(
-            (held[one].start + held[one].stop) // 2 for one in observation.dims[name]
-        )
-        return float(getattr(observation, name)[taken])
+        """Return where one offset array has the patch, over the samples it keeps."""
+        taken = tuple(held[one] for one in observation.dims[name])
+        return float(np.mean(getattr(observation, name)[taken]))
 
     return middle(NORTH), middle(EAST)
 
