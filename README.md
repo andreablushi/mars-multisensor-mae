@@ -45,10 +45,10 @@ there and is read off disk:
 
 ```python
 from dataset.config import build_root, load_config
-from dataset.store import Build
+from dataset.store import DatasetBuild
 
 config = load_config()
-build = Build(build_root(config))
+build = DatasetBuild(build_root(config))
 ```
 
 A build published on DigitalHub is fetched a crop at a time into that same

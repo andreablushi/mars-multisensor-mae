@@ -10,7 +10,7 @@ from digitalhub.stores.client.base.factory import get_client
 from dotenv import load_dotenv
 
 from dataset.config import REPO_ROOT, build_root
-from dataset.store import Build
+from dataset.store import DatasetBuild
 
 PROJECT = "mars-multisensor-features"
 
@@ -19,7 +19,7 @@ EXPIRED = frozenset(
 )
 
 
-def published_build(config: dict) -> Build:
+def published_build(config: dict) -> DatasetBuild:
     """Return the build the config names, read from the platform's store.
 
     Args:
@@ -52,4 +52,4 @@ def published_build(config: dict) -> Build:
             fetched = client.get_object(Bucket=bucket, Key=key)
         return fetched["Body"].read()
 
-    return Build(root=build_root(config), fetch=fetch)
+    return DatasetBuild(root=build_root(config), fetch=fetch)

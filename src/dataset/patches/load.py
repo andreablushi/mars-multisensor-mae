@@ -8,11 +8,11 @@ from building.metadata.observation import ObservationMetadata
 
 from dataset.models.patch import Patch
 from dataset.patches.cut import cut_patches
-from dataset.store import Build, read_crop
+from dataset.store import DatasetBuild
 
 
 def load_patches(
-    observations: Iterable[ObservationMetadata], build: Build, config: dict
+    observations: Iterable[ObservationMetadata], build: DatasetBuild, config: dict
 ) -> Iterator[Patch]:
     """Yield every patch of every observation of one feature.
 
@@ -27,6 +27,4 @@ def load_patches(
             being cut is held in memory. A feature runs to over a million.
     """
     for record in observations:
-        yield from cut_patches(
-            read_crop(build.read_object(record.path)), record, config
-        )
+        yield from cut_patches(build.read_crop(record.path), record, config)
