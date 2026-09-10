@@ -1,6 +1,7 @@
-# What a run reads and what it trains, one file each, composed into one config.
+# What a run reads, what it trains, and how, one file each, composed into one config.
 
 defaults:
   - dataset: small
   - model: mae
+  - training: default
   - _self_

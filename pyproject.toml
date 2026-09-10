@@ -14,6 +14,7 @@ dependencies = [
     "pyarrow>=25.0.1",
     "pyyaml>=6.0.3",
     "rich>=14.0.0",
+    "torch>=2.14.0",
     "wandb>=0.22",
     "zarr>=3.3",
 ]
@@ -23,7 +24,7 @@ requires = ["uv_build>=0.10.2,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = ["config", "dataset"]
+module-name = ["architecture", "config", "dataset", "evaluation", "logs", "training"]
 
 [dependency-groups]
 dev = [

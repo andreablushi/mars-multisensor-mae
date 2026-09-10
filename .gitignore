@@ -5,6 +5,7 @@
 # Temporary Markdown files
 CLAUDE.md
 notes.md
+latent_space.md
 
 # Python
 __pycache__/
@@ -20,3 +21,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Runs
+/checkpoints
+/wandb
+

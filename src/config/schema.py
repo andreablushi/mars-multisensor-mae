@@ -28,23 +28,92 @@ class DatasetConfig:
 
 @dataclass
 class ModelConfig:
-    """What a run trains.
+    """What the model reads, and how wide and deep each of its parts is.
 
     Attributes:
-        name: The architecture, which is all it says until there is an encoder.
+        name: The architecture.
+        instruments: The instruments whose patches become tokens, as ODE names
+            them. The elevation instrument is not one of them.
+        elevation: The instrument whose values give every surface patch its
+            height.
+        bands: How many bands a spectral patch is resampled to along its
+            wavelength axis, so every one of them is the same shape.
+        patches: How many patches of each instrument one feature is drawn with.
+        dim: How wide a token is in the instrument encoders and in the
+            cross-sensor encoder, a multiple of 6 for the position encoding.
+        heads: How many attention heads those encoders run.
+        depth: How many blocks each instrument encoder stacks.
+        fusion_depth: How many blocks the cross-sensor encoder stacks.
+        latent: How many dimensions the sphere every token is placed on has.
+        kappa: How tightly a sampled token stays about its mean direction.
+        decoder_dim: How wide a token is in the decoders, a multiple of 6.
+        decoder_heads: How many attention heads the decoders run.
+        decoder_depth: How many blocks each decoder stacks.
+        mask_ratio: The share of each instrument's patches hidden from its
+            encoder.
     """
 
     name: str
+    instruments: list[str]
+    elevation: str
+    bands: int
+    patches: int
+    dim: int
+    heads: int
+    depth: int
+    fusion_depth: int
+    latent: int
+    kappa: float
+    decoder_dim: int
+    decoder_heads: int
+    decoder_depth: int
+    mask_ratio: float
+
+
+@dataclass
+class TrainingConfig:
+    """How a run trains, validates and stops.
+
+    Attributes:
+        epochs: How many passes over the training features, at most.
+        batch_size: How many features one step reads.
+        learning_rate: The peak learning rate, reached after the warmup.
+        weight_decay: The AdamW weight decay.
+        warmup_epochs: How many epochs the learning rate climbs over before
+            the cosine decay.
+        patience: How many epochs without a lower validation loss before the
+            run stops.
+        uniformity_weight: How much the batch uniformity term weighs against
+            the reconstruction.
+        neighbours: How many nearest features a retrieval metric looks at.
+        workers: How many processes read features beside the training.
+        checkpoints: Where checkpoints are written, relative to the repository.
+        project: The Weights & Biases project the run is tracked under.
+    """
+
+    epochs: int
+    batch_size: int
+    learning_rate: float
+    weight_decay: float
+    warmup_epochs: int
+    patience: int
+    uniformity_weight: float
+    neighbours: int
+    workers: int
+    checkpoints: str
+    project: str
 
 
 @dataclass
 class Config:
-    """One run, composed of the build it reads and the model it trains.
+    """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
         dataset: What it reads.
         model: What it trains.
+        training: How it trains.
     """
 
     dataset: DatasetConfig
     model: ModelConfig
+    training: TrainingConfig

@@ -1,3 +1,33 @@
-# A placeholder, until there is an encoder to read one.
+# The cross-sensor masked autoencoder: an encoder and a decoder per instrument,
+# one cross-sensor encoder between them, and a sphere every token lands on.
 
 name: mae
+
+# The instruments read as tokens. MOLA is not one: it gives every surface patch
+# its height, and a SHARAD patch carries its own.
+instruments: [CTX, CRISM, SHARAD]
+elevation: MOLA
+
+# A spectral patch is resampled to this many bands along its wavelength axis.
+bands: 64
+
+# How many patches of each instrument one feature is drawn with.
+patches: 64
+
+# The instrument encoders and the cross-sensor encoder.
+dim: 384
+heads: 6
+depth: 4
+fusion_depth: 2
+
+# The sphere every token is placed on, and how tightly a draw stays about its mean.
+latent: 64
+kappa: 8000.0
+
+# The decoders.
+decoder_dim: 192
+decoder_heads: 6
+decoder_depth: 4
+
+# The share of each instrument's patches hidden from its encoder.
+mask_ratio: 0.75

@@ -7,7 +7,7 @@ import json
 import math
 import random
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -150,8 +150,14 @@ class DatasetBuild:
             splits[name].append(identity)
         return splits
 
-    def compute_stats(self) -> dict[str, dict[str, float]]:
+    def compute_stats(
+        self, features: Collection[tuple[str, str]] | None = None
+    ) -> dict[str, dict[str, float]]:
         """Return what each instrument's values run to, without reading one observation.
+
+        Args:
+            features: The features to pool over, which a training run keeps to
+                its own split so no test feature is seen, or None for every one.
 
         Returns:
             statistics: One entry per instrument whose values are the same
@@ -167,7 +173,8 @@ class DatasetBuild:
             # An observation measuring nothing leaves them unset, a sounder nan.
             moments = (one.value_mean, one.value_std)
             if (
-                WAVELENGTH not in one.axes
+                (features is None or one.feature in features)
+                and WAVELENGTH not in one.axes
                 and one.valid_count
                 and all(held is not None and math.isfinite(held) for held in moments)
             ):

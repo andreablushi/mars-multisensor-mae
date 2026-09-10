@@ -39,37 +39,55 @@ def load_patches(
     for record in observations:
         observation = build.read_observation(record.path)
         cut_by = patchsize.get(record.instrument, patchsize["default"])
-        shape, axes = observation.values.shape, observation.axes
-        lengths = patch_lengths(shape, axes, cut_by)
-        counts = patch_counts(shape, axes, cut_by)
+        counts = patch_counts(observation.values.shape, observation.axes, cut_by)
         for one in range(math.prod(counts)):
-            origin = tuple(
-                int(at) * length
-                for at, length in zip(
-                    np.unravel_index(one, counts), lengths, strict=True
-                )
-            )
-            window = tuple(
-                slice(start, start + length)
-                for start, length in zip(origin, lengths, strict=True)
-            )
-            valid = observation.measured[tuple(window[at] for at in observation.ground)]
-            north_m, east_m = patch_position(observation, window)
-            yield Patch(
-                instrument=observation.instrument,
-                identifier=observation.identifier,
-                # Copied, so one patch does not hold the observation behind it.
-                values=observation.values[window].copy(),
-                valid=valid.copy(),
-                axes=axes,
-                origin=origin,
-                ground_sample_m=record.ground_sample_m,
-                beside=_beside(observation, window),
-                north_m=north_m,
-                east_m=east_m,
-                t_start=record.t_start,
-                t_end=record.t_end,
-            )
+            yield cut_patch(observation, record, one, cut_by)
+
+
+def cut_patch(
+    observation: Observation, record: ObservationMetadata, index: int, patchsize: int
+) -> Patch:
+    """Return one whole patch of one observation.
+
+    Args:
+        observation: The observation, read whole.
+        record: Its index row, which carries what a patch says about the whole.
+        index: Which patch, counting the whole ones in the order the axes run,
+            the last axis fastest.
+        patchsize: How far a patch of this instrument runs along an axis it is
+            cut on.
+
+    Returns:
+        patch: The patch, carrying which of its samples were measured. Copied,
+            so it does not hold the observation behind it.
+    """
+    shape, axes = observation.values.shape, observation.axes
+    lengths = patch_lengths(shape, axes, patchsize)
+    counts = patch_counts(shape, axes, patchsize)
+    origin = tuple(
+        int(at) * length
+        for at, length in zip(np.unravel_index(index, counts), lengths, strict=True)
+    )
+    window = tuple(
+        slice(start, start + length)
+        for start, length in zip(origin, lengths, strict=True)
+    )
+    valid = observation.measured[tuple(window[at] for at in observation.ground)]
+    north_m, east_m = patch_position(observation, window)
+    return Patch(
+        instrument=observation.instrument,
+        identifier=observation.identifier,
+        values=observation.values[window].copy(),
+        valid=valid.copy(),
+        axes=axes,
+        origin=origin,
+        ground_sample_m=record.ground_sample_m,
+        beside=_beside(observation, window),
+        north_m=north_m,
+        east_m=east_m,
+        t_start=record.t_start,
+        t_end=record.t_end,
+    )
 
 
 def patch_lengths(
