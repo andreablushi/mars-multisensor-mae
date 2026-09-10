@@ -18,7 +18,7 @@ image_extras:
 # (0 cpu, 1 gpu, 7Gi). The disk holds what the run fetches of the dataset.
 resources:
   training:
-    profile: rtxa5000
+    profile: v100
     cpu: 1
     gpu: 1
     memory: 8Gi
