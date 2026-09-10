@@ -21,8 +21,10 @@ class Patch:
         origin: Where the patch starts along each axis of the observation.
         ground_sample_m: How much ground one sample spans along each ground
             axis, in the order those axes run.
-        wavelengths_nm: The centre wavelength of each band in nanometres, and
-            None for an instrument that holds no wavelength axis.
+        beside: What the instrument stores beside its values, keyed as it is
+            written and cut to the patch. A CRISM patch carries the centre
+            wavelength of every band of the ground it keeps, a SHARAD one the
+            elevation of every delay, and a CTX one nothing.
         north_m: How far north of the feature centre the patch centre sits,
             in metres.
         east_m: How far east of it, in metres.
@@ -37,7 +39,7 @@ class Patch:
     axes: tuple[str, ...]
     origin: tuple[int, ...]
     ground_sample_m: tuple[float, ...]
-    wavelengths_nm: np.ndarray | None
+    beside: dict[str, np.ndarray]
     north_m: float
     east_m: float
     t_start: datetime | None

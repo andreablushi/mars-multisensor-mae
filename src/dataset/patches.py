@@ -15,8 +15,6 @@ from dataset.models.observation import Observation
 from dataset.models.patch import Patch
 from dataset.store import DatasetBuild
 
-WAVELENGTHS = "wavelengths"
-
 
 def load_patches(
     observations: Iterable[ObservationMetadata],
@@ -83,7 +81,7 @@ def cut_patches(
             axes=observation.axes,
             origin=origin,
             ground_sample_m=record.ground_sample_m,
-            wavelengths_nm=_wavelengths(observation, window),
+            beside=_beside(observation, window),
             north_m=north_m,
             east_m=east_m,
             t_start=record.t_start,
@@ -172,24 +170,26 @@ def patch_position(
     )
 
 
-def _wavelengths(
+def _beside(
     observation: Observation, window: tuple[slice, ...]
-) -> np.ndarray | None:
-    """Return the centre wavelength of each band of one patch.
+) -> dict[str, np.ndarray]:
+    """Return what the instrument stores beside its values, cut to one patch.
 
     Args:
-        observation: The observation it was cut from, which stores them beside
-            its values for an instrument whose wavelengths vary along the ground.
+        observation: The observation it was cut from, which names the axes of
+            every array it stores.
         window: What the patch keeps of each axis of the values.
 
     Returns:
-        wavelengths: One wavelength per band, over the ground the patch keeps,
-            and None for an instrument that stores none.
+        beside: Each of those arrays, keyed as it is written, cut along every
+            axis it shares with the values and kept whole along the rest.
+            Copied, for the same reason the values are. Empty for an instrument
+            that stores none.
     """
-    if WAVELENGTHS not in observation.beside:
-        return None
     taken = dict(zip(observation.dims[observation.measurement], window, strict=True))
-    held = observation.beside[WAVELENGTHS][
-        tuple(taken.get(one, slice(None)) for one in observation.dims[WAVELENGTHS])
-    ]
-    return np.nanmean(held, axis=0)
+    return {
+        name: held[
+            tuple(taken.get(one, slice(None)) for one in observation.dims[name])
+        ].copy()
+        for name, held in observation.beside.items()
+    }
