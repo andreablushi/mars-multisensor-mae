@@ -14,11 +14,13 @@ image_extras:
   - digitalhub-runtime-python>=0.15,<0.16
 
 # What the platform gives each stage. A profile settles the cores, the GPU and
-# the memory of the box; it offers rtxa5000 (1 cpu, 1 gpu, 8Gi) and v100
-# (0 cpu, 1 gpu, 7Gi). The disk holds what the run fetches of the dataset.
+# the memory of the box, and which queue the job waits in: 1xrtxa5000 and 1xv100
+# are the reserved ones, the -shared ones (1xv100-shared up to 8xv100-shared,
+# 1xrtxa5000-shared up to 3xrtxa5000-shared) queue on the shared GPUs. The disk
+# holds what the run fetches of the dataset.
 resources:
   training:
-    profile: v100
+    profile: 1xrtxa5000-shared
     cpu: 1
     gpu: 1
     memory: 8Gi
