@@ -28,7 +28,15 @@ dhcli register <your-digitalhub-core-endpoint>
 dhcli login                                    # opens a browser tab
 
 cp .env.example .env                           # once, then fill it in
+
+uv run --group digitalhub python scripts/train.py --dh --ref setup
 ```
+
+Everything a submission needs, from the project name to the box a job asks
+for, is in `configs/digitalhub.yaml`. The pip requirements are taken straight
+from `pyproject.toml`, so the image always matches this repository. The
+platform clones a pushed commit, so every change has to be on the branch
+`--ref` names before it can run.
 
 A read outlasts the credentials it is started with: those lapse after some six
 hours, and a training run still going then can fetch nothing. So it mints its

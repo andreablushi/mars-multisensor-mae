@@ -1,37 +1,92 @@
-"""Training one run against the published build, and publishing what it learnt."""
+"""Training one run: run here by default, or submitted with --dh."""
 
 from __future__ import annotations
 
-import sys
-from collections.abc import Sequence
+import argparse
+from pathlib import Path
 
 import torch
+from dh import submit
+from dh.configs import load_platform
 from dh.publish import publish_checkpoint
 from dh.store import published_build
+from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from config.load import load_config
+from config.schema import Config
 from dataset.draw import split_loaders
+from logs.console import logger
 from logs.tracker import start_run
 from training.train import train
 
+TRAINING_HANDLER = "scripts.train:run_training"
 
-def main(overrides: Sequence[str]) -> None:
-    """Train one run, as the config composed with the overrides describes it.
+_MODEL = load_platform().publishes["model"]
+
+log = logger(__name__)
+
+
+def train_model(config: Config) -> Path:
+    """Return the best checkpoint of one run, trained as the config describes it.
 
     Args:
-        overrides: What to compose the config with, as hydra spells them.
+        config: What the run reads, trains and how.
+
+    Returns:
+        best: The checkpoint with the lowest validation loss.
     """
-    config = load_config(overrides)
     build = published_build(config.dataset)
     training, validation, shapes = split_loaders(build, config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    log.info("training on %s", device)
     model = CrossSensorMAE(shapes, config.model).to(device)
     run = start_run(config)
     best = train(model, training, validation, config, device, run)
     run.finish()
-    publish_checkpoint(best, f"model-{config.model.name}")
+    return best
+
+
+@handler(outputs=[_MODEL])
+def run_training(project, overrides: list[str] | None = None):
+    """Train one run on DigitalHub and publish the best checkpoint it left.
+
+    Args:
+        project: The DigitalHub project the model is logged into.
+        overrides: What to compose the config with, as hydra spells them.
+
+    Returns:
+        model: The published checkpoint.
+    """
+    config = load_config(overrides or [])
+    best = train_model(config)
+    return publish_checkpoint(project, best, f"{_MODEL}-{config.model.name}")
+
+
+def main() -> int:
+    """Run the training where it was asked for.
+
+    Returns:
+        code: A process exit code, non zero when the image did not build.
+    """
+    parsed = argparse.ArgumentParser(description=__doc__)
+    parsed.add_argument(
+        "--dh", action="store_true", help="submit to DigitalHub instead of running here"
+    )
+    parsed.add_argument("--ref", default="main", help="branch, tag, or commit to run")
+    parsed.add_argument(
+        "overrides",
+        nargs="*",
+        help="what to compose the config with, as hydra spells them",
+    )
+    arguments = parsed.parse_args()
+    if arguments.dh:
+        return submit.submitted(
+            "training", TRAINING_HANDLER, arguments.ref, arguments.overrides
+        )
+    train_model(load_config(arguments.overrides))
+    return 0
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    raise SystemExit(main())

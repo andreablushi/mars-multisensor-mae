@@ -6,14 +6,12 @@ from urllib.parse import urlparse
 
 import digitalhub as dh
 from botocore.exceptions import ClientError
-from digitalhub.stores.client.base.factory import get_client
-from dotenv import load_dotenv
 
-from config.paths import REPO_ROOT, build_root
+from config.paths import build_root
 from config.schema import DatasetConfig
 from dataset.store import DatasetBuild
-
-PROJECT = "mars-multisensor-features"
+from dh import credentials
+from dh.configs import load_platform
 
 EXPIRED = frozenset(
     {"ExpiredToken", "ExpiredTokenException", "InvalidToken", "InvalidAccessKeyId"}
@@ -31,9 +29,10 @@ def published_build(dataset: DatasetConfig) -> DatasetBuild:
         build: The build, reading off disk every observation it has already fetched and
             asking the store for the rest.
     """
-    load_dotenv(REPO_ROOT / ".env")
-    project = dh.get_or_create_project(PROJECT)
-    published = urlparse(project.get_artifact(f"dataset-{dataset.build}").spec.path)
+    platform = load_platform()
+    project = dh.get_or_create_project(platform.project)
+    name = f"{platform.publishes['dataset']}-{dataset.build}"
+    published = urlparse(project.get_artifact(name).spec.path)
     bucket = published.netloc
     prefix = published.path.lstrip("/").rstrip("/") + "/"
     client = dh.get_s3_client()
@@ -48,7 +47,7 @@ def published_build(dataset: DatasetConfig) -> DatasetBuild:
             if refused.response["Error"]["Code"] not in EXPIRED:
                 raise
             # The credentials the platform hands out run out mid run.
-            get_client().eval_retry()
+            credentials.refresh()
             client = dh.get_s3_client()
             fetched = client.get_object(Bucket=bucket, Key=key)
         return fetched["Body"].read()
