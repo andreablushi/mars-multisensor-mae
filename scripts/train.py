@@ -42,6 +42,17 @@ def train_model(config: Config) -> Path:
     log.info("training on %s", device)
     model = CrossSensorMAE(shapes, config.model).to(device)
     run = start_run(config)
+    run.config.update(
+        {
+            "device": str(device),
+            "parameters": sum(one.numel() for one in model.parameters()),
+            "shapes": shapes,
+            "features": {
+                "training": len(training.dataset),
+                "validation": len(validation.dataset),
+            },
+        }
+    )
     best = train(model, training, validation, config, device, run)
     run.finish()
     return best

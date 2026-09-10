@@ -79,9 +79,8 @@ def train(
             logged = {f"train/{name}": float(value) for name, value in terms.items()}
             run.log(logged | {"learning_rate": scheduler.get_last_lr()[0]}, step=step)
         metrics = validate(model, validation, config, device)
-        run.log(
-            {f"validation/{name}": value for name, value in metrics.items()}, step=step
-        )
+        logged = {f"validation/{name}": value for name, value in metrics.items()}
+        run.log(logged | {"epoch": epoch}, step=step)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, epoch)
@@ -90,4 +89,5 @@ def train(
                 "no lower validation loss for %d epochs, stopping", settings.patience
             )
             break
+    run.summary["best_validation_loss"] = stopping.best
     return best
