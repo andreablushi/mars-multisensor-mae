@@ -493,7 +493,7 @@ wheels = [
 [[package]]
 name = "mars-multisensor-dataset"
 version = "0.1.0"
-source = { git = "https://github.com/andreablushi/mars-multisensor-dataset?rev=a281d6c#a281d6c0df93cbc9fb9399bb48bbbf783baf40a6" }
+source = { git = "https://github.com/andreablushi/mars-multisensor-dataset?rev=b019467c06bfb3f01f3c9424e4c862172e4b3481#b019467c06bfb3f01f3c9424e4c862172e4b3481" }
 dependencies = [
     { name = "httpx" },
     { name = "numpy" },
@@ -532,7 +532,7 @@ digitalhub = [
 [package.metadata]
 requires-dist = [
     { name = "hydra-core", specifier = ">=1.3,<2" },
-    { name = "mars-multisensor-dataset", git = "https://github.com/andreablushi/mars-multisensor-dataset?rev=a281d6c" },
+    { name = "mars-multisensor-dataset", git = "https://github.com/andreablushi/mars-multisensor-dataset?rev=b019467c06bfb3f01f3c9424e4c862172e4b3481" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "pyarrow", specifier = ">=25.0.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },

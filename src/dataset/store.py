@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import io
 import json
-import math
 import random
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -16,13 +15,18 @@ import pyarrow.parquet as pq
 from building import paths as built
 from building.metadata.feature import FeatureMetadata
 from building.metadata.observation import ObservationMetadata
-from building.preprocessing.common.store import EAST, META, NORTH
+from building.preprocessing.common.store import (
+    EAST,
+    INSIDE,
+    MEASURED,
+    META,
+    NORTH,
+    VALID,
+)
 from shared.disk import parquet
 from shared.disk.files import atomic_path
 
 from dataset.models.observation import Observation
-
-MEASURED = "measured"
 
 
 @dataclass(slots=True)
@@ -98,7 +102,9 @@ class DatasetBuild:
         """
         held = pq.read_table(io.BytesIO(self.read_object(built.FEATURE_METADATA_NAME)))
         return {
-            one.identity: one
+            one.identity: replace(
+                one, centre_lon=one.frame.centre_lon, centre_lat=one.frame.centre_lat
+            )
             for one in (parquet.build(FeatureMetadata, row) for row in held.to_pylist())
         }
 
@@ -142,38 +148,53 @@ class DatasetBuild:
             splits[name].append(identity)
         return splits
 
-    def compute_stats(self) -> dict[str, dict[str, float]]:
-        """Return what each instrument's values run to, without reading one observation.
+    def compute_stats(self) -> dict[str, dict[str, tuple[float, ...]]]:
+        """Return what each channel of each instrument runs to, reading no observation.
 
         Returns:
-            statistics: One entry per instrument that measured anything, keyed
-                as ODE names it, holding how many values it was pooled from,
-                their mean, and their deviation worked from the moments the
-                index rows carry.
+            statistics: One entry per instrument the build holds, keyed as ODE
+                names it, holding how many values each of its channels was
+                pooled from, their mean, and their deviation, all in the order
+                the channels run. A spectral instrument has one channel per
+                band, which is what a patch carries them as, and every other has
+                the single channel its values are. A channel nothing measured
+                carries not a number rather than a mean of none.
         """
-        standing: dict[str, list[ObservationMetadata]] = defaultdict(list)
+        standing: dict[str, list[np.ndarray]] = defaultdict(list)
         for one in self.read_observation_metadata():
-            # An observation measuring nothing leaves them unset, a sounder nan.
-            moments = (one.value_mean, one.value_std)
-            if one.valid_count and all(
-                held is not None and math.isfinite(held) for held in moments
-            ):
-                standing[one.instrument].append(one)
-        statistics = {}
-        for instrument, held in standing.items():
-            total = sum(one.valid_count for one in held)
-            mean = sum(one.valid_count * one.value_mean for one in held) / total
-            second = (
-                sum(
-                    one.valid_count * (one.value_std**2 + one.value_mean**2)
-                    for one in held
-                )
-                / total
+            banded = one.band_valid_count is not None
+            held = np.array(
+                [
+                    one.band_valid_count if banded else (one.valid_count,),
+                    one.band_mean if banded else (one.value_mean,),
+                    one.band_std if banded else (one.value_std,),
+                ],
+                dtype=float,
             )
+            # A channel measuring nothing leaves its moments unset, and a sounder
+            # can carry them as not a number. Either way it pools nothing.
+            standing[one.instrument].append(
+                np.where(np.isfinite(held).all(axis=0), held, 0.0)
+            )
+        statistics = {}
+        for instrument, rows in standing.items():
+            # A build whose observations disagree on their bands pools what each
+            # of them holds, rather than the shortest of them.
+            pooled = np.zeros((3, max(one.shape[1] for one in rows)))
+            for counts, means, deviations in rows:
+                at = slice(0, counts.size)
+                pooled[0, at] += counts
+                pooled[1, at] += counts * means
+                pooled[2, at] += counts * (deviations**2 + means**2)
+            total = pooled[0]
+            measured = total > 0
+            nothing = np.full(total.size, np.nan)
+            mean = np.divide(pooled[1], total, out=nothing.copy(), where=measured)
+            second = np.divide(pooled[2], total, out=nothing.copy(), where=measured)
             statistics[instrument] = {
-                "count": total,
-                "mean": mean,
-                "deviation": math.sqrt(max(second - mean**2, 0.0)),
+                "count": tuple(total.astype(int).tolist()),
+                "mean": tuple(mean.tolist()),
+                "deviation": tuple(np.sqrt(np.maximum(second - mean**2, 0.0)).tolist()),
             }
         return statistics
 
@@ -190,6 +211,8 @@ class DatasetBuild:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
             arrays = {name: held[name] for name in held.files if name != META}
+        for name in (INSIDE, VALID):
+            arrays.pop(name, None)
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
