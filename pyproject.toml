@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "hydra-core>=1.3,<2",
-    "mars-multisensor-dataset @ git+https://github.com/andreablushi/mars-multisensor-dataset@main",
+    "mars-multisensor-dataset @ https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/main.tar.gz",
     "numpy>=2.5.2",
     "pyarrow>=25.0.1",
     "pyyaml>=6.0.3",

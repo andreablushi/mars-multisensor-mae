@@ -639,7 +639,7 @@ wheels = [
 [[package]]
 name = "mars-multisensor-dataset"
 version = "0.1.0"
-source = { git = "https://github.com/andreablushi/mars-multisensor-dataset?rev=main#8883bf57e0d943e35e408df373ddef0ed5b184a2" }
+source = { url = "https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/main.tar.gz" }
 dependencies = [
     { name = "httpx" },
     { name = "numpy" },
@@ -649,6 +649,19 @@ dependencies = [
     { name = "shapely" },
     { name = "tifffile" },
     { name = "zarr" },
+]
+sdist = { hash = "sha256:4941c315fba7f65dd92eab101fb2215ec6879d411db7a7729688ad1abf56d321" }
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "numpy", specifier = ">=2.5.2" },
+    { name = "pyarrow", specifier = ">=25.0.1" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rich", specifier = ">=14.0.0" },
+    { name = "shapely", specifier = ">=2.1.2" },
+    { name = "tifffile", specifier = ">=2026.8.23" },
+    { name = "zarr", specifier = ">=3.3" },
 ]
 
 [[package]]
@@ -679,7 +692,7 @@ digitalhub = [
 [package.metadata]
 requires-dist = [
     { name = "hydra-core", specifier = ">=1.3,<2" },
-    { name = "mars-multisensor-dataset", git = "https://github.com/andreablushi/mars-multisensor-dataset?rev=main" },
+    { name = "mars-multisensor-dataset", url = "https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/main.tar.gz" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "pyarrow", specifier = ">=25.0.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
