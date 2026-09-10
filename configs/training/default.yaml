@@ -16,6 +16,8 @@ neighbours: 5
 # How many processes read features beside the training.
 workers: 4
 
-# Where checkpoints land, relative to the repository, and the wandb project.
+# Where checkpoints land, relative to the repository, and the wandb project and
+# the user or team it belongs to.
 checkpoints: checkpoints
 project: mars-multisensor-mae
+entity: andreablushi

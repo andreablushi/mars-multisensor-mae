@@ -89,6 +89,7 @@ class TrainingConfig:
         workers: How many processes read features beside the training.
         checkpoints: Where checkpoints are written, relative to the repository.
         project: The Weights & Biases project the run is tracked under.
+        entity: The Weights & Biases user or team that project belongs to.
     """
 
     epochs: int
@@ -102,6 +103,7 @@ class TrainingConfig:
     workers: int
     checkpoints: str
     project: str
+    entity: str
 
 
 @dataclass

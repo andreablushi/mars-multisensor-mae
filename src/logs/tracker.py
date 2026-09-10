@@ -20,4 +20,8 @@ def start_run(config: Config) -> Run:
     Returns:
         run: The run, to log to and to finish.
     """
-    return wandb.init(project=config.training.project, config=asdict(config))
+    return wandb.init(
+        project=config.training.project,
+        entity=config.training.entity,
+        config=asdict(config),
+    )
