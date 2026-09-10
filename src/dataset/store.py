@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import random
 from collections import defaultdict
 from collections.abc import Callable
@@ -13,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import pyarrow.parquet as pq
 from building import paths as built
+from building.common.layout import WAVELENGTH
 from building.metadata.feature import FeatureMetadata
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import (
@@ -148,53 +150,43 @@ class DatasetBuild:
             splits[name].append(identity)
         return splits
 
-    def compute_stats(self) -> dict[str, dict[str, tuple[float, ...]]]:
-        """Return what each channel of each instrument runs to, reading no observation.
+    def compute_stats(self) -> dict[str, dict[str, float]]:
+        """Return what each instrument's values run to, without reading one observation.
 
         Returns:
-            statistics: One entry per instrument the build holds, keyed as ODE
-                names it, holding how many values each of its channels was
-                pooled from, their mean, and their deviation, all in the order
-                the channels run. A spectral instrument has one channel per
-                band, which is what a patch carries them as, and every other has
-                the single channel its values are. A channel nothing measured
-                carries not a number rather than a mean of none.
+            statistics: One entry per instrument whose values are the same
+                values from one observation to the next, keyed as ODE names it,
+                holding how many were pooled, their mean, and their deviation. A
+                spectral instrument is absent: the masking drops the bands each
+                of its observations refuses, so band three of one is not band
+                three of another, and a patch of one is normalised by the band
+                moments its own index row carries.
         """
-        standing: dict[str, list[np.ndarray]] = defaultdict(list)
+        standing: dict[str, list[ObservationMetadata]] = defaultdict(list)
         for one in self.read_observation_metadata():
-            banded = one.band_valid_count is not None
-            held = np.array(
-                [
-                    one.band_valid_count if banded else (one.valid_count,),
-                    one.band_mean if banded else (one.value_mean,),
-                    one.band_std if banded else (one.value_std,),
-                ],
-                dtype=float,
-            )
-            # A channel measuring nothing leaves its moments unset, and a sounder
-            # can carry them as not a number. Either way it pools nothing.
-            standing[one.instrument].append(
-                np.where(np.isfinite(held).all(axis=0), held, 0.0)
-            )
+            # An observation measuring nothing leaves them unset, a sounder nan.
+            moments = (one.value_mean, one.value_std)
+            if (
+                WAVELENGTH not in one.axes
+                and one.valid_count
+                and all(held is not None and math.isfinite(held) for held in moments)
+            ):
+                standing[one.instrument].append(one)
         statistics = {}
-        for instrument, rows in standing.items():
-            # A build whose observations disagree on their bands pools what each
-            # of them holds, rather than the shortest of them.
-            pooled = np.zeros((3, max(one.shape[1] for one in rows)))
-            for counts, means, deviations in rows:
-                at = slice(0, counts.size)
-                pooled[0, at] += counts
-                pooled[1, at] += counts * means
-                pooled[2, at] += counts * (deviations**2 + means**2)
-            total = pooled[0]
-            measured = total > 0
-            nothing = np.full(total.size, np.nan)
-            mean = np.divide(pooled[1], total, out=nothing.copy(), where=measured)
-            second = np.divide(pooled[2], total, out=nothing.copy(), where=measured)
+        for instrument, held in standing.items():
+            total = sum(one.valid_count for one in held)
+            mean = sum(one.valid_count * one.value_mean for one in held) / total
+            second = (
+                sum(
+                    one.valid_count * (one.value_std**2 + one.value_mean**2)
+                    for one in held
+                )
+                / total
+            )
             statistics[instrument] = {
-                "count": tuple(total.astype(int).tolist()),
-                "mean": tuple(mean.tolist()),
-                "deviation": tuple(np.sqrt(np.maximum(second - mean**2, 0.0)).tolist()),
+                "count": total,
+                "mean": mean,
+                "deviation": math.sqrt(max(second - mean**2, 0.0)),
             }
         return statistics
 
