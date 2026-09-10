@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 
@@ -32,3 +34,16 @@ def patchsize_of(config: dict, instrument: str) -> int:
         patchsize: What that instrument is cut by, or what everything unnamed is.
     """
     return config["patchsize"].get(instrument, config["patchsize"]["default"])
+
+
+def build_root(config: dict) -> Path:
+    """Return where the build a read is made of sits on this machine.
+
+    Args:
+        config: The choices a read is made with, which name the build and the
+            directory every build sits under.
+
+    Returns:
+        root: That build's own directory, which need not exist yet.
+    """
+    return REPO_ROOT / config["root"] / config["build"]

@@ -1,8 +1,5 @@
 # What a run reads of the published dataset, and how it cuts what it reads.
 
-# The DigitalHub project the build is published in.
-project: mars-multisensor-features
-
 # The build to read, which is published as dataset-<build>.
 build: small
 
@@ -19,9 +16,10 @@ patchsize:
   # A gridded tile at about 460 m a pixel, and coarser still towards a pole.
   MOLA: 16
 
-# Where the run keeps the crops it has fetched, which a job is given a scratch
-# directory for.
-cache_dir: .cache/crops
+# Where every build sits on this machine, under a directory of its own name. A
+# build brought down whole fills it, and a build read from the platform fills it
+# as it is read.
+root: data/dataset
 
 # The shares the features are split into, and the number that fixes the split.
 split:

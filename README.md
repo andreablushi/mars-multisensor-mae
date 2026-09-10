@@ -26,4 +26,42 @@ The dataset lives on [DigitalHub](https://scc-digitalhub.github.io/docs/0.15/), 
 uv sync --group digitalhub
 dhcli register <your-digitalhub-core-endpoint>
 dhcli login                                    # opens a browser tab
+
+cp .env.example .env                           # once, then fill it in
 ```
+
+A read outlasts the credentials it is started with: those lapse after some six
+hours, and a training run still going then can fetch nothing. So it mints its
+own instead. It presents a personal access token, which the platform holds as a
+secret named `DHCORE_PERSONAL_ACCESS_TOKEN` and hands the job under that name.
+The token names neither who issues credentials nor who asks for them, so `.env`
+carries those two, the same pair the dataset repository's own `.env` holds.
+
+## Reading the dataset
+
+`src/dataset` reads one build out of one directory, `data/dataset/<build>`, and
+knows nothing of where that build came from. A build brought down whole sits
+there and is read off disk:
+
+```python
+from dataset.config import build_root, load_config
+from dataset.store import Build
+
+config = load_config()
+build = Build(build_root(config))
+```
+
+A build published on DigitalHub is fetched a crop at a time into that same
+directory, so a later pass over the same crops asks the platform for none of
+them:
+
+```python
+from dh.store import published_build
+
+build = published_build(config)
+```
+
+Everything that reaches the platform is in `scripts/dh`: the project the builds
+are published in, the artifact each is published under, and the credentials a
+long read mints again. `src/dataset/config.yaml` names the build to read and
+where builds sit, which a local read needs just as much.
