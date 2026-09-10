@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import math
+import random
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -96,6 +98,69 @@ class DatasetBuild:
         for one in self.read_observation_metadata():
             standing[one.feature].append(one)
         return dict(standing)
+
+    def split_features(self, config: dict) -> dict[str, list[tuple[str, str]]]:
+        """Return which features each split holds, whole features at a time.
+
+        Args:
+            config: The choices a read is made with, which carry the share each
+                split holds and the number that fixes where a feature falls.
+
+        Returns:
+            splits: The features of each split, keyed as the config names it. A
+                feature falls in one split by its name alone, so no two patches
+                of it straddle two splits and a later build that adds features
+                leaves the ones already placed where they were.
+        """
+        shares = config["split"]
+        total = sum(shares.values())
+        splits: dict[str, list[tuple[str, str]]] = {name: [] for name in shares}
+        for identity in self.read_observation_metadata_by_feature():
+            drawn = (
+                random.Random(f"{config['seed']}/{'/'.join(identity)}").random() * total
+            )
+            running = 0.0
+            for name in shares:
+                running += shares[name]
+                if drawn < running:
+                    break
+            splits[name].append(identity)
+        return splits
+
+    def compute_stats(self) -> dict[str, dict[str, float]]:
+        """Return what each instrument's values run to, without reading one crop.
+
+        Returns:
+            statistics: One entry per instrument that measured anything, keyed
+                as ODE names it, holding how many values it was pooled from,
+                their mean, and their deviation worked from the moments the
+                index rows carry.
+        """
+        standing: dict[str, list[ObservationMetadata]] = defaultdict(list)
+        for one in self.read_observation_metadata():
+            # A crop measuring nothing leaves them unset, a sounder can carry nan.
+            moments = (one.value_mean, one.value_std)
+            if one.valid_count and all(
+                held is not None and math.isfinite(held) for held in moments
+            ):
+                standing[one.instrument].append(one)
+        statistics = {}
+        for instrument, held in standing.items():
+            total = sum(one.valid_count for one in held)
+            mean = sum(one.valid_count * one.value_mean for one in held) / total
+            second = (
+                sum(
+                    one.valid_count * (one.value_std**2 + one.value_mean**2)
+                    for one in held
+                )
+                / total
+            )
+            statistics[instrument] = {
+                "count": total,
+                "mean": mean,
+                "deviation": math.sqrt(max(second - mean**2, 0.0)),
+            }
+        return statistics
 
     def read_crop(self, path: str) -> Crop:
         """Return one stored observation, read out of the object it was written as.
