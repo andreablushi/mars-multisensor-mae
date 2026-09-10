@@ -99,26 +99,25 @@ class DatasetBuild:
             standing[one.feature].append(one)
         return dict(standing)
 
-    def split_features(self, config: dict) -> dict[str, list[tuple[str, str]]]:
+    def split_features(
+        self, shares: dict[str, float], seed: int
+    ) -> dict[str, list[tuple[str, str]]]:
         """Return which features each split holds, whole features at a time.
 
         Args:
-            config: The choices a read is made with, which carry the share each
-                split holds and the number that fixes where a feature falls.
+            shares: How much of the build each split holds, keyed by its name.
+            seed: The number that fixes where a feature falls.
 
         Returns:
-            splits: The features of each split, keyed as the config names it. A
+            splits: The features of each split, keyed as the shares name them. A
                 feature falls in one split by its name alone, so no two patches
                 of it straddle two splits and a later build that adds features
                 leaves the ones already placed where they were.
         """
-        shares = config["split"]
         total = sum(shares.values())
         splits: dict[str, list[tuple[str, str]]] = {name: [] for name in shares}
         for identity in self.read_observation_metadata_by_feature():
-            drawn = (
-                random.Random(f"{config['seed']}/{'/'.join(identity)}").random() * total
-            )
+            drawn = random.Random(f"{seed}/{'/'.join(identity)}").random() * total
             running = 0.0
             for name in shares:
                 running += shares[name]

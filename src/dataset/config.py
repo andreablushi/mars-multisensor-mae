@@ -23,19 +23,6 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def patchsize_of(config: dict, instrument: str) -> int:
-    """Return how far a patch of one instrument runs along every axis it is cut on.
-
-    Args:
-        config: The choices a read is made with.
-        instrument: The instrument that took it, as ODE names it.
-
-    Returns:
-        patchsize: What that instrument is cut by, or what everything unnamed is.
-    """
-    return config["patchsize"].get(instrument, config["patchsize"]["default"])
-
-
 def build_root(config: dict) -> Path:
     """Return where the build a read is made of sits on this machine.
 

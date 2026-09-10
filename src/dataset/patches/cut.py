@@ -8,7 +8,6 @@ from collections.abc import Iterator
 import numpy as np
 from building.metadata.observation import ObservationMetadata
 
-from dataset.config import patchsize_of
 from dataset.models.crop import Crop
 from dataset.models.patch import Patch
 from dataset.patches import grid, place
@@ -17,7 +16,7 @@ WAVELENGTHS = "wavelengths"
 
 
 def cut_patches(
-    crop: Crop, record: ObservationMetadata, config: dict
+    crop: Crop, record: ObservationMetadata, patchsize: int
 ) -> Iterator[Patch]:
     """Yield every patch of one crop.
 
@@ -25,8 +24,8 @@ def cut_patches(
         crop: The crop to cut, whose axes say which of them are tiled.
         record: What the index says the crop is, which carries the ground it
             spans and when it was taken.
-        config: The choices a read is made with, which say how far a patch of
-            this instrument runs along every axis it is cut on.
+        patchsize: How far a patch of this instrument runs along every axis
+            it is cut on.
 
     Yields:
         patch: Every whole patch of the crop, in the order its axes run, each
@@ -34,7 +33,6 @@ def cut_patches(
             tens of thousands, so they are yielded one at a time and never
             gathered: a feature runs to over a million.
     """
-    patchsize = patchsize_of(config, crop.instrument)
     lengths = grid.patch_lengths(crop.values.shape, crop.axes, patchsize)
     counts = grid.patch_counts(crop.values.shape, crop.axes, patchsize)
     for one in range(math.prod(counts)):

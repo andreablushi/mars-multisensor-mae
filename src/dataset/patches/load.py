@@ -12,7 +12,9 @@ from dataset.store import DatasetBuild
 
 
 def load_patches(
-    observations: Iterable[ObservationMetadata], build: DatasetBuild, config: dict
+    observations: Iterable[ObservationMetadata],
+    build: DatasetBuild,
+    patchsize: dict[str, int],
 ) -> Iterator[Patch]:
     """Yield every patch of every observation of one feature.
 
@@ -20,11 +22,13 @@ def load_patches(
         observations: The feature's own index rows, every crop the build holds
             of it.
         build: The published build the crops are read from.
-        config: The choices a read is made with, which say how each crop is cut.
+        patchsize: How far a patch runs along every axis it is cut on, by
+            instrument, and under "default" for every instrument unnamed.
 
     Yields:
         patch: Every patch of every crop, one crop at a time, so only the crop
             being cut is held in memory. A feature runs to over a million.
     """
     for record in observations:
-        yield from cut_patches(build.read_crop(record.path), record, config)
+        cut_by = patchsize.get(record.instrument, patchsize["default"])
+        yield from cut_patches(build.read_crop(record.path), record, cut_by)
