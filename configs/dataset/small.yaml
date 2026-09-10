@@ -1,0 +1,30 @@
+# What a run reads of the published dataset, and how it cuts what it reads.
+
+# The build to read, which is published as dataset-<build>.
+build: small
+
+# Where every build sits on this machine, under a directory of its own name. A
+# build brought down whole fills it, and a build read from the platform fills it
+# as it is read.
+root: data/dataset
+
+# How far a patch runs along every axis of an observation, for each instrument.
+# A wavelength axis is kept whole, as the channels of the patch.
+patchsize:
+  default: 16
+  # A scan at about 6 m a pixel, so a wider patch still covers little ground.
+  CTX: 64
+  # A survey at about 200 m a pixel, its 400 odd bands the channels of a patch.
+  CRISM: 16
+  # A radargram walks one line, and its other axis is depth rather than ground.
+  SHARAD: 16
+  # A gridded tile at about 460 m a pixel, and coarser still towards a pole.
+  MOLA: 16
+
+# The shares the features are split into, and the number that fixes the split.
+split:
+  train: 0.8
+  validation: 0.1
+  test: 0.1
+  
+seed: 42

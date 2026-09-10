@@ -1,0 +1,36 @@
+# What a run submitted to DigitalHub is given, and what it publishes.
+
+# The project every run and every published model belongs to.
+project: mars-multisensor-features
+
+# The repository the platform clones, and where that clone lands on the job.
+repository: https://github.com/andreablushi/mars-multisensor-mae
+source_root: /shared
+
+# The image a job is built on, its extras what the platform itself asks for
+python_version: PYTHON3_13
+image_extras:
+  - digitalhub>=0.15,<0.16
+  - digitalhub-runtime-python>=0.15,<0.16
+
+# What the platform gives each stage. A profile settles the cores, the GPU and
+# the memory of the box, and which queue the job waits in: 1xrtxa5000 and 1xv100
+# are the reserved ones, the -shared ones (1xv100-shared up to 8xv100-shared,
+# 1xrtxa5000-shared up to 3xrtxa5000-shared) queue on the shared GPUs. The disk
+# holds what the run fetches of the dataset.
+resources:
+  training:
+    profile: 1xrtxa5000-shared
+    cpu: 1
+    gpu: 1
+    memory: 8Gi
+    disk: 64Gi
+
+# The function each run is registered as, the project scoping it so it needs no prefix
+functions:
+  training: train-mae
+
+# What each stage publishes, and what it reads that the dataset repository published.
+publishes:
+  dataset: dataset
+  model: model

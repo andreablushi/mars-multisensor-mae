@@ -1,0 +1,20 @@
+# How a run trains, validates and stops.
+
+epochs: 100
+batch_size: 32
+learning_rate: 0.00015
+weight_decay: 0.05
+warmup_epochs: 5
+patience: 10
+
+# How much the batch uniformity term weighs against the reconstruction.
+uniformity_weight: 0.005
+
+# How many nearest features a retrieval metric looks at.
+neighbours: 5
+
+# How many processes read features beside the training.
+workers: 4
+
+# Where checkpoints land, relative to the repository.
+checkpoints: checkpoints
