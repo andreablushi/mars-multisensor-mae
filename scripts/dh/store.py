@@ -27,7 +27,7 @@ def published_build(config: dict) -> DatasetBuild:
             and where it lands on this machine.
 
     Returns:
-        build: The build, reading off disk every crop it has already fetched and
+        build: The build, reading off disk every observation it has already fetched and
             asking the store for the rest.
     """
     load_dotenv(REPO_ROOT / ".env")

@@ -20,7 +20,7 @@ from building.preprocessing.common.store import EAST, INSIDE, META, NORTH, VALID
 from shared.disk import parquet
 from shared.disk.files import atomic_path
 
-from dataset.models.crop import Crop
+from dataset.models.observation import Observation
 
 
 @dataclass(slots=True)
@@ -30,7 +30,7 @@ class DatasetBuild:
     Attributes:
         root: Where the build sits on this machine. A build brought down whole
             fills it, and a build read from elsewhere fills it as it is read,
-            so a later pass over the same crops fetches none of them.
+            so a later pass over the same observations fetches none of them.
         fetch: How one object is brought down when the root holds none of it,
             and None for a build that is already whole on disk.
     """
@@ -74,12 +74,12 @@ class DatasetBuild:
         return json.loads(self.read_object(built.DATASET_MANIFEST_NAME))
 
     def read_observation_metadata(self) -> list[ObservationMetadata]:
-        """Return what every crop of the build is, without reading one of them.
+        """Return what every observation of the build is, without reading one.
 
         Returns:
-            records: One row per crop, in the order the index holds them. The
-                file is read under no schema, so a build carrying columns the
-                row model does not declare is read all the same.
+            records: One row per observation, in the order the index holds them.
+                The file is read under no schema, so a build carrying columns
+                the row model does not declare is read all the same.
         """
         held = pq.read_table(
             io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
@@ -89,7 +89,7 @@ class DatasetBuild:
     def read_observation_metadata_by_feature(
         self,
     ) -> dict[tuple[str, str], list[ObservationMetadata]]:
-        """Return the crops of each feature, keyed by what tells that feature apart.
+        """Return the observations of each feature, keyed by what tells it apart.
 
         Returns:
             standing: The rows of each feature, in the order the index holds them.
@@ -127,7 +127,7 @@ class DatasetBuild:
         return splits
 
     def compute_stats(self) -> dict[str, dict[str, float]]:
-        """Return what each instrument's values run to, without reading one crop.
+        """Return what each instrument's values run to, without reading one observation.
 
         Returns:
             statistics: One entry per instrument that measured anything, keyed
@@ -137,7 +137,7 @@ class DatasetBuild:
         """
         standing: dict[str, list[ObservationMetadata]] = defaultdict(list)
         for one in self.read_observation_metadata():
-            # A crop measuring nothing leaves them unset, a sounder can carry nan.
+            # An observation measuring nothing leaves them unset, a sounder nan.
             moments = (one.value_mean, one.value_std)
             if one.valid_count and all(
                 held is not None and math.isfinite(held) for held in moments
@@ -161,18 +161,19 @@ class DatasetBuild:
             }
         return statistics
 
-    def read_crop(self, path: str) -> Crop:
+    def read_observation(self, path: str) -> Observation:
         """Return one stored observation, read out of the object it was written as.
 
         Args:
             path: Where that object sits, as the index names it.
 
         Returns:
-            crop: The observation, its values in the machine's byte order and
-                every sample counted as measured where the build stored no mask.
+            observation: The observation, its values in the machine's byte order
+                and every sample counted as measured where the build stored no
+                mask.
         """
         with np.load(io.BytesIO(self.read_object(path))) as held:
-            # What the crop is, is stored beside its arrays as one json string.
+            # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
             arrays = {name: native(held[name]) for name in held.files if name != META}
         axes = tuple(described["axes"])
@@ -190,7 +191,7 @@ class DatasetBuild:
             if mask is not None:
                 measured &= mask
         polar = described["polar"]
-        return Crop(
+        return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
             measurement=described["measurement"],

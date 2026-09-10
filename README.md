@@ -51,9 +51,9 @@ config = load_config()
 build = DatasetBuild(build_root(config))
 ```
 
-A build published on DigitalHub is fetched a crop at a time into that same
-directory, so a later pass over the same crops asks the platform for none of
-them:
+A build published on DigitalHub is fetched an observation at a time into that
+same directory, so a later pass over the same observations asks the platform for
+none of them:
 
 ```python
 from dh.store import published_build

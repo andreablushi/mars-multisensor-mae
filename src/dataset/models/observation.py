@@ -9,7 +9,7 @@ from building.common.layout import GROUND
 
 
 @dataclass(frozen=True, slots=True)
-class Crop:
+class Observation:
     """One cropped observation, its arrays and what says how to read them.
 
     Attributes:

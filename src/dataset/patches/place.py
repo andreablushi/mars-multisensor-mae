@@ -1,4 +1,4 @@
-"""Where one patch of a crop sits on Mars, worked back from the offsets it carries."""
+"""Where one patch of an observation sits on Mars, worked back from its offsets."""
 
 from __future__ import annotations
 
@@ -8,15 +8,17 @@ import numpy as np
 from building.preprocessing.common.store import DEGREES, EAST, NORTH
 from shared.maths import geodesy
 
-from dataset.models.crop import Crop
+from dataset.models.observation import Observation
 
 
-def placement_of(crop: Crop, window: Sequence[slice]) -> tuple[float, float]:
-    """Return where the centre of one patch of a crop sits.
+def placement_of(
+    observation: Observation, window: Sequence[slice]
+) -> tuple[float, float]:
+    """Return where the centre of one patch of an observation sits.
 
     Args:
-        crop: The crop it was cut from, which carries the offset every sample of
-            it stands at and the centre they stand from.
+        observation: The observation it was cut from, which carries the offset
+            every sample of it stands at and the centre they stand from.
         window: What the patch keeps of each axis of the values, in the axes'
             own order.
 
@@ -24,25 +26,25 @@ def placement_of(crop: Crop, window: Sequence[slice]) -> tuple[float, float]:
         lon: The longitude of the patch centre in degrees, -180 to 180.
         lat: Its latitude in degrees.
     """
-    held = dict(zip(crop.dims[crop.measurement], window, strict=True))
+    held = dict(zip(observation.dims[observation.measurement], window, strict=True))
 
     def middle(name: str) -> float:
         """Return one offset array where the middle of the patch falls on it."""
         taken = tuple(
-            (held[one].start + held[one].stop) // 2 for one in crop.dims[name]
+            (held[one].start + held[one].stop) // 2 for one in observation.dims[name]
         )
-        return float(getattr(crop, name)[taken])
+        return float(getattr(observation, name)[taken])
 
     down, across = middle(NORTH), middle(EAST)
-    if crop.position_units == DEGREES:
+    if observation.position_units == DEGREES:
         return (
-            float(geodesy.normalise_longitude(crop.centre_lon + across)),
-            crop.centre_lat + down,
+            float(geodesy.normalise_longitude(observation.centre_lon + across)),
+            observation.centre_lat + down,
         )
     centre_x, centre_y = geodesy.stereographic_forward(
-        crop.centre_lon, crop.centre_lat, *crop.polar
+        observation.centre_lon, observation.centre_lat, *observation.polar
     )
     lon, lat = geodesy.stereographic_inverse(
-        np.array(across + centre_x), np.array(down + centre_y), *crop.polar
+        np.array(across + centre_x), np.array(down + centre_y), *observation.polar
     )
     return float(lon), float(lat)
