@@ -43,7 +43,10 @@ hours, and a training run still going then can fetch nothing. So it mints its
 own instead. It presents a personal access token, which the platform holds as a
 secret named `DHCORE_PERSONAL_ACCESS_TOKEN` and hands the job under that name.
 The token names neither who issues credentials nor who asks for them, so `.env`
-carries those two, the same pair the dataset repository's own `.env` holds.
+carries those two, the same pair the dataset repository's own `.env` holds. It
+also carries the Weights & Biases entity and project a run is tracked under,
+which a submission forwards to the job; the key is a second platform secret,
+`WANDB_API_KEY`, and a run here reads it from `.env` too.
 
 ## Reading the dataset
 

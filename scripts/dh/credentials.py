@@ -13,24 +13,23 @@ TOKEN = "DHCORE_PERSONAL_ACCESS_TOKEN"
 
 WANDB_KEY = "WANDB_API_KEY"
 
-MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
+FORWARDED = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID", "WANDB_ENTITY", "WANDB_PROJECT")
 
 
-def minting_envs() -> list[dict[str, str]]:
-    """Return what a job is told so it can mint credentials of its own.
+def forwarded_envs() -> list[dict[str, str]]:
+    """Return what a job is told from the `.env` beside this file's repository.
 
     Returns:
-        told: The authority to ask and the client to ask as, each as the platform
-            spells a variable, read from the environment or from the `.env` beside
-            this file's repository. The token names neither, so a job handed it
-            alone has nowhere to present it.
+        told: The authority to ask for credentials and the client to ask as,
+            which the token names neither of, and the entity and project the
+            run is tracked under, each as the platform spells a variable.
 
     Raises:
-        RuntimeError: When either is unset, which a job cannot mint without.
+        RuntimeError: When any is unset, which a job cannot run without.
     """
     load_dotenv(REPO_ROOT / ".env")
     told = []
-    for name in MINTED_FROM:
+    for name in FORWARDED:
         value = os.environ.get(name)
         if not value:
             raise RuntimeError(f"{name} is unset; see .env.example")
