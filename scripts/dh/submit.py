@@ -58,10 +58,10 @@ def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> i
             "mem": asked["memory"],
             "disk": asked["disk"],
         },
-        secrets=[credentials.TOKEN, credentials.WANDB_KEY],
+        secrets=credentials.SECRETS,
         envs=[
             {"name": "PYTHONPATH", "value": f"{root}:{root}/src:{root}/scripts"},
-            *credentials.forwarded_envs(),
+            *credentials.minting_envs(),
         ],
         parameters={"overrides": [*overrides, f"training.workers={int(asked['cpu'])}"]},
         wait=False,

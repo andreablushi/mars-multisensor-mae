@@ -44,9 +44,8 @@ own instead. It presents a personal access token, which the platform holds as a
 secret named `DHCORE_PERSONAL_ACCESS_TOKEN` and hands the job under that name.
 The token names neither who issues credentials nor who asks for them, so `.env`
 carries those two, the same pair the dataset repository's own `.env` holds. It
-also carries the Weights & Biases entity and project a run is tracked under,
-which a submission forwards to the job; the key is a second platform secret,
-`WANDB_API_KEY`, and a run here reads it from `.env` too.
+also carries the Weights & Biases entity, project and key a run here is tracked
+with; a job is handed the same three as platform secrets of the same names.
 
 ## Reading the dataset
 
