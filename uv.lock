@@ -683,6 +683,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "ruff" },
+    { name = "wandb-workspaces" },
 ]
 digitalhub = [
     { name = "digitalhub" },
@@ -703,7 +704,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = ">=0.16.2" }]
+dev = [
+    { name = "ruff", specifier = ">=0.16.2" },
+    { name = "wandb-workspaces", specifier = ">=0.4.11" },
+]
 digitalhub = [
     { name = "digitalhub", specifier = ">=0.15,<0.16" },
     { name = "digitalhub-runtime-python", specifier = ">=0.15,<0.16" },
@@ -1890,6 +1894,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c0/9a/6da88bb45ea28c83eeb889473f84d0d505ed5f15be40726f125621fa7467/wandb-0.29.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:2bdb72ba809192a1a170830bea1071804d762769448f3ceb822b41160b9f6098", size = 30074151, upload-time = "2026-08-26T23:43:05.026Z" },
     { url = "https://files.pythonhosted.org/packages/c7/f9/96746f484690cd23fbb84c6fd0364e8c462e804dede9efe50a98b4f27ddd/wandb-0.29.0-py3-none-win_amd64.whl", hash = "sha256:92dca672417404d2cb882fe34f38d602ddcb54ece38716f7c76630e06fc62360", size = 27040796, upload-time = "2026-08-26T23:43:07.444Z" },
     { url = "https://files.pythonhosted.org/packages/94/74/e11e2ad886ac35bb5d568308f279357868de233e0dfaec11b9ddeed53164/wandb-0.29.0-py3-none-win_arm64.whl", hash = "sha256:ac523a1cd863f1a883852146f451ec9b950b0d2278d6e3bbedd099c713d14047", size = 24663195, upload-time = "2026-08-26T23:43:09.896Z" },
+]
+
+[[package]]
+name = "wandb-workspaces"
+version = "0.4.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "wandb" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/60/9e/61fb99f482efc17397817d5dec171551f41e73bcd8ec922716c82033210b/wandb_workspaces-0.4.11.tar.gz", hash = "sha256:ac69e1dea4d9aacce2398c4c849df35981074732b8ecedf520ada80ea2ab9bea", size = 229028, upload-time = "2026-09-01T13:37:51.404Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/3d/72c3dc08194a8d5a101bbc4fdbb722f593c37c996fb8185dcc562bc24c2f/wandb_workspaces-0.4.11-py3-none-any.whl", hash = "sha256:5dd8031a1111eef0b110cc5402d57fabe97094ef1d698aedc7c426fd2778ed6b", size = 115843, upload-time = "2026-09-01T13:37:50.143Z" },
 ]
 
 [[package]]

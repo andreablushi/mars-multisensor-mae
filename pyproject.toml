@@ -29,6 +29,7 @@ module-name = ["architecture", "config", "dataset", "evaluation", "logs", "train
 [dependency-groups]
 dev = [
     "ruff>=0.16.2",
+    "wandb-workspaces>=0.4.11",
 ]
 digitalhub = [
     "digitalhub>=0.15,<0.16",
