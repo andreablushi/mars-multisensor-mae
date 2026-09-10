@@ -3,6 +3,11 @@
 # The build to read, which is published as dataset-<build>.
 build: small
 
+# Where every build sits on this machine, under a directory of its own name. A
+# build brought down whole fills it, and a build read from the platform fills it
+# as it is read.
+root: data/dataset
+
 # How far a patch runs along every axis of an observation, for each instrument.
 # A wavelength axis is kept whole, as the channels of the patch.
 patchsize:
@@ -15,11 +20,6 @@ patchsize:
   SHARAD: 16
   # A gridded tile at about 460 m a pixel, and coarser still towards a pole.
   MOLA: 16
-
-# Where every build sits on this machine, under a directory of its own name. A
-# build brought down whole fills it, and a build read from the platform fills it
-# as it is read.
-root: data/dataset
 
 # The shares the features are split into, and the number that fixes the split.
 split:

@@ -9,7 +9,8 @@ from botocore.exceptions import ClientError
 from digitalhub.stores.client.base.factory import get_client
 from dotenv import load_dotenv
 
-from dataset.config import REPO_ROOT, build_root
+from config.paths import REPO_ROOT, build_root
+from config.schema import DatasetConfig
 from dataset.store import DatasetBuild
 
 PROJECT = "mars-multisensor-features"
@@ -19,12 +20,12 @@ EXPIRED = frozenset(
 )
 
 
-def published_build(config: dict) -> DatasetBuild:
+def published_build(dataset: DatasetConfig) -> DatasetBuild:
     """Return the build the config names, read from the platform's store.
 
     Args:
-        config: The choices a read is made with, which name the build to read
-            and where it lands on this machine.
+        dataset: What a run reads, which names the build to read and where it
+            lands on this machine.
 
     Returns:
         build: The build, reading off disk every observation it has already fetched and
@@ -32,7 +33,7 @@ def published_build(config: dict) -> DatasetBuild:
     """
     load_dotenv(REPO_ROOT / ".env")
     project = dh.get_or_create_project(PROJECT)
-    published = urlparse(project.get_artifact(f"dataset-{config['build']}").spec.path)
+    published = urlparse(project.get_artifact(f"dataset-{dataset.build}").spec.path)
     bucket = published.netloc
     prefix = published.path.lstrip("/").rstrip("/") + "/"
     client = dh.get_s3_client()
@@ -52,4 +53,4 @@ def published_build(config: dict) -> DatasetBuild:
             fetched = client.get_object(Bucket=bucket, Key=key)
         return fetched["Body"].read()
 
-    return DatasetBuild(root=build_root(config), fetch=fetch)
+    return DatasetBuild(root=build_root(dataset), fetch=fetch)

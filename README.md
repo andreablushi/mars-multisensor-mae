@@ -44,11 +44,12 @@ knows nothing of where that build came from. A build brought down whole sits
 there and is read off disk:
 
 ```python
-from dataset.config import build_root, load_config
+from config.load import load_config
+from config.paths import build_root
 from dataset.store import DatasetBuild
 
 config = load_config()
-build = DatasetBuild(build_root(config))
+build = DatasetBuild(build_root(config.dataset))
 ```
 
 A build published on DigitalHub is fetched an observation at a time into that
@@ -58,10 +59,27 @@ none of them:
 ```python
 from dh.store import published_build
 
-build = published_build(config)
+build = published_build(config.dataset)
 ```
 
 Everything that reaches the platform is in `scripts/dh`: the project the builds
 are published in, the artifact each is published under, and the credentials a
-long read mints again. `src/dataset/config.yaml` names the build to read and
+long read mints again. `configs/dataset/<build>.yaml` names the build to read and
 where builds sit, which a local read needs just as much.
+
+## Configs
+
+`configs/` holds one file per build under `dataset/` and one per architecture
+under `model/`, composed by hydra into the run described by `configs/config.yaml`:
+
+```python
+from config.load import load_config
+
+config = load_config()  # the defaults
+config = load_config(["dataset=small"])  # another file of a group
+config = load_config(["dataset.seed=7"])  # one value of one
+```
+
+What comes back is `config.schema.Config`, read under the schema rather than
+handed over as a bare mapping, so a key the schema does not declare is an error
+rather than a line that settles nothing.
