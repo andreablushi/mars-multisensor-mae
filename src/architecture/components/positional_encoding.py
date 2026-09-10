@@ -11,7 +11,7 @@ SHORTEST_M = (100.0, 100.0, 10.0)
 LONGEST_M = (1_000_000.0, 1_000_000.0, 30_000.0)
 
 
-class PositionEncoding(nn.Module):
+class PositionalEncoding(nn.Module):
     """A fixed Fourier encoding of east, north and height, a third of the width each.
 
     Attributes:

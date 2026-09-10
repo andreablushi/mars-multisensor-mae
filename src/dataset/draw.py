@@ -1,9 +1,9 @@
-"""Reading features as batches of tokens, a few patches of each instrument at a time."""
+"""Drawing every feature of a split as a few patches of each instrument, in batches."""
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Sequence
+import math
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import torch
@@ -11,46 +11,73 @@ from building.common.layout import GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset
 
 from architecture.tokens import Tokens
 from config.schema import Config
-from dataset.elevation import Elevation, patch_elevation, read_elevation
 from dataset.models.patch import Patch
-from dataset.sample import draw_patches
+from dataset.patches import cut_patch, patch_counts, read_heights
 from dataset.store import DatasetBuild
 
-
-def rows_by_instrument(
-    rows: Sequence[ObservationMetadata],
-) -> dict[str, list[ObservationMetadata]]:
-    """Return one feature's index rows grouped by the instrument that took them.
-
-    Args:
-        rows: The feature's rows, in the order the index holds them.
-
-    Returns:
-        grouped: The rows of each instrument, keyed as ODE names it.
-    """
-    grouped = defaultdict(list)
-    for one in rows:
-        grouped[one.instrument].append(one)
-    return dict(grouped)
+TRAINING_SPLIT = "train"
+VALIDATION_SPLIT = "validation"
 
 
-def axes_by_instrument(
-    rows: Sequence[ObservationMetadata],
-) -> dict[str, tuple[str, ...]]:
-    """Return what each axis of each instrument's values holds, read off any row of it.
+def split_loaders(
+    build: DatasetBuild, config: Config
+) -> tuple[DataLoader, DataLoader, dict[str, tuple[int, ...]]]:
+    """Return the training and validation splits in batches, and every token shape.
 
     Args:
-        rows: Any rows of the index, at least one per instrument.
+        build: The build the features are read from.
+        config: What the run reads, how it draws it, and how it batches it.
 
     Returns:
-        axes: What each axis holds, in the values' own order, keyed as ODE
-            names the instrument.
+        training: The training split, every feature drawn afresh at every read.
+        validation: The validation split, every feature drawn the same at
+            every read.
+        shapes: The shape of one patch of each instrument as the model reads
+            it, keyed as ODE names it.
     """
-    return {one.instrument: tuple(one.axes) for one in rows}
+    by_feature = build.read_observation_metadata_by_feature()
+    splits = build.split_features(config.dataset.split, config.dataset.seed)
+    statistics = build.compute_stats(set(splits[TRAINING_SPLIT]))
+    axes = {
+        name: tuple(held[0].axes)
+        for feature in by_feature.values()
+        for name, held in feature.items()
+    }
+
+    def loader(split: str, seed: int | None) -> DataLoader:
+        """Return one split in batches, its features drawn afresh or fixed."""
+        features = {identity: by_feature[identity] for identity in splits[split]}
+        held = FeatureDataset(build, features, axes, config, statistics, seed)
+        return DataLoader(
+            held,
+            batch_size=config.training.batch_size,
+            shuffle=seed is None,
+            num_workers=config.training.workers,
+            collate_fn=collate,
+        )
+
+    training = loader(TRAINING_SPLIT, None)
+    validation = loader(VALIDATION_SPLIT, config.dataset.seed)
+    return training, validation, token_shapes(axes, config)
+
+
+def patch_sizes(config: Config) -> dict[str, int]:
+    """Return how far a patch of each instrument the model reads runs along an axis.
+
+    Args:
+        config: Which instruments the model reads, and how far a patch runs
+            along every axis it is cut on, by instrument, and under "default"
+            for every instrument unnamed.
+
+    Returns:
+        sizes: One length per instrument, keyed as ODE names it.
+    """
+    held = config.dataset.patchsize
+    return {name: held.get(name, held["default"]) for name in config.model.instruments}
 
 
 def token_shapes(
@@ -65,16 +92,75 @@ def token_shapes(
     Returns:
         shapes: One shape per instrument the model reads, keyed as ODE names it.
     """
-    patchsize = config.dataset.patchsize
+    sizes = patch_sizes(config)
     return {
         name: tuple(
-            config.model.bands
-            if holds == WAVELENGTH
-            else patchsize.get(name, patchsize["default"])
+            config.model.bands if holds == WAVELENGTH else sizes[name]
             for holds in axes[name]
         )
         for name in config.model.instruments
     }
+
+
+def draw_patches(
+    observations: Sequence[ObservationMetadata],
+    build: DatasetBuild,
+    patchsize: int,
+    count: int,
+    heights: np.ndarray,
+    rng: np.random.Generator,
+) -> list[tuple[ObservationMetadata, Patch]]:
+    """Return patches of one instrument drawn at random over one feature.
+
+    Args:
+        observations: The feature's index rows of that one instrument.
+        build: The published build the observations are read from.
+        patchsize: How far a patch of that instrument runs along every axis it
+            is cut on.
+        count: How many to draw, or every one where the feature holds fewer.
+        heights: Where the ground stands over the feature. (N, 3)
+        rng: What fixes the draw.
+
+    Returns:
+        drawn: Each patch beside the row it was cut from, every whole patch of
+            every observation equally likely and none twice. An observation is
+            read only when a patch of it was drawn. Empty where none holds one.
+    """
+    totals = [
+        math.prod(patch_counts(one.shape, one.axes, patchsize)) for one in observations
+    ]
+    edges = np.cumsum([0, *totals])
+    chosen = np.sort(rng.choice(edges[-1], size=min(count, edges[-1]), replace=False))
+    drawn = []
+    for at, record in enumerate(observations):
+        taken = chosen[(chosen >= edges[at]) & (chosen < edges[at + 1])] - edges[at]
+        if taken.size == 0:
+            continue
+        observation = build.read_observation(record.path)
+        drawn.extend(
+            (record, cut_patch(observation, record, int(one), patchsize, heights))
+            for one in taken
+        )
+    return drawn
+
+
+def draw_hidden_patches(
+    count: int, ratio: float, rng: np.random.Generator
+) -> np.ndarray:
+    """Return which of one instrument's patches of one feature to hide.
+
+    Args:
+        count: How many patches the feature was drawn with.
+        ratio: The share of them to hide from the instrument's encoder.
+        rng: What fixes the draw.
+
+    Returns:
+        hidden: The patches drawn, at random, that share of them rounded down.
+            (K,)
+    """
+    hidden = np.zeros(count, dtype=bool)  # (K,)
+    hidden[rng.choice(count, size=int(count * ratio), replace=False)] = True
+    return hidden
 
 
 def resample_bands(values: np.ndarray, axis: int, bands: int) -> np.ndarray:
@@ -121,20 +207,24 @@ class FeatureDataset(Dataset):
 
     Attributes:
         build: The build the features are read from.
-        features: The index rows of each feature of the split.
+        features: The index rows of each instrument of each feature of the
+            split, keyed by what tells the feature apart.
+        identities: The features, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
-        shapes: The shape of one patch of each instrument as the model reads it.
         config: What the run reads and what the model draws.
         statistics: What each instrument's values run to over the training
             split, keyed as ODE names it.
         seed: What fixes the draw of every feature, or None for a fresh draw at
             every read.
+        patchsize: How far a patch of each instrument runs along an axis it is
+            cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
     """
 
     def __init__(
         self,
         build: DatasetBuild,
-        features: Sequence[Sequence[ObservationMetadata]],
+        features: Mapping[tuple[str, str], dict[str, list[ObservationMetadata]]],
         axes: dict[str, tuple[str, ...]],
         config: Config,
         statistics: dict[str, dict[str, float]],
@@ -144,7 +234,8 @@ class FeatureDataset(Dataset):
 
         Args:
             build: The build the features are read from.
-            features: The index rows of each feature of the split.
+            features: The index rows of each instrument of each feature of the
+                split, keyed by what tells the feature apart.
             axes: What each axis of each instrument's values holds.
             config: What the run reads and what the model draws.
             statistics: What each instrument's values run to over the training
@@ -154,11 +245,13 @@ class FeatureDataset(Dataset):
         """
         self.build = build
         self.features = features
+        self.identities = list(features)
         self.axes = axes
-        self.shapes = token_shapes(axes, config)
         self.config = config
         self.statistics = statistics
         self.seed = seed
+        self.patchsize = patch_sizes(config)
+        self.shapes = token_shapes(axes, config)
         for name in config.model.instruments:
             if WAVELENGTH not in axes[name] and name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -169,7 +262,7 @@ class FeatureDataset(Dataset):
         Returns:
             count: The number of features.
         """
-        return len(self.features)
+        return len(self.identities)
 
     def __getitem__(self, index: int) -> tuple[dict[str, dict[str, Tensor]], str]:
         """Return one feature's patches of each instrument as tensors, and its class.
@@ -180,27 +273,29 @@ class FeatureDataset(Dataset):
         Returns:
             sample: For each instrument the model reads, its normalised patches
                 under "values" (K, *P), whether each sample of them is a
-                measurement under "valid" (K, *P'), and where each sits in
-                metres under "position" (K, 3), K being how many the feature
-                was drawn with, which may be none.
+                measurement under "valid" (K, *P'), where each sits in metres
+                under "position" (K, 3), and which of them its encoder may read
+                under "visible" (K,), K being how many the feature was drawn
+                with, which may be none.
             feature_class: The class of the feature, as ODE names it.
         """
-        rows = rows_by_instrument(self.features[index])
-        feature = self.features[index][0].feature
+        identity = self.identities[index]
+        rows = self.features[identity]
         rng = np.random.default_rng(None if self.seed is None else (self.seed, index))
         held = rows.get(self.config.model.elevation)
         if not held:
             raise ValueError(
-                f"{feature} has no {self.config.model.elevation} to stand on"
+                f"{identity} has no {self.config.model.elevation} to stand on"
             )
-        elevation = read_elevation(held, self.build)
+        heights = read_heights(held, self.build)
         sample = {}
         for name in self.config.model.instruments:
             drawn = draw_patches(
                 rows.get(name, []),
                 self.build,
-                self.config.dataset.patchsize,
+                self.patchsize[name],
                 self.config.model.patches,
+                heights,
                 rng,
             )
             shape = self.shapes[name]
@@ -214,13 +309,19 @@ class FeatureDataset(Dataset):
                     continue
                 values.append(self.normalised(record, patch))
                 valid.append(patch.valid.reshape(valid_shape))
-                position.append(self.placed(patch, elevation))
+                position.append(
+                    np.array([patch.east_m, patch.north_m, patch.height_m], np.float32)
+                )
+            hidden = draw_hidden_patches(
+                len(values), self.config.model.mask_ratio, rng
+            )  # (K,)
             sample[name] = {
                 "values": stacked(values, shape),
                 "valid": stacked(valid, valid_shape),
                 "position": stacked(position, (3,)),
+                "visible": torch.as_tensor(~hidden),
             }
-        return sample, feature[0]
+        return sample, identity[0]
 
     def normalised(self, record: ObservationMetadata, patch: Patch) -> np.ndarray:
         """Return one patch's values centred and scaled, a spectral one on fixed bands.
@@ -248,19 +349,6 @@ class FeatureDataset(Dataset):
         values = (values - mean) / np.maximum(deviation, 1e-6)  # (*P)
         return resample_bands(values, axis, self.config.model.bands)
 
-    def placed(self, patch: Patch, elevation: Elevation) -> np.ndarray:
-        """Return where one patch centre sits.
-
-        Args:
-            patch: The patch.
-            elevation: Where the ground stands over the feature.
-
-        Returns:
-            position: East, north and height, in metres. (3,)
-        """
-        height = patch_elevation(patch, elevation)
-        return np.array([patch.east_m, patch.north_m, height], dtype=np.float32)
-
 
 def collate(
     samples: list[tuple[dict[str, dict[str, Tensor]], str]],
@@ -280,10 +368,9 @@ def collate(
         held = [sample[name] for sample, _ in samples]
         counts = torch.tensor([one["values"].shape[0] for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
-        batch[name] = Tokens(
-            values=pad_sequence([one["values"] for one in held], batch_first=True),
-            valid=pad_sequence([one["valid"] for one in held], batch_first=True),
-            position=pad_sequence([one["position"] for one in held], batch_first=True),
-            present=slots.unsqueeze(0) < counts.unsqueeze(1),
-        )
+        padded = {
+            key: pad_sequence([one[key] for one in held], batch_first=True)
+            for key in held[0]
+        }
+        batch[name] = Tokens(**padded, present=slots.unsqueeze(0) < counts.unsqueeze(1))
     return batch, [feature_class for _, feature_class in samples]

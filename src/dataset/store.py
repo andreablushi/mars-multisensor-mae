@@ -112,16 +112,18 @@ class DatasetBuild:
 
     def read_observation_metadata_by_feature(
         self,
-    ) -> dict[tuple[str, str], list[ObservationMetadata]]:
-        """Return the observations of each feature, keyed by what tells it apart.
+    ) -> dict[tuple[str, str], dict[str, list[ObservationMetadata]]]:
+        """Return the observations of each feature, by the instrument that took them.
 
         Returns:
-            standing: The rows of each feature, in the order the index holds them.
+            standing: The rows of each instrument of each feature, keyed by
+                what tells the feature apart and then as ODE names the
+                instrument, in the order the index holds them.
         """
-        standing: dict[tuple[str, str], list[ObservationMetadata]] = defaultdict(list)
+        standing = defaultdict(lambda: defaultdict(list))
         for one in self.read_observation_metadata():
-            standing[one.feature].append(one)
-        return dict(standing)
+            standing[one.feature][one.instrument].append(one)
+        return {feature: dict(rows) for feature, rows in standing.items()}
 
     def split_features(
         self, shares: dict[str, float], seed: int

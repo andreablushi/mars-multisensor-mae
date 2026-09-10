@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Sequence
 
 import numpy as np
-from building.common.layout import WAVELENGTH
+from building.common.layout import ELEVATION, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, NORTH
 
@@ -14,38 +13,54 @@ from dataset.models.observation import Observation
 from dataset.models.patch import Patch
 from dataset.store import DatasetBuild
 
+HEIGHTS = "elevation"
 
-def load_patches(
-    observations: Iterable[ObservationMetadata],
-    build: DatasetBuild,
-    patchsize: dict[str, int],
-) -> Iterator[Patch]:
-    """Yield every patch of every observation of one feature.
+
+def read_heights(
+    observations: Sequence[ObservationMetadata], build: DatasetBuild
+) -> np.ndarray:
+    """Return every height the elevation instrument measured over one feature.
 
     Args:
-        observations: The feature's own index rows, every observation the build
-            holds of it.
+        observations: The feature's index rows of the elevation instrument.
         build: The published build the observations are read from.
-        patchsize: How far a patch runs along every axis it is cut on, by
-            instrument, and under "default" for every instrument unnamed.
 
-    Yields:
-        patch: Every whole patch of every observation, in the order its axes
-            run, each carrying which of its samples were measured. They are
-            yielded one at a time and never gathered, one observation held at a
-            time: a CTX scan holds tens of thousands and a feature runs to over
-            a million.
+    Returns:
+        heights: One row per measured sample, pooled over the observations:
+            how far north of the feature centre it sits, how far east, and how
+            high above the areoid the ground stands there, in metres. (N, 3)
+
+    Raises:
+        ValueError: When none of them measured anything.
     """
+    placed = []
     for record in observations:
         observation = build.read_observation(record.path)
-        cut_by = patchsize.get(record.instrument, patchsize["default"])
-        counts = patch_counts(observation.values.shape, observation.axes, cut_by)
-        for one in range(math.prod(counts)):
-            yield cut_patch(observation, record, one, cut_by)
+        measured = observation.measured
+        placed.append(
+            np.stack(
+                [
+                    observation.north[measured],
+                    observation.east[measured],
+                    observation.values[measured],
+                ],
+                axis=1,
+            )
+        )  # (n, 3)
+    heights = np.concatenate(placed).astype(np.float64)  # (N, 3)
+    if not heights.size:
+        raise ValueError(
+            f"nothing measured over {[one.identity for one in observations]}"
+        )
+    return heights
 
 
 def cut_patch(
-    observation: Observation, record: ObservationMetadata, index: int, patchsize: int
+    observation: Observation,
+    record: ObservationMetadata,
+    index: int,
+    patchsize: int,
+    heights: np.ndarray,
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -56,10 +71,13 @@ def cut_patch(
             the last axis fastest.
         patchsize: How far a patch of this instrument runs along an axis it is
             cut on.
+        heights: Where the ground stands over the feature, as the elevation
+            instrument measured it. (N, 3)
 
     Returns:
-        patch: The patch, carrying which of its samples were measured. Copied,
-            so it does not hold the observation behind it.
+        patch: The patch, carrying which of its samples were measured and how
+            high its centre stands. Copied, so it does not hold the observation
+            behind it.
     """
     shape, axes = observation.values.shape, observation.axes
     lengths = patch_lengths(shape, axes, patchsize)
@@ -73,7 +91,15 @@ def cut_patch(
         for start, length in zip(origin, lengths, strict=True)
     )
     valid = observation.measured[tuple(window[at] for at in observation.ground)]
+    beside = _beside(observation, window)
     north_m, east_m = patch_position(observation, window)
+    if ELEVATION in axes:
+        height_m = float(np.mean(beside[HEIGHTS]))
+    else:
+        nearest = np.argmin(
+            (heights[:, 0] - north_m) ** 2 + (heights[:, 1] - east_m) ** 2
+        )
+        height_m = float(heights[nearest, 2])
     return Patch(
         instrument=observation.instrument,
         identifier=observation.identifier,
@@ -82,9 +108,10 @@ def cut_patch(
         axes=axes,
         origin=origin,
         ground_sample_m=record.ground_sample_m,
-        beside=_beside(observation, window),
+        beside=beside,
         north_m=north_m,
         east_m=east_m,
+        height_m=height_m,
         t_start=record.t_start,
         t_end=record.t_end,
     )

@@ -7,8 +7,8 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.encoder import key_padding, transformer
-from architecture.components.fourier import PositionEncoding
+from architecture.components.positional_encoding import PositionalEncoding
+from architecture.components.transformer import Transformer
 
 
 class Decoder(nn.Module):
@@ -18,7 +18,7 @@ class Decoder(nn.Module):
         shape: The shape of one patch this decoder predicts.
         expand: From the sphere up to the decoder width.
         mask: The token standing in for a hidden patch. (D')
-        place: The position encoding.
+        place: The positional encoding.
         blocks: The transformer.
         predict: From a decoded mask token to the values of its patch.
     """
@@ -40,8 +40,8 @@ class Decoder(nn.Module):
         self.expand = nn.Linear(latent, dim)
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
-        self.place = PositionEncoding(dim)
-        self.blocks = transformer(dim, heads, depth)
+        self.place = PositionalEncoding(dim)
+        self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, math.prod(shape))
 
     def forward(
@@ -72,8 +72,6 @@ class Decoder(nn.Module):
         asked = self.mask + self.place(position)  # (B, K, D')
         sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
-        decoded = self.blocks(
-            sequence, src_key_padding_mask=key_padding(attended)
-        )  # (B, C + K, D')
+        decoded = self.blocks(sequence, attended)  # (B, C + K, D')
         flat = self.predict(decoded[:, read.shape[1] :])  # (B, K, prod(P))
         return flat.view(*flat.shape[:2], *self.shape)  # (B, K, *P)

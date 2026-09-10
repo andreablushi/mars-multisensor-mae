@@ -78,7 +78,7 @@ def total_loss(
     terms = {}
     total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()
     for asked, tokens in batch.items():
-        hidden = tokens.present & ~reconstruction.visible[asked]  # (B, K)
+        hidden = tokens.present & ~tokens.visible  # (B, K)
         own = reconstruction_loss(
             reconstruction.predictions[asked, asked],
             tokens.values,
@@ -89,7 +89,7 @@ def total_loss(
         for read in batch:
             if read == asked:
                 continue
-            readable = reconstruction.visible[read].any(dim=1, keepdim=True)  # (B, 1)
+            readable = batch[read].visible.any(dim=1, keepdim=True)  # (B, 1)
             others.append(
                 reconstruction_loss(
                     reconstruction.predictions[asked, read],
@@ -103,7 +103,7 @@ def total_loss(
         terms[f"cross/{asked}"] = cross
         total = total + own + cross
     directions = torch.cat([reconstruction.tokens[name] for name in batch], dim=1)
-    visible = torch.cat([reconstruction.visible[name] for name in batch], dim=1)
+    visible = torch.cat([batch[name].visible for name in batch], dim=1)
     terms["uniformity"] = uniformity_loss(directions, visible)  # ()
     terms["loss"] = total + uniformity_weight * terms["uniformity"]  # ()
     return terms

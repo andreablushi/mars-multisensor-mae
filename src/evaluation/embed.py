@@ -6,8 +6,8 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from architecture.distribution.sphere import mean_direction
 from architecture.mae import CrossSensorMAE
+from architecture.swath import feature_swath
 from architecture.tokens import Tokens
 
 
@@ -25,7 +25,7 @@ def embed_batch(model: CrossSensorMAE, batch: dict[str, Tokens]) -> Tensor:
     tokens = model.encode(batch)
     directions = torch.cat([tokens[name] for name in batch], dim=1)  # (B, sum K, L)
     present = torch.cat([batch[name].present for name in batch], dim=1)  # (B, sum K)
-    return mean_direction(directions, present)  # (B, L)
+    return feature_swath(directions, present)  # (B, L)
 
 
 def embed_features(

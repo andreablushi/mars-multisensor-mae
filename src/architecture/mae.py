@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import torch
 from torch import Tensor, nn
 
+from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.components.fusion import CrossSensorEncoder
-from architecture.distribution.sphere import Sphere
+from architecture.swath import unit_directions
 from architecture.tokens import Tokens
 from config.schema import ModelConfig
 
@@ -25,12 +24,10 @@ class Reconstruction:
             (B, K, *P)
         tokens: Each instrument's tokens on the sphere, meaningful where
             visible, keyed as ODE names it. (B, K, L)
-        visible: Which of each instrument's patches its encoder read. (B, K)
     """
 
     predictions: dict[tuple[str, str], Tensor]
     tokens: dict[str, Tensor]
-    visible: dict[str, Tensor]
 
 
 class CrossSensorMAE(nn.Module):
@@ -38,11 +35,12 @@ class CrossSensorMAE(nn.Module):
 
     Attributes:
         encoders: Each instrument's own encoder, keyed as ODE names it.
-        fusion: The cross-sensor encoder every instrument's tokens pass through.
-        sphere: Where every token lands.
+        crossencoder: The cross-sensor encoder every instrument's tokens pass
+            through, which lands them at the latent width.
         decoders: Each instrument's own decoder.
-        mask_ratio: The share of each instrument's patches hidden from its
-            encoder.
+        latent: The latent width.
+        kappa: How tightly a token drawn while training stays about its mean
+            direction.
     """
 
     def __init__(self, shapes: dict[str, tuple[int, ...]], config: ModelConfig) -> None:
@@ -60,8 +58,9 @@ class CrossSensorMAE(nn.Module):
                 for name, shape in shapes.items()
             }
         )
-        self.fusion = CrossSensorEncoder(config.dim, config.heads, config.fusion_depth)
-        self.sphere = Sphere(config.dim, config.latent, config.kappa)
+        self.crossencoder = CrossSensorEncoder(
+            config.dim, config.heads, config.crossencoder_depth, config.latent
+        )
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
@@ -74,9 +73,10 @@ class CrossSensorMAE(nn.Module):
                 for name, shape in shapes.items()
             }
         )
-        self.mask_ratio = config.mask_ratio
+        self.latent = config.latent
+        self.kappa = config.kappa
 
-    def sphere_tokens(self, name: str, tokens: Tokens, visible: Tensor) -> Tensor:
+    def swath_tokens(self, name: str, tokens: Tokens, visible: Tensor) -> Tensor:
         """Return one instrument's visible patches as points on the sphere.
 
         Args:
@@ -89,15 +89,14 @@ class CrossSensorMAE(nn.Module):
                 (B, K, L)
         """
         if tokens.values.shape[1] == 0:
-            latent = self.sphere.project.out_features
             return tokens.values.new_zeros(
-                tokens.values.shape[0], 0, latent
+                tokens.values.shape[0], 0, self.latent
             )  # (B, 0, L)
         encoded = self.encoders[name](
             tokens.values, tokens.position, visible
         )  # (B, K, D)
-        shared = self.fusion(encoded, visible)  # (B, K, D)
-        return self.sphere(shared)  # (B, K, L)
+        shared = self.crossencoder(encoded, visible)  # (B, K, L)
+        return unit_directions(shared, self.kappa, self.training)  # (B, K, L)
 
     def encode(self, batch: dict[str, Tokens]) -> dict[str, Tensor]:
         """Return every present patch of every instrument on the sphere, none hidden.
@@ -111,7 +110,7 @@ class CrossSensorMAE(nn.Module):
                 (B, K, L)
         """
         return {
-            name: self.sphere_tokens(name, tokens, tokens.present)
+            name: self.swath_tokens(name, tokens, tokens.present)
             for name, tokens in batch.items()
         }
 
@@ -120,46 +119,24 @@ class CrossSensorMAE(nn.Module):
 
         Args:
             batch: Each instrument's patches over the batch, keyed as ODE names
-                it.
+                it, which say which of them are hidden from its encoder.
 
         Returns:
-            reconstruction: The predictions, the tokens they were read from, and
-                what was visible.
+            reconstruction: The predictions, and the tokens they were read from.
         """
-        visible = {
-            name: tokens.present & ~draw_hidden(tokens.present, self.mask_ratio)
-            for name, tokens in batch.items()
-        }
         encoded = {
-            name: self.sphere_tokens(name, tokens, visible[name])
+            name: self.swath_tokens(name, tokens, tokens.visible)
             for name, tokens in batch.items()
         }
         predictions = {}
         for asked, tokens in batch.items():
-            hidden = tokens.present & ~visible[asked]  # (B, K)
+            hidden = tokens.present & ~tokens.visible  # (B, K)
             for read in batch:
                 predictions[asked, read] = self.decoders[asked](
                     encoded[read],
                     batch[read].position,
-                    visible[read],
+                    batch[read].visible,
                     tokens.position,
                     hidden,
                 )  # (B, K, *P)
-        return Reconstruction(predictions, encoded, visible)
-
-
-def draw_hidden(present: Tensor, ratio: float) -> Tensor:
-    """Return which present patches to hide, a fixed share of each feature's own.
-
-    Args:
-        present: Which slots hold a patch. (B, K)
-        ratio: The share of each feature's patches to hide.
-
-    Returns:
-        hidden: The patches drawn, at random, that many per feature. (B, K)
-    """
-    noise = torch.rand(present.shape, device=present.device)  # (B, K)
-    noise[~present] = torch.inf
-    rank = noise.argsort(dim=1).argsort(dim=1)  # (B, K)
-    count = (present.sum(dim=1) * ratio).floor()  # (B,)
-    return rank < count.unsqueeze(1)  # (B, K)
+        return Reconstruction(predictions, encoded)

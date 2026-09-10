@@ -40,10 +40,10 @@ class ModelConfig:
             wavelength axis, so every one of them is the same shape.
         patches: How many patches of each instrument one feature is drawn with.
         dim: How wide a token is in the instrument encoders and in the
-            cross-sensor encoder, a multiple of 6 for the position encoding.
+            cross-sensor encoder, a multiple of 6 for the positional encoding.
         heads: How many attention heads those encoders run.
         depth: How many blocks each instrument encoder stacks.
-        fusion_depth: How many blocks the cross-sensor encoder stacks.
+        crossencoder_depth: How many blocks the cross-sensor encoder stacks.
         latent: How many dimensions the sphere every token is placed on has.
         kappa: How tightly a sampled token stays about its mean direction.
         decoder_dim: How wide a token is in the decoders, a multiple of 6.
@@ -61,7 +61,7 @@ class ModelConfig:
     dim: int
     heads: int
     depth: int
-    fusion_depth: int
+    crossencoder_depth: int
     latent: int
     kappa: float
     decoder_dim: int

@@ -18,7 +18,7 @@ patches: 64
 dim: 384
 heads: 6
 depth: 4
-fusion_depth: 2
+crossencoder_depth: 2
 
 # The sphere every token is placed on, and how tightly a draw stays about its mean.
 latent: 64

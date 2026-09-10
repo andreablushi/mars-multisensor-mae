@@ -28,6 +28,9 @@ class Patch:
         north_m: How far north of the feature centre the patch centre sits,
             in metres.
         east_m: How far east of it, in metres.
+        height_m: How high above the areoid the patch centre stands, in
+            metres: the middle of the heights a sounding patch spans, and the
+            nearest measured ground under any other.
         t_start: When the observation started, or None where none is published.
         t_end: When it ended, or None for the same reason.
     """
@@ -42,6 +45,7 @@ class Patch:
     beside: dict[str, np.ndarray]
     north_m: float
     east_m: float
+    height_m: float
     t_start: datetime | None
     t_end: datetime | None
 
