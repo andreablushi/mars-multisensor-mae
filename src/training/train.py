@@ -71,13 +71,14 @@ def train(
         for batch, _ in training:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             terms = total_loss(model(batch), batch, settings.uniformity_weight)
+            rate = scheduler.get_last_lr()[0]
             optimizer.zero_grad()
             terms["loss"].backward()
             optimizer.step()
             scheduler.step()
             step += 1
             logged = {f"train/{name}": float(value) for name, value in terms.items()}
-            run.log(logged | {"learning_rate": scheduler.get_last_lr()[0]}, step=step)
+            run.log(logged | {"learning_rate": rate}, step=step)
         metrics = validate(model, validation, config, device)
         logged = {f"validation/{name}": value for name, value in metrics.items()}
         run.log(logged | {"epoch": epoch}, step=step)
