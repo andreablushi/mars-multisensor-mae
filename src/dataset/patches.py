@@ -8,8 +8,7 @@ from collections.abc import Iterable, Iterator, Sequence
 import numpy as np
 from building.common.layout import WAVELENGTH
 from building.metadata.observation import ObservationMetadata
-from building.preprocessing.common.store import DEGREES, EAST, NORTH
-from shared.maths import geodesy
+from building.preprocessing.common.store import EAST, NORTH
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
@@ -31,62 +30,46 @@ def load_patches(
             instrument, and under "default" for every instrument unnamed.
 
     Yields:
-        patch: Every patch of every observation, one at a time, so only the
-            observation being cut is held in memory. A feature runs to over a
-            million.
+        patch: Every whole patch of every observation, in the order its axes
+            run, each carrying which of its samples were measured. They are
+            yielded one at a time and never gathered, one observation held at a
+            time: a CTX scan holds tens of thousands and a feature runs to over
+            a million.
     """
     for record in observations:
+        observation = build.read_observation(record.path)
         cut_by = patchsize.get(record.instrument, patchsize["default"])
-        yield from cut_patches(build.read_observation(record.path), record, cut_by)
-
-
-def cut_patches(
-    observation: Observation, record: ObservationMetadata, patchsize: int
-) -> Iterator[Patch]:
-    """Yield every patch of one observation.
-
-    Args:
-        observation: The observation to cut, whose axes say which of them are
-            tiled.
-        record: What the index says the observation is, which carries the ground
-            it spans and when it was taken.
-        patchsize: How far a patch of this instrument runs along every axis it
-            is cut on.
-
-    Yields:
-        patch: Every whole patch of the observation, in the order its axes run,
-            each carrying which of its samples were measured. One CTX scan holds
-            tens of thousands, so they are yielded one at a time and never
-            gathered: a feature runs to over a million.
-    """
-    lengths = patch_lengths(observation.values.shape, observation.axes, patchsize)
-    counts = patch_counts(observation.values.shape, observation.axes, patchsize)
-    for one in range(math.prod(counts)):
-        origin = tuple(
-            int(at) * length
-            for at, length in zip(np.unravel_index(one, counts), lengths, strict=True)
-        )
-        window = tuple(
-            slice(start, start + length)
-            for start, length in zip(origin, lengths, strict=True)
-        )
-        valid = observation.measured[tuple(window[at] for at in observation.ground)]
-        north_m, east_m = patch_position(observation, window)
-        yield Patch(
-            instrument=observation.instrument,
-            identifier=observation.identifier,
-            # Copied, so one patch does not hold the whole observation behind it.
-            values=observation.values[window].copy(),
-            valid=valid.copy(),
-            axes=observation.axes,
-            origin=origin,
-            ground_sample_m=record.ground_sample_m,
-            beside=_beside(observation, window),
-            north_m=north_m,
-            east_m=east_m,
-            t_start=record.t_start,
-            t_end=record.t_end,
-        )
+        shape, axes = observation.values.shape, observation.axes
+        lengths = patch_lengths(shape, axes, cut_by)
+        counts = patch_counts(shape, axes, cut_by)
+        for one in range(math.prod(counts)):
+            origin = tuple(
+                int(at) * length
+                for at, length in zip(
+                    np.unravel_index(one, counts), lengths, strict=True
+                )
+            )
+            window = tuple(
+                slice(start, start + length)
+                for start, length in zip(origin, lengths, strict=True)
+            )
+            valid = observation.measured[tuple(window[at] for at in observation.ground)]
+            north_m, east_m = patch_position(observation, window)
+            yield Patch(
+                instrument=observation.instrument,
+                identifier=observation.identifier,
+                # Copied, so one patch does not hold the observation behind it.
+                values=observation.values[window].copy(),
+                valid=valid.copy(),
+                axes=axes,
+                origin=origin,
+                ground_sample_m=record.ground_sample_m,
+                beside=_beside(observation, window),
+                north_m=north_m,
+                east_m=east_m,
+                t_start=record.t_start,
+                t_end=record.t_end,
+            )
 
 
 def patch_lengths(
@@ -141,8 +124,8 @@ def patch_position(
     """Return how far the centre of one patch sits from the feature centre.
 
     Args:
-        observation: The observation it was cut from, which carries the offset
-            every sample of it stands at and the unit those are held in.
+        observation: The observation it was cut from, which carries the ground
+            metres every sample of it stands from the feature centre.
         window: What the patch keeps of each axis of the values, in the axes'
             own order.
 
@@ -160,14 +143,7 @@ def patch_position(
         )
         return float(getattr(observation, name)[taken])
 
-    down, across = middle(NORTH), middle(EAST)
-    # A projected observation stands in metres already, every other in degrees.
-    if observation.position_units != DEGREES:
-        return down, across
-    return (
-        geodesy.northward_m(down),
-        geodesy.eastward_m(across, observation.centre_lat),
-    )
+    return middle(NORTH), middle(EAST)
 
 
 def _beside(

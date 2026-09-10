@@ -25,11 +25,9 @@ class Observation:
             rather than a fill or ground outside its box, over the ground axes
             alone. A CTX scan spreads over a hundred million samples, so this is
             worked out once for every patch cut from it.
-        north: How far each sample sits from the feature centre, northward.
-        east: How far it sits eastward.
-        position_units: Whether those two are degrees or a projection's metres.
-        centre_lat: The latitude of the feature they stand from, in degrees,
-            which is what a degree of longitude is scaled to metres at.
+        north: How far each sample sits from the feature centre, northward,
+            in ground metres.
+        east: How far it sits eastward, in the same metres.
         beside: What else the instrument stores, keyed as it is written.
     """
 
@@ -42,8 +40,6 @@ class Observation:
     measured: np.ndarray
     north: np.ndarray
     east: np.ndarray
-    position_units: str
-    centre_lat: float
     beside: dict[str, np.ndarray]
 
     @property

@@ -215,8 +215,6 @@ class DatasetBuild:
             measured=measured,
             north=arrays.pop(NORTH),
             east=arrays.pop(EAST),
-            position_units=described["position_units"],
-            centre_lat=described["centre_lat"],
             # What the pops left is what the instrument stores beside its values.
             beside=arrays,
         )
