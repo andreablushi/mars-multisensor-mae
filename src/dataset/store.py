@@ -15,6 +15,7 @@ import numpy as np
 import pyarrow.parquet as pq
 from building import paths as built
 from building.common.layout import GROUND
+from building.metadata.feature import FeatureMetadata
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, INSIDE, META, NORTH, VALID, native
 from shared.disk import parquet
@@ -85,6 +86,20 @@ class DatasetBuild:
             io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
         )
         return [parquet.build(ObservationMetadata, row) for row in held.to_pylist()]
+
+    def read_feature_metadata(self) -> dict[tuple[str, str], FeatureMetadata]:
+        """Return what every feature of the build is, keyed by what tells it apart.
+
+        Returns:
+            features: Each feature's own row, carrying the frame its
+                observations are placed against, which is the one place the
+                build writes an absolute position down.
+        """
+        held = pq.read_table(io.BytesIO(self.read_object(built.FEATURE_METADATA_NAME)))
+        return {
+            one.identity: one
+            for one in (parquet.build(FeatureMetadata, row) for row in held.to_pylist())
+        }
 
     def read_observation_metadata_by_feature(
         self,
@@ -190,7 +205,6 @@ class DatasetBuild:
             mask = arrays.pop(name, None)
             if mask is not None:
                 measured &= mask
-        polar = described["polar"]
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
@@ -202,8 +216,6 @@ class DatasetBuild:
             north=arrays.pop(NORTH),
             east=arrays.pop(EAST),
             position_units=described["position_units"],
-            polar=None if polar is None else tuple(polar),
-            centre_lon=described["centre_lon"],
             centre_lat=described["centre_lat"],
             # What the pops left is what the instrument stores beside its values.
             beside=arrays,

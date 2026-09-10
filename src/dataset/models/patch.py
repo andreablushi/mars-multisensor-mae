@@ -23,8 +23,9 @@ class Patch:
             axis, in the order those axes run.
         wavelengths_nm: The centre wavelength of each band in nanometres, and
             None for an instrument that holds no wavelength axis.
-        lon: The longitude the patch centre sits at, in degrees.
-        lat: The latitude it sits at, in degrees.
+        north_m: How far north of the feature centre the patch centre sits,
+            in metres.
+        east_m: How far east of it, in metres.
         t_start: When the observation started, or None where none is published.
         t_end: When it ended, or None for the same reason.
     """
@@ -37,8 +38,8 @@ class Patch:
     origin: tuple[int, ...]
     ground_sample_m: tuple[float, ...]
     wavelengths_nm: np.ndarray | None
-    lon: float
-    lat: float
+    north_m: float
+    east_m: float
     t_start: datetime | None
     t_end: datetime | None
 

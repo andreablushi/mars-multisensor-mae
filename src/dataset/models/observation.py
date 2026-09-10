@@ -28,10 +28,8 @@ class Observation:
         north: How far each sample sits from the feature centre, northward.
         east: How far it sits eastward.
         position_units: Whether those two are degrees or a projection's metres.
-        polar: The projection they were placed on, and None where they are
-            degrees.
-        centre_lon: The longitude they stand from, in degrees.
-        centre_lat: The latitude they stand from, in degrees.
+        centre_lat: The latitude of the feature they stand from, in degrees,
+            which is what a degree of longitude is scaled to metres at.
         beside: What else the instrument stores, keyed as it is written.
     """
 
@@ -45,8 +43,6 @@ class Observation:
     north: np.ndarray
     east: np.ndarray
     position_units: str
-    polar: tuple[float, bool, float] | None
-    centre_lon: float
     centre_lat: float
     beside: dict[str, np.ndarray]
 
