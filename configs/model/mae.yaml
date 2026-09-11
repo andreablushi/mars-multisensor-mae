@@ -8,9 +8,6 @@ name: mae
 instruments: [CTX, CRISM, SHARAD]
 elevation: MOLA
 
-# A spectral patch is resampled to this many bands along its wavelength axis.
-bands: 64
-
 # How many patches of each instrument one feature is drawn with.
 patches: 64
 

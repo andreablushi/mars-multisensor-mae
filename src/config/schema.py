@@ -15,14 +15,15 @@ class DatasetConfig:
             own name.
         patchsize: How far a patch runs along every axis it is cut on, by
             instrument, and under "default" for every instrument unnamed.
-        split: The share of the features each split holds, by its name.
+        split: The share of the features each split holds, in the order the
+            code names the splits.
         seed: The number that fixes where a feature falls.
     """
 
     build: str
     root: str
     patchsize: dict[str, int] = field(default_factory=dict)
-    split: dict[str, float] = field(default_factory=dict)
+    split: list[float] = field(default_factory=list)
     seed: int = 42
 
 
@@ -36,8 +37,6 @@ class ModelConfig:
             them. The elevation instrument is not one of them.
         elevation: The instrument whose values give every surface patch its
             height.
-        bands: How many bands a spectral patch is resampled to along its
-            wavelength axis, so every one of them is the same shape.
         patches: How many patches of each instrument one feature is drawn with.
         dim: How wide a token is in the instrument encoders and in the
             cross-sensor encoder, a multiple of 6 for the positional encoding.
@@ -56,7 +55,6 @@ class ModelConfig:
     name: str
     instruments: list[str]
     elevation: str
-    bands: int
     patches: int
     dim: int
     heads: int

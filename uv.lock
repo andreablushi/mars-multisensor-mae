@@ -650,7 +650,7 @@ dependencies = [
     { name = "tifffile" },
     { name = "zarr" },
 ]
-sdist = { hash = "sha256:4941c315fba7f65dd92eab101fb2215ec6879d411db7a7729688ad1abf56d321" }
+sdist = { hash = "sha256:5a3a748c0dfd719eccd116056bcbed9ad8be1f9aa0fe181387747ab12fc133a3" }
 
 [package.metadata]
 requires-dist = [

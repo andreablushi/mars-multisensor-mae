@@ -2,57 +2,93 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import math
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import ELEVATION, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
-from building.preprocessing.common.store import EAST, NORTH
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
-from dataset.store import DatasetBuild
+
+if TYPE_CHECKING:
+    from dataset.store import DatasetBuild
 
 HEIGHTS = "elevation"
 
+DEFAULT_PATCHSIZE = "default"
 
-def read_heights(
-    observations: Sequence[ObservationMetadata], build: DatasetBuild
-) -> np.ndarray:
-    """Return every height the elevation instrument measured over one feature.
+
+def patch_sizes(
+    instruments: Sequence[str], patchsize: Mapping[str, int]
+) -> dict[str, int]:
+    """Return how far a patch of each instrument runs along an axis it is cut on.
 
     Args:
-        observations: The feature's index rows of the elevation instrument.
-        build: The published build the observations are read from.
+        instruments: The instruments the model reads, as ODE names them.
+        patchsize: How far a patch runs, by instrument, and under "default" for
+            every instrument unnamed.
 
     Returns:
-        heights: One row per measured sample, pooled over the observations:
-            how far north of the feature centre it sits, how far east, and how
-            high above the areoid the ground stands there, in metres. (N, 3)
-
-    Raises:
-        ValueError: When none of them measured anything.
+        sizes: One length per instrument, keyed as ODE names it.
     """
-    placed = []
-    for record in observations:
+    return {
+        name: patchsize.get(name, patchsize[DEFAULT_PATCHSIZE]) for name in instruments
+    }
+
+
+def draw_patches(
+    observations: Sequence[ObservationMetadata],
+    build: DatasetBuild,
+    patchsize: int,
+    count: int,
+    ratio: float,
+    heights: np.ndarray,
+    rng: np.random.Generator,
+) -> tuple[list[Patch], np.ndarray]:
+    """Return patches of one instrument drawn over one feature, and which are hidden.
+
+    Args:
+        observations: The feature's index rows of that one instrument.
+        build: The published build the observations are read from.
+        patchsize: How far a patch of that instrument runs along.
+        count: How many to draw, or every one where the feature holds fewer.
+        ratio: The share of them to hide from the instrument's encoder.
+        heights: Where the ground stands over the feature. (N, 3)
+        rng: What fixes the draw.
+
+    Returns:
+        drawn: The patches, every whole patch of every observation equally
+            likely and none twice, and none that measured nothing. An
+            observation is read only when a patch of it was drawn. Empty where
+            the feature holds none.
+        hidden: Which of them to hide, that share of them rounded down, and
+            empty where none were drawn. (K,)
+    """
+    totals = [
+        math.prod(patch_counts(one.shape, one.axes, patchsize)) for one in observations
+    ]
+    edges = np.cumsum([0, *totals])
+    chosen = np.sort(rng.choice(edges[-1], size=min(count, edges[-1]), replace=False))
+    drawn = []
+    for at, record in enumerate(observations):
+        taken = chosen[(chosen >= edges[at]) & (chosen < edges[at + 1])] - edges[at]
+        if taken.size == 0:
+            continue
         observation = build.read_observation(record.path)
-        measured = observation.measured
-        placed.append(
-            np.stack(
-                [
-                    observation.north[measured],
-                    observation.east[measured],
-                    observation.values[measured],
-                ],
-                axis=1,
+        drawn.extend(
+            patch
+            for patch in (
+                cut_patch(observation, record, int(one), patchsize, heights)
+                for one in taken
             )
-        )  # (n, 3)
-    heights = np.concatenate(placed).astype(np.float64)  # (N, 3)
-    if not heights.size:
-        raise ValueError(
-            f"nothing measured over {[one.identity for one in observations]}"
+            if patch.valid.any()
         )
-    return heights
+    hidden = np.zeros(len(drawn), dtype=bool)  # (K,)
+    hidden[rng.choice(len(drawn), size=int(len(drawn) * ratio), replace=False)] = True
+    return drawn, hidden
 
 
 def cut_patch(
@@ -90,9 +126,10 @@ def cut_patch(
         slice(start, start + length)
         for start, length in zip(origin, lengths, strict=True)
     )
-    valid = observation.measured[tuple(window[at] for at in observation.ground)]
+    taken = tuple(window[at] for at in observation.ground)
+    north, east = observation.ground_metres(taken)
+    north_m, east_m = float(np.mean(north)), float(np.mean(east))
     beside = _beside(observation, window)
-    north_m, east_m = patch_position(observation, window)
     if ELEVATION in axes:
         height_m = float(np.mean(beside[HEIGHTS]))
     else:
@@ -104,7 +141,7 @@ def cut_patch(
         instrument=observation.instrument,
         identifier=observation.identifier,
         values=observation.values[window].copy(),
-        valid=valid.copy(),
+        valid=observation.measured[taken].copy(),
         axes=axes,
         origin=origin,
         ground_sample_m=record.ground_sample_m,
@@ -125,15 +162,13 @@ def patch_lengths(
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        patchsize: How far a patch of this instrument runs along an axis it is
-            cut on.
+        patchsize: How far a patch of this instrument runs along.
 
     Returns:
-        lengths: One length per axis, in the axes' own order. A wavelength axis
-            is kept whole, which is how its bands become the channels of every
-            patch cut from the observation.
+        lengths: One length per axis, in the axes' own order.
     """
     return tuple(
+        # The wavelength axis is not cut, so a patch runs the whole way along it.
         size if holds == WAVELENGTH else patchsize
         for size, holds in zip(shape, axes, strict=True)
     )
@@ -147,13 +182,10 @@ def patch_counts(
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        patchsize: How far a patch of this instrument runs along an axis it is
-            cut on.
+        patchsize: How far a patch of this instrument runs along.
 
     Returns:
-        counts: How many whole patches each axis holds. What is left of an axis
-            after the last whole one is dropped rather than padded, so an axis
-            shorter than one patch holds none and the observation holds none.
+        counts: How many whole patches each axis holds.
     """
     return tuple(
         size // length
@@ -163,47 +195,18 @@ def patch_counts(
     )
 
 
-def patch_position(
-    observation: Observation, window: Sequence[slice]
-) -> tuple[float, float]:
-    """Return how far the centre of one patch sits from the feature centre.
-
-    Args:
-        observation: The observation it was cut from, which carries the ground
-            metres every sample of it stands from the feature centre.
-        window: What the patch keeps of each axis of the values, in the axes'
-            own order.
-
-    Returns:
-        north_m: How far north of the feature centre the patch centre sits, in
-            metres.
-        east_m: How far east of it, in metres.
-    """
-    held = dict(zip(observation.dims[observation.measurement], window, strict=True))
-
-    def middle(name: str) -> float:
-        """Return where one offset array has the patch, over the samples it keeps."""
-        taken = tuple(held[one] for one in observation.dims[name])
-        return float(np.mean(getattr(observation, name)[taken]))
-
-    return middle(NORTH), middle(EAST)
-
-
 def _beside(
     observation: Observation, window: tuple[slice, ...]
 ) -> dict[str, np.ndarray]:
     """Return what the instrument stores beside its values, cut to one patch.
 
     Args:
-        observation: The observation it was cut from, which names the axes of
-            every array it stores.
+        observation: The observation it was cut from.
         window: What the patch keeps of each axis of the values.
 
     Returns:
         beside: Each of those arrays, keyed as it is written, cut along every
             axis it shares with the values and kept whole along the rest.
-            Copied, for the same reason the values are. Empty for an instrument
-            that stores none.
     """
     taken = dict(zip(observation.dims[observation.measurement], window, strict=True))
     return {

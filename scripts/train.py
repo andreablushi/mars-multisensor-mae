@@ -15,9 +15,11 @@ from digitalhub_runtime_python import handler
 from architecture.mae import CrossSensorMAE
 from config.load import load_config
 from config.schema import Config
-from dataset.draw import split_loaders
+from dataset.patches import patch_lengths, patch_sizes
+from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from logs.console import logger
 from logs.tracker import start_run
+from training.collate import collate
 from training.train import train
 
 TRAINING_HANDLER = "scripts.train:run_training"
@@ -37,7 +39,25 @@ def train_model(config: Config) -> Path:
         best: The checkpoint with the lowest validation loss.
     """
     build = published_build(config.dataset)
-    training, validation, shapes = split_loaders(build, config)
+    sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
+    rows = build.read_row_by_instrument()
+    shapes = {
+        name: patch_lengths(rows[name].shape, rows[name].axes, size)
+        for name, size in sizes.items()
+    }
+    loaders = build.loaders_by_split(
+        config.dataset.split,
+        config.dataset.seed,
+        sizes,
+        shapes,
+        config.model.elevation,
+        config.model.patches,
+        config.model.mask_ratio,
+        config.training.batch_size,
+        config.training.workers,
+        collate,
+    )
+    training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
     model = CrossSensorMAE(shapes, config.model).to(device)

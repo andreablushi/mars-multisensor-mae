@@ -21,10 +21,8 @@ patchsize:
   # A gridded tile at about 460 m a pixel, and coarser still towards a pole.
   MOLA: 16
 
-# The shares the features are split into, and the number that fixes the split.
-split:
-  train: 0.8
-  validation: 0.1
-  test: 0.1
-  
+# The shares the features are split into, in the order the code names the
+# splits: train, validation, test.
+split: [0.8, 0.1, 0.1]
+
 seed: 42

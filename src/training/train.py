@@ -67,6 +67,7 @@ def train(
     best = REPO_ROOT / settings.checkpoints / BEST_CHECKPOINT
     step = 0
     for epoch in range(settings.epochs):
+        training.dataset.set_epoch(epoch)
         model.train()
         for batch, _ in training:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
