@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 
 import torch
+from torch.nn.utils import get_total_norm
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
@@ -14,9 +16,11 @@ from architecture.mae import CrossSensorMAE
 from config.paths import REPO_ROOT
 from config.schema import Config
 from logs.console import logger
+from logs.tracker import log_epoch, log_step, log_summary
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
-from training.loss import total_loss
+from training.loss import csmae_loss
+from training.masking import random_correspondence
 from training.validate import validate
 
 BEST_CHECKPOINT = "best.pt"
@@ -64,31 +68,68 @@ def train(
 
     scheduler = LambdaLR(optimizer, schedule)
     stopping = EarlyStopping(settings.patience)
+    generator = torch.Generator(device=device).manual_seed(config.dataset.seed)
     best = REPO_ROOT / settings.checkpoints / BEST_CHECKPOINT
-    step = 0
+    started = time.perf_counter()
+    step, best_epoch = 0, -1
     for epoch in range(settings.epochs):
         model.train()
-        for batch, _ in training:
+        epoch_started = time.perf_counter()
+        loads: list[float] = []
+        waiting = time.perf_counter()
+        for batch, _, seconds in training:
+            waited = time.perf_counter() - waiting
+            step_started = time.perf_counter()
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            terms = total_loss(model(batch), batch, settings.uniformity_weight)
+            batch = random_correspondence(batch, settings.mask_ratio, generator)
+            terms = csmae_loss(model(batch), batch, settings.temperature)
             rate = scheduler.get_last_lr()[0]
             optimizer.zero_grad()
             terms["loss"].backward()
+            gradient = get_total_norm(
+                [one.grad for one in model.parameters() if one.grad is not None]
+            )
             optimizer.step()
             scheduler.step()
             step += 1
-            logged = {f"train/{name}": float(value) for name, value in terms.items()}
-            run.log(logged | {"learning_rate": rate}, step=step)
+            loads.extend(seconds.tolist())
+            taken = time.perf_counter() - step_started
+            rate_of_work = len(seconds) / max(taken + waited, 1e-9)
+            log_step(
+                run,
+                step,
+                terms,
+                {
+                    "epoch": epoch,
+                    "learning_rate": rate,
+                    "gradient_norm": float(gradient),
+                    "time/step_seconds": taken,
+                    "time/loader_seconds": waited,
+                    "time/features_per_second": rate_of_work,
+                    "data/feature_seconds": float(seconds.mean()),
+                    "data/feature_seconds_max": float(seconds.max()),
+                },
+            )
+            waiting = time.perf_counter()
         metrics = validate(model, validation, config, device)
-        logged = {f"validation/{name}": value for name, value in metrics.items()}
-        run.log(logged | {"epoch": epoch}, step=step)
+        log_epoch(run, step, epoch, metrics, loads, time.perf_counter() - epoch_started)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, epoch)
+            best_epoch = epoch
         if stopping.stopped:
             log.info(
                 "no lower validation loss for %d epochs, stopping", settings.patience
             )
             break
-    run.summary["best_validation_loss"] = stopping.best
+    log_summary(
+        run,
+        {
+            "best_validation_loss": stopping.best,
+            "best_epoch": best_epoch,
+            "epochs_trained": epoch + 1,
+            "steps": step,
+            "run_seconds": time.perf_counter() - started,
+        },
+    )
     return best

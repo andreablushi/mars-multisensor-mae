@@ -8,14 +8,16 @@ from pathlib import Path
 import torch
 from dh import submit
 from dh.configs import load_platform
-from dh.publish import publish_checkpoint
+from dh.publish import model_name, publish_checkpoint
 from dh.store import published_build
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
+from architecture.tokens import collate
 from config.load import load_config
 from config.schema import Config
-from dataset.draw import split_loaders
+from dataset.patches import patch_sizes
+from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from logs.console import logger
 from logs.tracker import start_run
 from training.train import train
@@ -37,21 +39,25 @@ def train_model(config: Config) -> Path:
         best: The checkpoint with the lowest validation loss.
     """
     build = published_build(config.dataset)
-    training, validation, shapes = split_loaders(build, config)
+    sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
+    shapes, strides = build.read_patch_layout(sizes)
+    loaders = build.loaders_by_split(config, sizes, shapes, collate)
+    training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
-    model = CrossSensorMAE(shapes, config.model).to(device)
-    run = start_run(config)
-    run.config.update(
+    model = CrossSensorMAE(shapes, strides, config.model).to(device)
+    run = start_run(
+        config,
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
+            "strides": strides,
             "features": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),
             },
-        }
+        },
     )
     best = train(model, training, validation, config, device, run)
     run.finish()
@@ -71,7 +77,7 @@ def run_training(project, overrides: list[str] | None = None):
     """
     config = load_config(overrides or [])
     best = train_model(config)
-    return publish_checkpoint(project, best, f"{_MODEL}-{config.model.name}")
+    return publish_checkpoint(project, best, model_name(config.model))
 
 
 def main() -> int:
