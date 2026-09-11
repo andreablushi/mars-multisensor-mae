@@ -104,6 +104,19 @@ class DatasetBuild:
         """
         return {one.instrument: one for one in self.read_observation_metadata()}
 
+    def read_ground_sample_by_instrument(self) -> dict[str, float]:
+        """Return how much ground one sample of each instrument spans, over the build.
+
+        Returns:
+            ground_sample_m: One length per instrument, keyed as ODE names it:
+                the median over its observations of the finest of its ground
+                axes, so one scan of an odd resolution does not settle it.
+        """
+        standing = defaultdict(list)
+        for one in self.read_observation_metadata():
+            standing[one.instrument].append(min(one.ground_sample_m))
+        return {name: float(np.median(held)) for name, held in standing.items()}
+
     def read_heights(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
         """Return every height the elevation instrument measured over one feature.
 

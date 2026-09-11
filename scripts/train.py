@@ -45,7 +45,8 @@ def train_model(config: Config) -> Path:
         name: patch_lengths(rows[name].shape, rows[name].axes, size)
         for name, size in sizes.items()
     }
-    resolutions = {name: min(rows[name].ground_sample_m) for name in sizes}
+    ground = build.read_ground_sample_by_instrument()
+    strides = {name: size * ground[name] for name, size in sizes.items()}
     loaders = build.loaders_by_split(
         config.dataset.split,
         config.dataset.seed,
@@ -60,14 +61,14 @@ def train_model(config: Config) -> Path:
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
-    model = CrossSensorMAE(shapes, resolutions, config.model).to(device)
+    model = CrossSensorMAE(shapes, strides, config.model).to(device)
     run = start_run(
         config,
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
-            "resolutions": resolutions,
+            "strides": strides,
             "features": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),

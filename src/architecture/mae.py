@@ -44,7 +44,7 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
-        resolutions: dict[str, float],
+        strides: dict[str, float],
         config: ModelConfig,
     ) -> None:
         """Build every part for the instruments the model reads.
@@ -52,16 +52,16 @@ class CrossSensorMAE(nn.Module):
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE
                 names it.
-            resolutions: How much ground one sample of each instrument spans,
-                in metres, which sets the shortest period its positions are
-                read at.
+            strides: How far apart two neighbouring patch centres of each
+                instrument sit, in metres, which sets the shortest period its
+                positions are read at.
             config: How wide and deep each part is.
         """
         super().__init__()
         self.encoders = nn.ModuleDict(
             {
                 name: Encoder(
-                    shape, config.dim, config.heads, config.depth, resolutions[name]
+                    shape, config.dim, config.heads, config.depth, strides[name]
                 )
                 for name, shape in shapes.items()
             }
@@ -77,7 +77,7 @@ class CrossSensorMAE(nn.Module):
                     config.decoder_dim,
                     config.decoder_heads,
                     config.decoder_depth,
-                    resolutions[name],
+                    strides[name],
                 )
                 for name, shape in shapes.items()
             }

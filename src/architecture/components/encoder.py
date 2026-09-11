@@ -25,7 +25,7 @@ class Encoder(nn.Module):
         dim: int,
         heads: int,
         depth: int,
-        resolution: float,
+        stride: float,
     ) -> None:
         """Build the encoder for one instrument.
 
@@ -34,12 +34,12 @@ class Encoder(nn.Module):
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            resolution: How much ground one sample of the instrument spans, in
-                metres.
+            stride: How far apart two neighbouring patch centres of the
+                instrument sit, in metres.
         """
         super().__init__()
         self.embed = nn.Linear(math.prod(shape), dim)
-        self.place = PositionalEncoding(dim, resolution)
+        self.place = PositionalEncoding(dim, stride)
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(self, values: Tensor, position: Tensor, visible: Tensor) -> Tensor:

@@ -30,7 +30,7 @@ class Decoder(nn.Module):
         dim: int,
         heads: int,
         depth: int,
-        resolution: float,
+        stride: float,
     ) -> None:
         """Build the decoder for one instrument.
 
@@ -40,15 +40,15 @@ class Decoder(nn.Module):
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            resolution: How much ground one sample of the instrument spans, in
-                metres.
+            stride: How far apart two neighbouring patch centres of the
+                instrument sit, in metres.
         """
         super().__init__()
         self.shape = shape
         self.expand = nn.Linear(shared, dim)
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
-        self.place = PositionalEncoding(dim, resolution)
+        self.place = PositionalEncoding(dim, stride)
         self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, math.prod(shape))
 

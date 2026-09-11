@@ -25,25 +25,26 @@ class PositionalEncoding(nn.Module):
 
     Attributes:
         periods: The ground distance each sinusoid repeats over, spaced
-            evenly in the log from the shortest the instrument resolves to the
-            widest a feature runs, a span read at the same ones as the
-            coordinate it spans. (6, D / 12)
+            evenly in the log from one patch stride to the widest a feature
+            runs, a span read at the same ones as the coordinate it spans.
+            (6, D / 12)
     """
 
-    def __init__(self, dim: int, resolution: float) -> None:
+    def __init__(self, dim: int, stride: float) -> None:
         """Lay out the periods for one instrument at one token width.
 
         Args:
             dim: The token width, a multiple of 12 so that each of the six
                 coordinates gets a cosine and a sine per period.
-            resolution: How much ground one sample of the instrument spans, in
-                metres, which is the shortest it can tell anything apart at.
+            stride: How far apart two neighbouring patch centres of the
+                instrument sit, in metres. Nothing shorter is worth reading:
+                what is encoded is a patch centre, and a period under the
+                stride gives two neighbours the same phase.
         """
         super().__init__()
-        # TODO: remove this check since I know what I'm passing to it
         if dim % (2 * COORDINATES):
             raise ValueError(f"the token width must be a multiple of 12, not {dim}")
-        shortest = (resolution, resolution, HEIGHT_M[0])
+        shortest = (stride, stride, HEIGHT_M[0])
         longest = (GROUND_LONGEST_M, GROUND_LONGEST_M, HEIGHT_M[1])
         periods = torch.stack(
             [
