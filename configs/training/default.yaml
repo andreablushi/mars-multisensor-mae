@@ -1,6 +1,6 @@
 # How a run trains, validates and stops.
 
-epochs: 100
+epochs: 1000
 batch_size: 32
 learning_rate: 0.00015
 weight_decay: 0.05
@@ -15,7 +15,7 @@ mask_ratio: 0.5
 temperature: 0.5
 
 # How many processes read features beside the training.
-workers: 4
+workers: 8
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints
