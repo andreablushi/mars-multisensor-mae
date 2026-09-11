@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 from torch import Tensor
+from torch.nn.utils.rnn import pad_sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,7 +19,8 @@ class Tokens:
         valid: Whether each sample of a patch is a measurement, over the ground
             axes and broadcastable to the values. (B, K, *P')
         position: How far east and north of the feature centre each patch
-            centre sits, and how high above the areoid, in metres. (B, K, 3)
+            centre sits, how high above the areoid, and how far the patch
+            reaches along each of the three, in metres. (B, K, 6)
         visible: Whether each slot holds a patch its encoder may read, which a
             hidden patch and padding do not. (B, K)
         present: Whether each slot holds a patch rather than padding. (B, K)
@@ -45,3 +48,39 @@ class Tokens:
             self.visible.to(device),
             self.present.to(device),
         )
+
+
+def collate(
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], str, float]],
+) -> tuple[dict[str, Tokens], list[str], Tensor]:
+    """Return one batch of every instrument's tokens, the classes, and the read times.
+
+    Args:
+        samples: What the dataset read of each feature of the batch, and how
+            long each read took.
+
+    Returns:
+        batch: Each instrument's patches padded to the most any feature of the
+            batch holds, keyed as ODE names it, nothing yet hidden from any
+            encoder.
+        classes: The class of each feature, in the batch's order.
+        seconds: How long each feature took to read, in that same order. (B,)
+    """
+    batch = {}
+    for name in samples[0][0]:
+        held = [sample[name] for sample, _, _ in samples]
+        counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
+        slots = torch.arange(int(counts.max()))  # (K,)
+        padded = {
+            key: pad_sequence(
+                [torch.as_tensor(one[key]) for one in held], batch_first=True
+            )
+            for key in held[0]
+        }
+        present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
+        batch[name] = Tokens(**padded, visible=present, present=present)
+    return (
+        batch,
+        [feature_class for _, feature_class, _ in samples],
+        torch.tensor([seconds for _, _, seconds in samples]),  # (B,)
+    )

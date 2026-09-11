@@ -30,6 +30,10 @@ class Patch:
         height_m: How high above the areoid the patch centre stands, in
             metres: the middle of the heights a sounding patch spans, and the
             nearest measured ground under any other.
+        north_span_m: How far the patch reaches northward, in metres.
+        east_span_m: How far it reaches eastward, in metres.
+        height_span_m: How far it reaches in height, in metres, which a
+            sounding patch spans and a surface patch does not.
         t_start: When the observation started, or None where none is published.
         t_end: When it ended, or None for the same reason.
     """
@@ -45,6 +49,9 @@ class Patch:
     north_m: float
     east_m: float
     height_m: float
+    north_span_m: float
+    east_span_m: float
+    height_span_m: float
     t_start: datetime | None
     t_end: datetime | None
 

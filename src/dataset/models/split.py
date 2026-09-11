@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
@@ -52,8 +53,6 @@ class DatasetSplit(Dataset):
         elevation: The instrument whose values give every surface patch its
             height.
         patches: How many patches of each instrument one feature is drawn with.
-        mask_ratio: The share of each instrument's patches hidden from its
-            encoder.
         seed: The number that fixes every draw of the split.
         epoch: Which pass over the split is being read, which moves the draw on
             without losing it.
@@ -69,7 +68,6 @@ class DatasetSplit(Dataset):
         shapes: Mapping[str, tuple[int, ...]],
         elevation: str,
         patches: int,
-        mask_ratio: float,
         seed: int,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
@@ -89,8 +87,6 @@ class DatasetSplit(Dataset):
                 height.
             patches: How many patches of each instrument one feature is drawn
                 with.
-            mask_ratio: The share of each instrument's patches hidden from its
-                encoder.
             seed: The number that fixes every draw of the split.
 
         Raises:
@@ -106,7 +102,6 @@ class DatasetSplit(Dataset):
         self.shapes = shapes
         self.elevation = elevation
         self.patches = patches
-        self.mask_ratio = mask_ratio
         self.seed = seed
         self.epoch = 0
         for name in sizes:
@@ -129,8 +124,10 @@ class DatasetSplit(Dataset):
         """
         return len(self.identities)
 
-    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
-        """Return one feature's patches of each instrument, and its class.
+    def __getitem__(
+        self, index: int
+    ) -> tuple[dict[str, dict[str, np.ndarray]], str, float]:
+        """Return one feature's patches of each instrument, its class, and its read.
 
         Args:
             index: Which feature of the split.
@@ -138,15 +135,16 @@ class DatasetSplit(Dataset):
         Returns:
             sample: For each instrument the model reads, its normalised patches
                 under "values" (K, *P), whether each sample of them is a
-                measurement under "valid" (K, *P'), where each sits in metres
-                under "position" (K, 3), and which of them its encoder may read
-                under "visible" (K,), K being how many the feature was drawn
-                with, which may be none.
+                measurement under "valid" (K, *P'), and where each sits and how
+                far it reaches, in metres, under "position" (K, 6), K being how
+                many the feature was drawn with, which may be none.
             feature_class: The class of the feature, as ODE names it.
+            seconds: How long reading the feature took.
 
         Raises:
             ValueError: When the feature has no elevation to stand on.
         """
+        started = time.perf_counter()
         identity = self.identities[index]
         rows = self.features[identity]
         rng = np.random.default_rng((self.seed, self.epoch, index))
@@ -156,14 +154,8 @@ class DatasetSplit(Dataset):
         heights = self.build.read_heights(held)
         sample = {}
         for name, size in self.sizes.items():
-            drawn, hidden = draw_patches(
-                rows.get(name, []),
-                self.build,
-                size,
-                self.patches,
-                self.mask_ratio,
-                heights,
-                rng,
+            drawn = draw_patches(
+                rows.get(name, []), self.build, size, self.patches, heights, rng
             )
             shape = self.shapes[name]
             valid_shape = tuple(
@@ -182,16 +174,23 @@ class DatasetSplit(Dataset):
                 "position": stacked(
                     [
                         np.array(
-                            [patch.east_m, patch.north_m, patch.height_m], np.float32
+                            [
+                                patch.east_m,
+                                patch.north_m,
+                                patch.height_m,
+                                patch.east_span_m,
+                                patch.north_span_m,
+                                patch.height_span_m,
+                            ],
+                            np.float32,
                         )
                         for patch in drawn
                     ],
-                    (3,),
+                    (6,),
                     np.float32,
                 ),
-                "visible": ~hidden,
             }
-        return sample, identity[0]
+        return sample, identity[0], time.perf_counter() - started
 
     def normalised(self, patch: Patch) -> np.ndarray:
         """Return one patch's values centred and scaled by its instrument's moments.

@@ -16,7 +16,7 @@ class Decoder(nn.Module):
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
-        expand: From the sphere up to the decoder width.
+        expand: From the shared width up to the decoder width.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding.
         blocks: The transformer.
@@ -24,23 +24,31 @@ class Decoder(nn.Module):
     """
 
     def __init__(
-        self, shape: tuple[int, ...], latent: int, dim: int, heads: int, depth: int
+        self,
+        shape: tuple[int, ...],
+        shared: int,
+        dim: int,
+        heads: int,
+        depth: int,
+        resolution: float,
     ) -> None:
         """Build the decoder for one instrument.
 
         Args:
             shape: The shape of one patch of the instrument.
-            latent: The sphere's dimension, which every token read has.
+            shared: The width the cross-sensor encoder hands tokens at.
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
+            resolution: How much ground one sample of the instrument spans, in
+                metres.
         """
         super().__init__()
         self.shape = shape
-        self.expand = nn.Linear(latent, dim)
+        self.expand = nn.Linear(shared, dim)
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
-        self.place = PositionalEncoding(dim)
+        self.place = PositionalEncoding(dim, resolution)
         self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, math.prod(shape))
 
@@ -55,12 +63,13 @@ class Decoder(nn.Module):
         """Return the predicted values of the hidden patches.
 
         Args:
-            context: The sphere tokens the prediction reads, of this or of
-                another instrument. (B, C, L)
-            context_position: Where each of them sits, in metres. (B, C, 3)
+            context: The shared tokens the prediction reads, of this or of
+                another instrument. (B, C, D)
+            context_position: Where each of them sits and how far it reaches,
+                in metres. (B, C, 6)
             context_visible: Which of them the encoder read. (B, C)
-            position: Where each patch of this instrument sits, in metres.
-                (B, K, 3)
+            position: Where each patch of this instrument sits and how far it
+                reaches, in metres. (B, K, 6)
             hidden: Which of them to predict. (B, K)
 
         Returns:

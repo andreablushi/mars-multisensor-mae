@@ -1,5 +1,5 @@
 # The cross-sensor masked autoencoder: an encoder and a decoder per instrument,
-# one cross-sensor encoder between them, and a sphere every token lands on.
+# and one cross-sensor encoder between them.
 
 name: mae
 
@@ -17,14 +17,7 @@ heads: 6
 depth: 4
 crossencoder_depth: 2
 
-# The sphere every token is placed on, and how tightly a draw stays about its mean.
-latent: 64
-kappa: 8000.0
-
 # The decoders.
 decoder_dim: 192
 decoder_heads: 6
 decoder_depth: 4
-
-# The share of each instrument's patches hidden from its encoder.
-mask_ratio: 0.75

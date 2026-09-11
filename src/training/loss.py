@@ -1,15 +1,17 @@
-"""What the model is trained to make small."""
+"""What the model is trained to make small, under the names the paper gives it."""
 
 from __future__ import annotations
 
 import torch
 from torch import Tensor
+from torch.nn import functional
 
 from architecture.mae import Reconstruction
+from architecture.swath import feature_swath
 from architecture.tokens import Tokens
 
 
-def reconstruction_loss(
+def reconstruction_error(
     prediction: Tensor, values: Tensor, valid: Tensor, weight: Tensor
 ) -> Tensor:
     """Return how far the predicted patches stand from the true ones.
@@ -22,7 +24,7 @@ def reconstruction_loss(
         weight: How much each patch counts. (B, K)
 
     Returns:
-        loss: The mean squared error over the measured samples of the counted
+        error: The mean squared error over the measured samples of the counted
             patches, each patch first centred and scaled by the mean and
             deviation of its own measured samples. Zero when none counts.
     """
@@ -38,48 +40,76 @@ def reconstruction_loss(
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
 
 
-def uniformity_loss(directions: Tensor, present: Tensor) -> Tensor:
-    """Return how far the tokens of a batch are from spreading over the sphere.
+def mutual_information(
+    tokens: dict[str, Tensor], visible: dict[str, Tensor], temperature: float
+) -> Tensor:
+    """Return the contrastive term holding a feature's instruments to each other.
 
     Args:
-        directions: Unit vectors, every instrument's tokens side by side.
-            (B, K, L)
-        present: Which of them count. (B, K)
+        tokens: Each instrument's tokens as the cross-sensor encoder hands
+            them, keyed as ODE names it. (B, K, D)
+        visible: Which of each instrument's tokens its encoder read. (B, K)
+        temperature: What the similarities are divided by.
 
     Returns:
-        loss: The mean absolute dot product between each token and the one in
-            the same slot of the next feature of the batch, which two
-            independent draws from a uniform sphere would make zero.
+        loss: The paper's L_MIM, averaged over every ordered pair of
+            instruments: for each feature, minus the log of its own pair of
+            vectors' similarity over that of its vector against every other
+            feature of the batch. A feature holding no visible token of either
+            instrument of a pair is neither a query nor a negative of it. Zero
+            where the model reads one instrument alone.
     """
-    rolled = directions.roll(1, dims=0)  # (B, K, L)
-    weight = (present & present.roll(1, dims=0)).to(directions.dtype)  # (B, K)
-    agreement = (directions * rolled).sum(dim=-1).abs()  # (B, K)
-    return (agreement * weight).sum() / weight.sum().clamp(min=1)  # ()
+    vectors = {
+        name: functional.normalize(feature_swath(held, visible[name]), dim=-1)  # (B, D)
+        for name, held in tokens.items()
+    }
+    read = {name: held.any(dim=1) for name, held in visible.items()}  # (B,)
+    terms = []
+    for asked, query in vectors.items():
+        for against, key in vectors.items():
+            if against == asked:
+                continue
+            similarity = query @ key.T / temperature  # (B, B)
+            paired = read[asked] & read[against]  # (B,)
+            others = paired.unsqueeze(0) & ~torch.eye(
+                paired.shape[0], dtype=torch.bool, device=paired.device
+            )  # (B, B)
+            floor = torch.finfo(similarity.dtype).min
+            against_others = similarity.masked_fill(~others, floor)  # (B, B)
+            denominator = against_others.logsumexp(dim=1)  # (B,)
+            counted = paired & others.any(dim=1)  # (B,)
+            error = denominator - similarity.diagonal()  # (B,)
+            terms.append(
+                torch.where(counted, error, 0.0).sum() / counted.sum().clamp(min=1)
+            )
+    if not terms:
+        return torch.zeros((), device=next(iter(tokens.values())).device)  # ()
+    return torch.stack(terms).mean()  # ()
 
 
-def total_loss(
-    reconstruction: Reconstruction, batch: dict[str, Tokens], uniformity_weight: float
+def csmae_loss(
+    reconstruction: Reconstruction, batch: dict[str, Tokens], temperature: float
 ) -> dict[str, Tensor]:
-    """Return every term of the loss, and their weighted sum under "loss".
+    """Return every term of the objective, and their sum under "loss".
 
     Args:
         reconstruction: What the masked pass predicted, and from what.
         batch: What it was handed.
-        uniformity_weight: How much the uniformity term weighs against the
-            reconstruction.
+        temperature: What the contrastive term divides its similarities by.
 
     Returns:
-        terms: Under "reconstruction/<instrument>" the error of its hidden
-            patches read from its own tokens, under "cross/<instrument>" that
-            error read from each other instrument's tokens, averaged, under
-            "uniformity" the spread of every visible token, and under "loss"
-            the reconstruction terms summed plus the weighted uniformity.
+        terms: Under "umr/<instrument>" the uni-modal reconstruction of its
+            hidden patches, read from its own visible tokens, under
+            "cmr/<instrument>" the cross-modal reconstruction of those same
+            patches read from each other instrument's, averaged, under "mim"
+            the contrastive term, and under "loss" every reconstruction term
+            summed plus it.
     """
     terms = {}
     total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()
     for asked, tokens in batch.items():
         hidden = tokens.present & ~tokens.visible  # (B, K)
-        own = reconstruction_loss(
+        umr = reconstruction_error(
             reconstruction.predictions[asked, asked],
             tokens.values,
             tokens.valid,
@@ -91,19 +121,21 @@ def total_loss(
                 continue
             readable = batch[read].visible.any(dim=1, keepdim=True)  # (B, 1)
             others.append(
-                reconstruction_loss(
+                reconstruction_error(
                     reconstruction.predictions[asked, read],
                     tokens.values,
                     tokens.valid,
                     hidden & readable,
                 )
             )
-        cross = torch.stack(others).mean() if others else total  # ()
-        terms[f"reconstruction/{asked}"] = own
-        terms[f"cross/{asked}"] = cross
-        total = total + own + cross
-    directions = torch.cat([reconstruction.tokens[name] for name in batch], dim=1)
-    visible = torch.cat([batch[name].visible for name in batch], dim=1)
-    terms["uniformity"] = uniformity_loss(directions, visible)  # ()
-    terms["loss"] = total + uniformity_weight * terms["uniformity"]  # ()
+        cmr = torch.stack(others).mean() if others else total  # ()
+        terms[f"umr/{asked}"] = umr
+        terms[f"cmr/{asked}"] = cmr
+        total = total + umr + cmr
+    terms["mim"] = mutual_information(
+        reconstruction.tokens,
+        {name: tokens.visible for name, tokens in batch.items()},
+        temperature,
+    )  # ()
+    terms["loss"] = total + terms["mim"]  # ()
     return terms

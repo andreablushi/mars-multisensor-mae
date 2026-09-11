@@ -39,17 +39,13 @@ class ModelConfig:
             height.
         patches: How many patches of each instrument one feature is drawn with.
         dim: How wide a token is in the instrument encoders and in the
-            cross-sensor encoder, a multiple of 6 for the positional encoding.
+            cross-sensor encoder, a multiple of 12 for the positional encoding.
         heads: How many attention heads those encoders run.
         depth: How many blocks each instrument encoder stacks.
         crossencoder_depth: How many blocks the cross-sensor encoder stacks.
-        latent: How many dimensions the sphere every token is placed on has.
-        kappa: How tightly a sampled token stays about its mean direction.
-        decoder_dim: How wide a token is in the decoders, a multiple of 6.
+        decoder_dim: How wide a token is in the decoders, a multiple of 12.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
-        mask_ratio: The share of each instrument's patches hidden from its
-            encoder.
     """
 
     name: str
@@ -60,12 +56,9 @@ class ModelConfig:
     heads: int
     depth: int
     crossencoder_depth: int
-    latent: int
-    kappa: float
     decoder_dim: int
     decoder_heads: int
     decoder_depth: int
-    mask_ratio: float
 
 
 @dataclass
@@ -81,9 +74,9 @@ class TrainingConfig:
             the cosine decay.
         patience: How many epochs without a lower validation loss before the
             run stops.
-        uniformity_weight: How much the batch uniformity term weighs against
-            the reconstruction.
-        neighbours: How many nearest features a retrieval metric looks at.
+        mask_ratio: The share of each instrument's patches hidden from its
+            encoder.
+        temperature: What the contrastive term divides its similarities by.
         workers: How many processes read features beside the training.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
@@ -94,8 +87,8 @@ class TrainingConfig:
     weight_decay: float
     warmup_epochs: int
     patience: int
-    uniformity_weight: float
-    neighbours: int
+    mask_ratio: float
+    temperature: float
     workers: int
     checkpoints: str
 

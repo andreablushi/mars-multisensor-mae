@@ -235,7 +235,6 @@ class DatasetBuild:
         shapes: Mapping[str, tuple[int, ...]],
         elevation: str,
         patches: int,
-        mask_ratio: float,
         batch_size: int,
         workers: int,
         collate: Callable,
@@ -260,8 +259,6 @@ class DatasetBuild:
                 height.
             patches: How many patches of each instrument one feature is drawn
                 with.
-            mask_ratio: The share of each instrument's patches hidden from its
-                encoder.
             batch_size: How many features one step reads.
             workers: How many processes read features beside the training.
             collate: How one batch of drawn features becomes what the model is
@@ -296,7 +293,6 @@ class DatasetBuild:
                     shapes,
                     elevation,
                     patches,
-                    mask_ratio,
                     seed,
                 ),
                 batch_size=batch_size,

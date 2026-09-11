@@ -44,18 +44,16 @@ def draw_patches(
     build: DatasetBuild,
     patchsize: int,
     count: int,
-    ratio: float,
     heights: np.ndarray,
     rng: np.random.Generator,
-) -> tuple[list[Patch], np.ndarray]:
-    """Return patches of one instrument drawn over one feature, and which are hidden.
+) -> list[Patch]:
+    """Return the patches of one instrument drawn over one feature.
 
     Args:
         observations: The feature's index rows of that one instrument.
         build: The published build the observations are read from.
         patchsize: How far a patch of that instrument runs along.
         count: How many to draw, or every one where the feature holds fewer.
-        ratio: The share of them to hide from the instrument's encoder.
         heights: Where the ground stands over the feature. (N, 3)
         rng: What fixes the draw.
 
@@ -64,8 +62,6 @@ def draw_patches(
             likely and none twice, and none that measured nothing. An
             observation is read only when a patch of it was drawn. Empty where
             the feature holds none.
-        hidden: Which of them to hide, that share of them rounded down, and
-            empty where none were drawn. (K,)
     """
     totals = [
         math.prod(patch_counts(one.shape, one.axes, patchsize)) for one in observations
@@ -86,9 +82,7 @@ def draw_patches(
             )
             if patch.valid.any()
         )
-    hidden = np.zeros(len(drawn), dtype=bool)  # (K,)
-    hidden[rng.choice(len(drawn), size=int(len(drawn) * ratio), replace=False)] = True
-    return drawn, hidden
+    return drawn
 
 
 def cut_patch(
@@ -111,9 +105,10 @@ def cut_patch(
             instrument measured it. (N, 3)
 
     Returns:
-        patch: The patch, carrying which of its samples were measured and how
-            high its centre stands. Copied, so it does not hold the observation
-            behind it.
+        patch: The patch, carrying which of its samples were measured, how high
+            its centre stands, and how far it reaches in each direction, which
+            is what tells a surface tile from a sounding column. Copied, so it
+            does not hold the observation behind it.
     """
     shape, axes = observation.values.shape, observation.axes
     lengths = patch_lengths(shape, axes, patchsize)
@@ -132,7 +127,9 @@ def cut_patch(
     beside = _beside(observation, window)
     if ELEVATION in axes:
         height_m = float(np.mean(beside[HEIGHTS]))
+        height_span_m = float(np.ptp(beside[HEIGHTS]))
     else:
+        height_span_m = 0.0
         nearest = np.argmin(
             (heights[:, 0] - north_m) ** 2 + (heights[:, 1] - east_m) ** 2
         )
@@ -149,6 +146,9 @@ def cut_patch(
         north_m=north_m,
         east_m=east_m,
         height_m=height_m,
+        north_span_m=float(np.ptp(north)),
+        east_span_m=float(np.ptp(east)),
+        height_span_m=height_span_m,
         t_start=record.t_start,
         t_end=record.t_end,
     )

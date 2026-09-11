@@ -13,13 +13,13 @@ from dh.store import published_build
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
+from architecture.tokens import collate
 from config.load import load_config
 from config.schema import Config
 from dataset.patches import patch_lengths, patch_sizes
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from logs.console import logger
 from logs.tracker import start_run
-from training.collate import collate
 from training.train import train
 
 TRAINING_HANDLER = "scripts.train:run_training"
@@ -45,6 +45,7 @@ def train_model(config: Config) -> Path:
         name: patch_lengths(rows[name].shape, rows[name].axes, size)
         for name, size in sizes.items()
     }
+    resolutions = {name: min(rows[name].ground_sample_m) for name in sizes}
     loaders = build.loaders_by_split(
         config.dataset.split,
         config.dataset.seed,
@@ -52,7 +53,6 @@ def train_model(config: Config) -> Path:
         shapes,
         config.model.elevation,
         config.model.patches,
-        config.model.mask_ratio,
         config.training.batch_size,
         config.training.workers,
         collate,
@@ -60,18 +60,19 @@ def train_model(config: Config) -> Path:
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
-    model = CrossSensorMAE(shapes, config.model).to(device)
-    run = start_run(config)
-    run.config.update(
+    model = CrossSensorMAE(shapes, resolutions, config.model).to(device)
+    run = start_run(
+        config,
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
+            "resolutions": resolutions,
             "features": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),
             },
-        }
+        },
     )
     best = train(model, training, validation, config, device, run)
     run.finish()
