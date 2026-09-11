@@ -9,6 +9,7 @@ from torch import Tensor, nn
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
+from architecture.fusion import feature_latent
 from architecture.tokens import Tokens
 from config.schema import ModelConfig
 
@@ -118,6 +119,21 @@ class CrossSensorMAE(nn.Module):
             name: self.shared_tokens(name, tokens, tokens.present)
             for name, tokens in batch.items()
         }
+
+    def embed(self, batch: dict[str, Tokens]) -> Tensor:
+        """Return the one vector standing for each feature of a batch.
+
+        Args:
+            batch: Each instrument's patches over the batch, keyed as ODE names
+                it.
+
+        Returns:
+            latent: One vector per feature, over every patch it holds of every
+                instrument, none hidden. (B, D)
+        """
+        return feature_latent(
+            self.encode(batch), {name: one.present for name, one in batch.items()}
+        )  # (B, D)
 
     def forward(self, batch: dict[str, Tokens]) -> Reconstruction:
         """Return every instrument's hidden patches, predicted from every instrument.

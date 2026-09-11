@@ -6,8 +6,8 @@ import torch
 from torch import Tensor
 from torch.nn import functional
 
+from architecture.fusion import instrument_vector
 from architecture.mae import Reconstruction
-from architecture.swath import feature_swath
 from architecture.tokens import Tokens
 
 
@@ -55,14 +55,16 @@ def mutual_information(
         loss: The paper's L_MIM, averaged over every ordered pair of
             instruments: for each feature, minus the log of its own pair of
             vectors' similarity over that of its vector against every other
-            feature of the batch. A feature holding no visible token of either
-            instrument of a pair is neither a query nor a negative of it. Zero
-            where the model reads one instrument alone.
+            feature of the batch. One vector stands for a feature under an
+            instrument, the average of the tokens that instrument read of it.
+            A feature holding no visible token of either instrument of a pair
+            is neither a query nor a negative of it. Zero where the model reads
+            one instrument alone.
     """
     vectors = {
-        name: functional.normalize(feature_swath(held, visible[name]), dim=-1)  # (B, D)
+        name: functional.normalize(instrument_vector(held, visible[name]), dim=-1)
         for name, held in tokens.items()
-    }
+    }  # (B, D)
     read = {name: held.any(dim=1) for name, held in visible.items()}  # (B,)
     terms = []
     for asked, query in vectors.items():
