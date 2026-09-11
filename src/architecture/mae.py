@@ -9,7 +9,7 @@ from torch import Tensor, nn
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.fusion import feature_latent
+from architecture.components.fusion import feature_latent
 from architecture.tokens import Tokens
 from config.schema import ModelConfig
 
