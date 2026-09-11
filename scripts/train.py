@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from dh import submit
 from dh.configs import load_platform
-from dh.publish import publish_checkpoint
+from dh.publish import model_name, publish_checkpoint
 from dh.store import published_build
 from digitalhub_runtime_python import handler
 
@@ -16,7 +16,7 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import collate
 from config.load import load_config
 from config.schema import Config
-from dataset.patches import patch_lengths, patch_sizes
+from dataset.patches import patch_sizes
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from logs.console import logger
 from logs.tracker import start_run
@@ -40,24 +40,8 @@ def train_model(config: Config) -> Path:
     """
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    rows = build.read_row_by_instrument()
-    shapes = {
-        name: patch_lengths(rows[name].shape, rows[name].axes, size)
-        for name, size in sizes.items()
-    }
-    ground = build.read_ground_sample_by_instrument()
-    strides = {name: size * ground[name] for name, size in sizes.items()}
-    loaders = build.loaders_by_split(
-        config.dataset.split,
-        config.dataset.seed,
-        sizes,
-        shapes,
-        config.model.elevation,
-        config.model.patches,
-        config.training.batch_size,
-        config.training.workers,
-        collate,
-    )
+    shapes, strides = build.read_patch_layout(sizes)
+    loaders = build.loaders_by_split(config, sizes, shapes, collate)
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
@@ -93,7 +77,7 @@ def run_training(project, overrides: list[str] | None = None):
     """
     config = load_config(overrides or [])
     best = train_model(config)
-    return publish_checkpoint(project, best, f"{_MODEL}-{config.model.name}")
+    return publish_checkpoint(project, best, model_name(config.model))
 
 
 def main() -> int:

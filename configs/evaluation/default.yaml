@@ -1,0 +1,11 @@
+# How a trained model's latent space is measured against the feature classes.
+
+# The split the latents are read from: train, validation or test.
+split: test
+
+# How many nearest latents one retrieval reads, the paper's top ten.
+neighbours: 10
+
+# The published model to read, or nothing for the latest one this architecture
+# published. A single version is read by its own key, evaluation.model=store://...
+model: null

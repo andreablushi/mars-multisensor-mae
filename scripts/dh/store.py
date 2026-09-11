@@ -1,7 +1,8 @@
-"""Reading a published build out of the store DigitalHub keeps it in."""
+"""Reading what DigitalHub published, a build of the dataset or a trained model."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import urlparse
 
 import digitalhub as dh
@@ -53,3 +54,21 @@ def published_build(dataset: DatasetConfig) -> DatasetBuild:
         return fetched["Body"].read()
 
     return DatasetBuild(root=build_root(dataset), fetch=fetch)
+
+
+def published_checkpoint(name: str, destination: Path) -> Path:
+    """Return where one published model landed on this machine, fetched again each time.
+
+    Args:
+        name: What it was published as, or the key of one version of it, the
+            name alone being read as its latest version.
+        destination: The file to write it to, whose directory is made if it is
+            missing.
+
+    Returns:
+        path: The checkpoint, on this machine.
+    """
+    credentials.refresh()
+    project = dh.get_or_create_project(load_platform().project)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    return Path(project.get_model(name).download(str(destination), overwrite=True))

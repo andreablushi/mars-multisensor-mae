@@ -9,12 +9,15 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "hydra-core>=1.3,<2",
+    "matplotlib>=3.10",
     "mars-multisensor-dataset @ https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/main.tar.gz",
     "numpy>=2.5.2",
     "pyarrow>=25.0.1",
     "pyyaml>=6.0.3",
     "rich>=14.0.0",
+    "scikit-learn>=1.7",
     "torch>=2.14.0",
+    "umap-learn>=0.5.7",
     "wandb>=0.22",
     "zarr>=3.3",
 ]
@@ -24,7 +27,14 @@ requires = ["uv_build>=0.10.2,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = ["architecture", "config", "dataset", "logs", "training"]
+module-name = [
+    "architecture",
+    "config",
+    "dataset",
+    "evaluation",
+    "logs",
+    "training",
+]
 
 [dependency-groups]
 dev = [

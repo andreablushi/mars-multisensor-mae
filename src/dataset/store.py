@@ -27,8 +27,10 @@ from shared.disk import parquet
 from shared.disk.files import atomic_path
 from torch.utils.data import DataLoader
 
+from config.schema import Config
 from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
+from dataset.patches import patch_lengths
 
 # The splits a build is read in, which the config gives a share of the features each.
 TRAINING_SPLIT = "train"
@@ -240,16 +242,37 @@ class DatasetBuild:
             described=described,
         )
 
+    def read_patch_layout(
+        self, sizes: Mapping[str, int]
+    ) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
+        """Return the shape of one patch of each instrument, and how far two sit apart.
+
+        Args:
+            sizes: How far a patch of each instrument runs along an axis it is
+                cut on, keyed as ODE names it.
+
+        Returns:
+            shapes: The shape of one patch of each instrument, keyed as ODE
+                names it.
+            strides: How far apart two neighbouring patch centres of each
+                instrument sit, in metres, which sets the shortest period its
+                positions are read at.
+        """
+        rows = self.read_row_by_instrument()
+        ground = self.read_ground_sample_by_instrument()
+        return (
+            {
+                name: patch_lengths(rows[name].shape, rows[name].axes, size)
+                for name, size in sizes.items()
+            },
+            {name: size * ground[name] for name, size in sizes.items()},
+        )
+
     def loaders_by_split(
         self,
-        shares: Sequence[float],
-        seed: int,
+        config: Config,
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
-        elevation: str,
-        patches: int,
-        batch_size: int,
-        workers: int,
         collate: Callable,
     ) -> dict[str, DataLoader]:
         """Return every split of the build in batches, whole features at a time.
@@ -259,21 +282,16 @@ class DatasetBuild:
         ones already placed where they were.
 
         Args:
-            shares: How much of the build each split holds, in the order
-                `SPLITS` names them.
-            seed: The number that fixes where a feature falls and how it is
-                drawn.
+            config: What the run reads and how much of it one step reads: the
+                share of the build each split holds, the number that fixes
+                where a feature falls and how it is drawn, the instrument every
+                surface patch takes its height from, how many patches a feature
+                is drawn with, and how many features and processes a step runs.
             sizes: How far a patch of each instrument runs along an axis it is
                 cut on, keyed as ODE names it, which is also which instruments
                 the model reads.
             shapes: The shape of one patch of each instrument as the model
                 reads it.
-            elevation: The instrument whose values give every surface patch its
-                height.
-            patches: How many patches of each instrument one feature is drawn
-                with.
-            batch_size: How many features one step reads.
-            workers: How many processes read features beside the training.
             collate: How one batch of drawn features becomes what the model is
                 handed.
 
@@ -283,6 +301,8 @@ class DatasetBuild:
                 order.
         """
         by_feature = self.read_observation_metadata_by_feature()
+        shares = config.dataset.split
+        seed = config.dataset.seed
         total = sum(shares)
         splits: dict[str, list[tuple[str, str]]] = {name: [] for name in SPLITS}
         for identity in by_feature:
@@ -304,13 +324,13 @@ class DatasetBuild:
                     statistics,
                     sizes,
                     shapes,
-                    elevation,
-                    patches,
+                    config.model.elevation,
+                    config.model.patches,
                     seed,
                 ),
-                batch_size=batch_size,
+                batch_size=config.training.batch_size,
                 shuffle=name == TRAINING_SPLIT,
-                num_workers=workers,
+                num_workers=config.training.workers,
                 collate_fn=collate,
             )
             for name, held in splits.items()

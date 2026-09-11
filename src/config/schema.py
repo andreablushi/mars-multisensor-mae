@@ -94,6 +94,24 @@ class TrainingConfig:
 
 
 @dataclass
+class EvaluationConfig:
+    """What a trained model's latent space is measured over, and how.
+
+    Attributes:
+        split: The split the latents are read from, as the code names the
+            splits.
+        neighbours: How many nearest latents one retrieval reads.
+        model: The published model to read, as it was published or as the key
+            of one version of it, or None for the latest version of what a run
+            of this architecture publishes.
+    """
+
+    split: str
+    neighbours: int
+    model: str | None = None
+
+
+@dataclass
 class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
@@ -101,8 +119,10 @@ class Config:
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
+        evaluation: How what it trained is measured.
     """
 
     dataset: DatasetConfig
     model: ModelConfig
     training: TrainingConfig
+    evaluation: EvaluationConfig

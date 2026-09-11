@@ -25,10 +25,17 @@ resources:
     gpu: 1
     memory: 8Gi
     disk: 64Gi
+  evaluation:
+    profile: 1xrtxa5000-shared
+    cpu: 1
+    gpu: 1
+    memory: 8Gi
+    disk: 64Gi
 
 # The function each run is registered as, the project scoping it so it needs no prefix
 functions:
   training: train-mae
+  evaluation: evaluate-mae
 
 # What each stage publishes, and what it reads that the dataset repository published.
 publishes:

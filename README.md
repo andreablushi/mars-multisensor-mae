@@ -29,7 +29,7 @@ dhcli login                                    # opens a browser tab
 
 cp .env.example .env                           # once, then fill it in
 
-uv run --group digitalhub python scripts/train.py --dh --ref setup
+uv run --group digitalhub python scripts/train.py --dh --ref refine
 ```
 
 Everything a submission needs, from the project name to the box a job asks
