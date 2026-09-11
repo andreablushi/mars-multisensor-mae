@@ -73,7 +73,6 @@ def train(
     started = time.perf_counter()
     step, best_epoch = 0, -1
     for epoch in range(settings.epochs):
-        training.dataset.set_epoch(epoch)
         model.train()
         epoch_started = time.perf_counter()
         loads: list[float] = []

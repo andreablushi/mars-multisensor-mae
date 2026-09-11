@@ -284,9 +284,9 @@ class DatasetBuild:
         Args:
             config: What the run reads and how much of it one step reads: the
                 share of the build each split holds, the number that fixes
-                where a feature falls and how it is drawn, the instrument every
-                surface patch takes its height from, how many patches a feature
-                is drawn with, and how many features and processes a step runs.
+                where a feature falls, the instrument every surface patch
+                takes its height from, and how many features and processes a
+                step runs.
             sizes: How far a patch of each instrument runs along an axis it is
                 cut on, keyed as ODE names it, which is also which instruments
                 the model reads.
@@ -325,8 +325,6 @@ class DatasetBuild:
                     sizes,
                     shapes,
                     config.model.elevation,
-                    config.model.patches,
-                    seed,
                 ),
                 batch_size=config.training.batch_size,
                 shuffle=name == TRAINING_SPLIT,

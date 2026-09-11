@@ -8,9 +8,6 @@ name: mae
 instruments: [CTX, CRISM, SHARAD]
 elevation: MOLA
 
-# How many patches of each instrument one feature is drawn with.
-patches: 64
-
 # The instrument encoders and the cross-sensor encoder.
 dim: 384
 heads: 6

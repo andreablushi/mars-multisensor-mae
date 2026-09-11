@@ -1,4 +1,4 @@
-"""One split of the dataset, each feature read as a few patches of each instrument."""
+"""One split of the dataset, each feature read as every patch of each instrument."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import draw_patches
+from dataset.patches import read_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -37,7 +37,7 @@ def stacked(
 
 
 class DatasetSplit(Dataset):
-    """Every feature of one split, each read as a few patches of each instrument.
+    """Every feature of one split, each read as every patch of each instrument.
 
     Attributes:
         build: The build the features are read from.
@@ -52,10 +52,6 @@ class DatasetSplit(Dataset):
         shapes: The shape of one patch of each instrument as the model reads it.
         elevation: The instrument whose values give every surface patch its
             height.
-        patches: How many patches of each instrument one feature is drawn with.
-        seed: The number that fixes every draw of the split.
-        epoch: Which pass over the split is being read, which moves the draw on
-            without losing it.
     """
 
     def __init__(
@@ -67,8 +63,6 @@ class DatasetSplit(Dataset):
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         elevation: str,
-        patches: int,
-        seed: int,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
@@ -85,9 +79,6 @@ class DatasetSplit(Dataset):
                 reads it.
             elevation: The instrument whose values give every surface patch its
                 height.
-            patches: How many patches of each instrument one feature is drawn
-                with.
-            seed: The number that fixes every draw of the split.
 
         Raises:
             ValueError: When an instrument the model reads has no finite
@@ -101,20 +92,9 @@ class DatasetSplit(Dataset):
         self.sizes = sizes
         self.shapes = shapes
         self.elevation = elevation
-        self.patches = patches
-        self.seed = seed
-        self.epoch = 0
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
-
-    def set_epoch(self, epoch: int) -> None:
-        """Move every feature's draw on to the pass about to be read.
-
-        Args:
-            epoch: Which pass over the split it is.
-        """
-        self.epoch = epoch
 
     def __len__(self) -> int:
         """Return how many features the split holds.
@@ -127,7 +107,7 @@ class DatasetSplit(Dataset):
     def __getitem__(
         self, index: int
     ) -> tuple[dict[str, dict[str, np.ndarray]], str, float]:
-        """Return one feature's patches of each instrument, its class, and its read.
+        """Return one feature's every patch of each instrument, its class, and its read.
 
         Args:
             index: Which feature of the split.
@@ -136,8 +116,8 @@ class DatasetSplit(Dataset):
             sample: For each instrument the model reads, its normalised patches
                 under "values" (K, *P), whether each sample of them is a
                 measurement under "valid" (K, *P'), and where each sits and how
-                far it reaches, in metres, under "position" (K, 6), K being how
-                many the feature was drawn with, which may be none.
+                far it reaches, in metres, under "position" (K, 6), K being
+                every whole patch the feature holds, which may be none.
             feature_class: The class of the feature, as ODE names it.
             seconds: How long reading the feature took.
 
@@ -147,16 +127,13 @@ class DatasetSplit(Dataset):
         started = time.perf_counter()
         identity = self.identities[index]
         rows = self.features[identity]
-        rng = np.random.default_rng((self.seed, self.epoch, index))
         held = rows.get(self.elevation)
         if not held:
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
         heights = self.build.read_heights(held)
         sample = {}
         for name, size in self.sizes.items():
-            drawn = draw_patches(
-                rows.get(name, []), self.build, size, self.patches, heights, rng
-            )
+            drawn = read_patches(rows.get(name, []), self.build, size, heights)
             shape = self.shapes[name]
             valid_shape = tuple(
                 held if holds == GROUND else 1

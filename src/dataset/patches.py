@@ -39,50 +39,38 @@ def patch_sizes(
     }
 
 
-def draw_patches(
+def read_patches(
     observations: Sequence[ObservationMetadata],
     build: DatasetBuild,
     patchsize: int,
-    count: int,
     heights: np.ndarray,
-    rng: np.random.Generator,
 ) -> list[Patch]:
-    """Return the patches of one instrument drawn over one feature.
+    """Return every whole patch of one instrument over one feature.
 
     Args:
         observations: The feature's index rows of that one instrument.
         build: The published build the observations are read from.
         patchsize: How far a patch of that instrument runs along.
-        count: How many to draw, or every one where the feature holds fewer.
         heights: Where the ground stands over the feature. (N, 3)
-        rng: What fixes the draw.
 
     Returns:
-        drawn: The patches, every whole patch of every observation equally
-            likely and none twice, and none that measured nothing. An
-            observation is read only when a patch of it was drawn. Empty where
-            the feature holds none.
+        read: Every whole patch of every observation, in the order the index
+            holds them, and none that measured nothing. Every observation is
+            read. Empty where the feature holds none.
     """
-    totals = [
-        math.prod(patch_counts(one.shape, one.axes, patchsize)) for one in observations
-    ]
-    edges = np.cumsum([0, *totals])
-    chosen = np.sort(rng.choice(edges[-1], size=min(count, edges[-1]), replace=False))
-    drawn = []
-    for at, record in enumerate(observations):
-        taken = chosen[(chosen >= edges[at]) & (chosen < edges[at + 1])] - edges[at]
-        if taken.size == 0:
-            continue
+    read = []
+    for record in observations:
         observation = build.read_observation(record.path)
-        drawn.extend(
+        whole = math.prod(patch_counts(record.shape, record.axes, patchsize))
+        read.extend(
             patch
             for patch in (
-                cut_patch(observation, record, int(one), patchsize, heights)
-                for one in taken
+                cut_patch(observation, record, index, patchsize, heights)
+                for index in range(whole)
             )
             if patch.valid.any()
         )
-    return drawn
+    return read
 
 
 def cut_patch(

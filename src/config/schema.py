@@ -37,7 +37,6 @@ class ModelConfig:
             them. The elevation instrument is not one of them.
         elevation: The instrument whose values give every surface patch its
             height.
-        patches: How many patches of each instrument one feature is drawn with.
         dim: How wide a token is in the instrument encoders and in the
             cross-sensor encoder, a multiple of 12 for the positional encoding.
         heads: How many attention heads those encoders run.
@@ -51,7 +50,6 @@ class ModelConfig:
     name: str
     instruments: list[str]
     elevation: str
-    patches: int
     dim: int
     heads: int
     depth: int

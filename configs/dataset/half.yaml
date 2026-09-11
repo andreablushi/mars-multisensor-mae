@@ -13,13 +13,11 @@ root: data/dataset
 patchsize:
   default: 16
   # A scan at about 6 m a pixel, so a wider patch still covers little ground.
-  CTX: 64
+  CTX: 512
   # A survey at about 200 m a pixel, its 400 odd bands the channels of a patch.
-  CRISM: 16
+  CRISM: 64
   # A radargram walks one line, and its other axis is depth rather than ground.
-  SHARAD: 16
-  # A gridded tile at about 460 m a pixel, and coarser still towards a pole.
-  MOLA: 16
+  SHARAD: 64
 
 # The shares the features are split into, in the order the code names the
 # splits: train, validation, test.
