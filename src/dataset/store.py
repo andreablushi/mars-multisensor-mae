@@ -45,10 +45,13 @@ class DatasetBuild:
     Attributes:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
+        records: What every observation of the build is, once the index has
+            been read, and None until then.
     """
 
     root: Path
     fetch: Callable[[str], bytes]
+    records: list[ObservationMetadata] | None = None
 
     def read_object(self, path: str) -> bytes:
         """Return what one object of the build holds, off disk or from the store.
@@ -70,15 +73,19 @@ class DatasetBuild:
         return self.fetch(path)
 
     def read_observation_metadata(self) -> list[ObservationMetadata]:
-        """Return what every observation of the build is, without reading one.
+        """Return what every observation of the build is, reading the index once.
 
         Returns:
             records: One row per observation, in the order the index holds them.
         """
-        held = pq.read_table(
-            io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
-        )
-        return [parquet.build(ObservationMetadata, row) for row in held.to_pylist()]
+        if self.records is None:
+            held = pq.read_table(
+                io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
+            )
+            self.records = [
+                parquet.build(ObservationMetadata, row) for row in held.to_pylist()
+            ]
+        return self.records
 
     def read_observation_metadata_by_feature(
         self,

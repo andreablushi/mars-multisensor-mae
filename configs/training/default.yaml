@@ -1,11 +1,16 @@
 # How a run trains, validates and stops.
 
-epochs: 1000
-batch_size: 64
+# A split holds a few hundred features, so an epoch is a handful of steps and
+# every count here is read against that.
+epochs: 5000
+# How many features one step reads, which also settles how many patches of each
+# instrument a read draws: the fewer the features, the more patches each, so a
+# step carries the same and reads fewer observations for it.
+batch_size: 16
 learning_rate: 0.00015
 weight_decay: 0.05
-warmup_epochs: 5
-patience: 10
+warmup_epochs: 100
+patience: 200
 
 # The share of each instrument's patches hidden from its encoder, the paper's
 # random correspondence drawing each instrument's independently.

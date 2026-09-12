@@ -65,7 +65,8 @@ class TrainingConfig:
 
     Attributes:
         epochs: How many passes over the training features, at most.
-        batch_size: How many features one step reads.
+        batch_size: How many features one step reads, which also settles how
+            many patches of each instrument a read draws.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the learning rate climbs over before
