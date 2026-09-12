@@ -158,7 +158,9 @@ class DatasetSplit(Dataset):
             )
             sample[name] = {
                 "values": stacked(
-                    [self.normalised(patch) for patch in drawn], shape, np.float32
+                    [self.normalised(patch, valid_shape) for patch in drawn],
+                    shape,
+                    np.float32,
                 ),
                 "valid": stacked(
                     [patch.valid.reshape(valid_shape) for patch in drawn],
@@ -186,18 +188,24 @@ class DatasetSplit(Dataset):
             }
         return sample, identity[0], time.perf_counter() - started
 
-    def normalised(self, patch: Patch) -> np.ndarray:
+    def normalised(self, patch: Patch, valid_shape: tuple[int, ...]) -> np.ndarray:
         """Return one patch's values centred and scaled by its instrument's moments.
 
         Args:
             patch: The patch.
+            valid_shape: The shape its measurement mask takes to broadcast over
+                the values.
 
         Returns:
             values: The values less their mean over their deviation, the
                 instrument's own over the training split, one number for an
                 instrument measuring one thing and one per band for a spectral
-                one. (*P)
+                one, and zero where the sample is no measurement. An encoder
+                reads every sample of a patch, mask or no mask, so a sample a
+                sounder wrote as nan is read as the instrument's average
+                instead. (*P)
         """
         held = self.statistics[patch.instrument]
         values = patch.values.astype(np.float32)  # (*P)
-        return (values - held["mean"]) / np.maximum(held["deviation"], 1e-6)
+        scaled = (values - held["mean"]) / np.maximum(held["deviation"], 1e-6)  # (*P)
+        return np.where(patch.valid.reshape(valid_shape), scaled, 0.0)  # (*P)
