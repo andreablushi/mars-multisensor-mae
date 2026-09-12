@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 import torch
-from torch.nn.utils import get_total_norm
+from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
@@ -86,9 +86,8 @@ def train(
             rate = scheduler.get_last_lr()[0]
             optimizer.zero_grad()
             terms["loss"].backward()
-            gradient = get_total_norm(
-                [one.grad for one in model.parameters() if one.grad is not None]
-            )
+            # One patch a sounder wrote badly must not carry the whole run off.
+            gradient = clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
             step += 1
