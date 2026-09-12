@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
@@ -52,6 +53,9 @@ class DatasetSplit(Dataset):
         shapes: The shape of one patch of each instrument as the model reads it.
         elevation: The instrument whose values give every surface patch its
             height.
+        budget: How many patches of each instrument one read draws at most.
+        seed: The number that fixes every read's draw, or None for a split that
+            draws anew each time.
     """
 
     def __init__(
@@ -63,6 +67,8 @@ class DatasetSplit(Dataset):
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         elevation: str,
+        budget: int,
+        seed: int | None,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
@@ -79,6 +85,9 @@ class DatasetSplit(Dataset):
                 reads it.
             elevation: The instrument whose values give every surface patch its
                 height.
+            budget: How many patches of each instrument one read draws at most.
+            seed: The number that fixes every read's draw, or None for a split
+                that draws anew each time.
 
         Raises:
             ValueError: When an instrument the model reads has no finite
@@ -92,6 +101,8 @@ class DatasetSplit(Dataset):
         self.sizes = sizes
         self.shapes = shapes
         self.elevation = elevation
+        self.budget = budget
+        self.seed = seed
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -107,7 +118,7 @@ class DatasetSplit(Dataset):
     def __getitem__(
         self, index: int
     ) -> tuple[dict[str, dict[str, np.ndarray]], str, float]:
-        """Return one feature's every patch of each instrument, its class, and its read.
+        """Return what one feature was drawn as, its class, and how long it took.
 
         Args:
             index: Which feature of the split.
@@ -117,7 +128,10 @@ class DatasetSplit(Dataset):
                 under "values" (K, *P), whether each sample of them is a
                 measurement under "valid" (K, *P'), and where each sits and how
                 far it reaches, in metres, under "position" (K, 6), K being
-                every whole patch the feature holds, which may be none.
+                what the budget drew of the feature, which may be none. A split
+                holding a seed draws the same patches of a feature every time,
+                so its loss is the last pass's to beat; one holding none draws
+                anew, so a run reads every patch of a feature over its epochs.
             feature_class: The class of the feature, as ODE names it.
             seconds: How long reading the feature took.
 
@@ -131,9 +145,12 @@ class DatasetSplit(Dataset):
         if not held:
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
         heights = self.build.read_heights(held)
+        draw = random.Random(None if self.seed is None else f"{self.seed}/{identity}")
         sample = {}
         for name, size in self.sizes.items():
-            drawn = read_patches(rows.get(name, []), self.build, size, heights)
+            drawn = read_patches(
+                rows.get(name, []), self.build, size, heights, self.budget, draw
+            )
             shape = self.shapes[name]
             valid_shape = tuple(
                 held if holds == GROUND else 1

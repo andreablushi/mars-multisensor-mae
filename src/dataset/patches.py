@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,11 @@ if TYPE_CHECKING:
 HEIGHTS = "elevation"
 
 DEFAULT_PATCHSIZE = "default"
+
+# How many patches of one instrument one step carries, which the widest
+# reconstruction settles: a decoder predicts a whole patch of its instrument for
+# every instrument read, so this many CTX patches is what a 24Gi card holds.
+PATCHES_PER_STEP = 512
 
 
 def patch_sizes(
@@ -44,33 +50,41 @@ def read_patches(
     build: DatasetBuild,
     patchsize: int,
     heights: np.ndarray,
+    budget: int,
+    draw: random.Random,
 ) -> list[Patch]:
-    """Return every whole patch of one instrument over one feature.
+    """Return a bounded draw of one instrument's patches over one feature.
 
     Args:
         observations: The feature's index rows of that one instrument.
         build: The published build the observations are read from.
         patchsize: How far a patch of that instrument runs along.
         heights: Where the ground stands over the feature. (N, 3)
+        budget: How many patches the draw runs to at most.
+        draw: What picks the observation and the patches taken from it.
 
     Returns:
-        read: Every whole patch of every observation, in the order the index
-            holds them, and none that measured nothing. Every observation is
-            read. Empty where the feature holds none.
+        read: At most `budget` patches of one observation of the feature, drawn
+            without replacement and none that measured nothing. The observation
+            is drawn against how many whole patches each holds, so every patch
+            of the feature stands the same chance of being read. Empty where
+            the feature holds none.
     """
-    read = []
-    for record in observations:
-        observation = build.read_observation(record.path)
-        whole = math.prod(patch_counts(record.shape, record.axes, patchsize))
-        read.extend(
-            patch
-            for patch in (
-                cut_patch(observation, record, index, patchsize, heights)
-                for index in range(whole)
-            )
-            if patch.valid.any()
-        )
-    return read
+    whole = [
+        math.prod(patch_counts(record.shape, record.axes, patchsize))
+        for record in observations
+    ]
+    if not sum(whole):
+        return []
+    # One observation alone, since reading it is what reading any patch of it costs.
+    (picked,) = draw.choices(range(len(observations)), weights=whole)
+    record, held = observations[picked], whole[picked]
+    observation = build.read_observation(record.path)
+    read = (
+        cut_patch(observation, record, index, patchsize, heights)
+        for index in draw.sample(range(held), min(budget, held))
+    )
+    return [patch for patch in read if patch.valid.any()]
 
 
 def cut_patch(

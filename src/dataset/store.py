@@ -24,13 +24,12 @@ from building.preprocessing.common.store import (
     VALID,
 )
 from shared.disk import parquet
-from shared.disk.files import atomic_path
 from torch.utils.data import DataLoader
 
 from config.schema import Config
 from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
-from dataset.patches import patch_lengths
+from dataset.patches import PATCHES_PER_STEP, patch_lengths
 
 # The splits a build is read in, which the config gives a share of the features each.
 TRAINING_SPLIT = "train"
@@ -52,7 +51,11 @@ class DatasetBuild:
     fetch: Callable[[str], bytes]
 
     def read_object(self, path: str) -> bytes:
-        """Return what one object of the build holds, fetching it only once.
+        """Return what one object of the build holds, off disk or from the store.
+
+        A build brought down whole is read off disk. Nothing fetched is written
+        there: a build runs to some hundred gigabytes and the disk a run is
+        given holds a fraction of it.
 
         Args:
             path: Where it sits, relative to the build's own root, as the index
@@ -62,14 +65,9 @@ class DatasetBuild:
             data: The bytes of that object.
         """
         held = self.root / path
-        # What one pass fetched every later pass reads off the run's own disk.
         if held.is_file():
             return held.read_bytes()
-        data = self.fetch(path)
-        # Staged under a name of its own, so a killed run leaves no half object.
-        with atomic_path(held) as staged:
-            staged.write_bytes(data)
-        return data
+        return self.fetch(path)
 
     def read_observation_metadata(self) -> list[ObservationMetadata]:
         """Return what every observation of the build is, without reading one.
@@ -221,12 +219,13 @@ class DatasetBuild:
         Returns:
             observation: The observation, its arrays as the build wrote them.
         """
+        # What INSIDE and VALID hold is what MEASURED holds, and reading one of
+        # them costs as much as reading the values, so they are left unread.
+        skipped = (META, INSIDE, VALID)
         with np.load(io.BytesIO(self.read_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
-            arrays = {name: held[name] for name in held.files if name != META}
-        for name in (INSIDE, VALID):
-            arrays.pop(name, None)
+            arrays = {name: held[name] for name in held.files if name not in skipped}
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
@@ -281,12 +280,19 @@ class DatasetBuild:
         straddle two splits and a later build that adds features leaves the
         ones already placed where they were.
 
+        A feature runs to more patches than one step can carry, so a read draws
+        what a step holds beside the other features of its batch. The training
+        split draws anew every read, so a run reads every patch of a feature
+        over its epochs; the others draw against the seed, so what one pass
+        measured the next measures again.
+
         Args:
             config: What the run reads and how much of it one step reads: the
                 share of the build each split holds, the number that fixes
                 where a feature falls, the instrument every surface patch
                 takes its height from, and how many features and processes a
-                step runs.
+                step runs, which is also what settles how many patches of each
+                instrument one read draws.
             sizes: How far a patch of each instrument runs along an axis it is
                 cut on, keyed as ODE names it, which is also which instruments
                 the model reads.
@@ -315,6 +321,7 @@ class DatasetBuild:
             splits[name].append(identity)
         statistics = self.compute_stats(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
+        budget = max(PATCHES_PER_STEP // config.training.batch_size, 1)
         return {
             name: DataLoader(
                 DatasetSplit(
@@ -325,6 +332,8 @@ class DatasetBuild:
                     sizes,
                     shapes,
                     config.model.elevation,
+                    budget,
+                    None if name == TRAINING_SPLIT else seed,
                 ),
                 batch_size=config.training.batch_size,
                 shuffle=name == TRAINING_SPLIT,

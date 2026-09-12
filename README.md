@@ -62,9 +62,10 @@ config = load_config()
 build = DatasetBuild(build_root(config.dataset))
 ```
 
-A build published on DigitalHub is fetched an observation at a time into that
-same directory, so a later pass over the same observations asks the platform for
-none of them:
+A build published on DigitalHub is fetched an observation at a time, straight
+from the store. Nothing fetched is written to that directory: a build runs to
+some hundred gigabytes and a job's disk holds a fraction of it, so only a build
+brought down whole is read off disk.
 
 ```python
 from dh.store import published_build

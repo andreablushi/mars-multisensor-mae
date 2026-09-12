@@ -16,14 +16,16 @@ image_extras:
 # What the platform gives each stage. A profile settles the cores, the GPU and
 # the memory of the box, and which queue the job waits in: 1xrtxa5000 and 1xv100
 # are the reserved ones, the -shared ones (1xv100-shared up to 8xv100-shared,
-# 1xrtxa5000-shared up to 3xrtxa5000-shared) queue on the shared GPUs. The disk
-# holds what the run fetches of the dataset.
+# 1xrtxa5000-shared up to 3xrtxa5000-shared) queue on the shared GPUs. What is
+# asked for here is what the job is scheduled on; the profile settles the limit
+# it is killed at, which on 1xrtxa5000 is 13 cores and 59Gi of memory and of
+# disk. The cores are also how many processes read features beside the training.
 resources:
   training:
     profile: 1xrtxa5000
-    cpu: 8
+    cpu: 4
     gpu: 1
-    memory: 59Gi
+    memory: 32Gi
     disk: 64Gi
   evaluation:
     profile: 1xrtxa5000-shared
