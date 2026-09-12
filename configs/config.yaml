@@ -1,7 +1,7 @@
 # What a run reads, what it trains, and how, one file each, composed into one config.
 
 defaults:
-  - dataset: full
+  - dataset: half
   - model: mae
   - training: default
   - evaluation: default
