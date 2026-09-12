@@ -47,7 +47,7 @@ def log_step(
         terms: Every loss term, keyed as the loss names them.
         measured: What was measured around the step, keyed as it is logged.
     """
-    logged = {f"train/{name}": float(value) for name, value in terms.items()}
+    logged = {f"train/{name}": value.item() for name, value in terms.items()}
     run.log(logged | dict(measured), step=step)
 
 
