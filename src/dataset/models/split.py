@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import GROUND
+from building.common.layout import GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
@@ -148,20 +148,14 @@ class DatasetSplit(Dataset):
             )
             shape = self.shapes[name]
             valid_shape = tuple(
-                held if holds == GROUND else 1
+                held if holds in (GROUND, WAVELENGTH) else 1
                 for held, holds in zip(shape, self.axes[name], strict=True)
             )
             sample[name] = {
                 "values": stacked(
-                    [self.normalised(patch, valid_shape) for patch in drawn],
-                    shape,
-                    np.float32,
+                    [self.normalised(patch) for patch in drawn], shape, np.float32
                 ),
-                "valid": stacked(
-                    [patch.valid.reshape(valid_shape) for patch in drawn],
-                    valid_shape,
-                    bool,
-                ),
+                "valid": stacked([patch.valid for patch in drawn], valid_shape, bool),
                 "position": stacked(
                     [
                         np.array(
@@ -183,13 +177,11 @@ class DatasetSplit(Dataset):
             }
         return sample, identity[0]
 
-    def normalised(self, patch: Patch, valid_shape: tuple[int, ...]) -> np.ndarray:
+    def normalised(self, patch: Patch) -> np.ndarray:
         """Return one patch's values centred and scaled by its instrument's moments.
 
         Args:
             patch: The patch.
-            valid_shape: The shape its measurement mask takes to broadcast over
-                the values.
 
         Returns:
             values: The values less their mean over their deviation, the
@@ -203,4 +195,4 @@ class DatasetSplit(Dataset):
         held = self.statistics[patch.instrument]
         values = patch.values.astype(np.float32)  # (*P)
         scaled = (values - held["mean"]) / np.maximum(held["deviation"], 1e-6)  # (*P)
-        return np.where(patch.valid.reshape(valid_shape), scaled, 0.0)  # (*P)
+        return np.where(patch.valid, scaled, 0.0)  # (*P)

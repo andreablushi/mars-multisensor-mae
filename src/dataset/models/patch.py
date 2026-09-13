@@ -16,7 +16,10 @@ class Patch:
         instrument: The instrument that took it, as ODE names it.
         identifier: The observation it was cut from.
         values: The patch's own values, in the observation's axis order.
-        valid: Whether each of its ground samples carries a measurement.
+        valid: Whether each sample of the patch is a measurement, holding its
+            ground axes and its wavelength axis and one along every other, so
+            it broadcasts over the values. A band the observation never
+            measured was filled rather than read, and carries none.
         axes: What each axis of the values holds, in that same order.
         origin: Where the patch starts along each axis of the observation.
         ground_sample_m: How much ground one sample spans along each ground
@@ -60,6 +63,6 @@ class Patch:
         """Return how much of the patch carries a measurement.
 
         Returns:
-            share: The measured fraction of its ground samples, 0 to 1.
+            share: The measured fraction of the samples the mask holds, 0 to 1.
         """
         return float(self.valid.mean()) if self.valid.size else 0.0

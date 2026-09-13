@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import ELEVATION, WAVELENGTH
+from building.common.layout import ELEVATION, GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
@@ -126,6 +126,16 @@ def cut_patch(
     taken = tuple(window[at] for at in observation.ground)
     north, east = observation.ground_metres(taken)
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
+    ground_shape = tuple(
+        length if holds == GROUND else 1
+        for length, holds in zip(lengths, axes, strict=True)
+    )
+    valid = observation.measured[taken].reshape(ground_shape).copy()
+    if WAVELENGTH in axes and record.band_valid_count is not None:
+        # A band the observation never measured was filled, so it measures nothing.
+        band_shape = tuple(-1 if holds == WAVELENGTH else 1 for holds in axes)
+        measured = np.asarray(record.band_valid_count) > 0
+        valid = valid & measured.reshape(band_shape)
     beside = _beside(observation, window)
     if ELEVATION in axes:
         height_m = float(np.mean(beside[HEIGHTS]))
@@ -140,7 +150,7 @@ def cut_patch(
         instrument=observation.instrument,
         identifier=observation.identifier,
         values=observation.values[window].copy(),
-        valid=observation.measured[taken].copy(),
+        valid=valid,
         axes=axes,
         origin=origin,
         ground_sample_m=record.ground_sample_m,
