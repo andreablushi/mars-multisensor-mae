@@ -64,25 +64,48 @@ def read_patches(
         draw: What picks the observation and the patches taken from it.
 
     Returns:
-        read: At most `budget` patches of one observation of the feature, drawn
-            without replacement and none that measured nothing. The observation
-            is drawn against how many whole patches each holds, so every patch
-            of the feature stands the same chance of being read. Empty where
-            the feature holds none.
+        read: At most `budget` patches of one observation of the feature, taken
+            as one block of neighbouring patches from a corner drawn at random,
+            and none that measured nothing. A hidden patch is read from the
+            patches beside it, so a scatter over a whole observation leaves it
+            nothing to be read from. The observation is drawn against how many
+            whole patches each holds, so every patch of the feature stands the
+            same chance of being read. Empty where the feature holds none.
     """
-    whole = [
-        math.prod(patch_counts(record.shape, record.axes, patchsize))
-        for record in observations
+    grids = [
+        patch_counts(record.shape, record.axes, patchsize) for record in observations
     ]
+    whole = [math.prod(counts) for counts in grids]
     if not sum(whole):
         return []
     # One observation alone, since reading it is what reading any patch of it costs.
     (picked,) = draw.choices(range(len(observations)), weights=whole)
-    record, held = observations[picked], whole[picked]
+    record, counts = observations[picked], grids[picked]
+    # The block reaches as far along every axis as the budget affords, shortest first.
+    lengths = [1] * len(counts)
+    while True:
+        able = [at for at, held in enumerate(lengths) if held < counts[at]]
+        if not able:
+            break
+        grown = min(able, key=lambda at: lengths[at])
+        if math.prod(lengths) // lengths[grown] * (lengths[grown] + 1) > budget:
+            break
+        lengths[grown] += 1
+    corner = [
+        draw.randrange(count - held + 1)
+        for count, held in zip(counts, lengths, strict=True)
+    ]
+    block = np.meshgrid(
+        *(
+            np.arange(start, start + held)
+            for start, held in zip(corner, lengths, strict=True)
+        ),
+        indexing="ij",
+    )
     observation = build.read_observation(record.path)
     read = (
-        cut_patch(observation, record, index, patchsize, heights)
-        for index in draw.sample(range(held), min(budget, held))
+        cut_patch(observation, record, int(index), patchsize, heights)
+        for index in np.ravel_multi_index(block, counts).ravel()
     )
     return [patch for patch in read if patch.valid.any()]
 
