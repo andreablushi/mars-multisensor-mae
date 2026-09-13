@@ -18,6 +18,7 @@ from config.load import load_config
 from config.schema import Config
 from dataset.patches import patch_sizes
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
+from dataset.wavelengths import band_wavelengths
 from logs.console import logger
 from logs.tracker import start_run
 from training.train import train
@@ -41,6 +42,7 @@ def train_model(config: Config) -> Path:
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = build.read_patch_layout(sizes)
+    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
     loaders = build.loaders_by_split(config, sizes, shapes, collate)
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,6 +55,7 @@ def train_model(config: Config) -> Path:
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
             "strides": strides,
+            "wavelengths_nm": band_wavelengths(shapes, axes),
             "features": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),

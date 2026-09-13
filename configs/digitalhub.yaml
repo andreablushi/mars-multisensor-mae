@@ -25,7 +25,7 @@ resources:
     profile: 1xrtxa5000
     cpu: 12
     gpu: 1
-    memory: 48Gi
+    memory: 32Gi
     disk: 64Gi
   evaluation:
     profile: 1xrtxa5000-shared
