@@ -12,8 +12,9 @@ root: data/dataset
 # A wavelength axis is kept whole, as the channels of the patch.
 patchsize:
   default: 16
-  # A scan at about 6 m a pixel, so a wider patch still covers little ground.
-  CTX: 512
+  # A scan at about 5 m a pixel. A patch is one token, so it runs no further
+  # than a decoder can predict from the one vector it is read out of.
+  CTX: 128
   # A survey at about 200 m a pixel, its bands the channels of a patch. It runs
   # 59 samples across track, so a wider patch never fits and none is cut.
   CRISM: 32

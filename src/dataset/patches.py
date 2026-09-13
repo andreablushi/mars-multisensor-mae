@@ -23,7 +23,7 @@ DEFAULT_PATCHSIZE = "default"
 
 # How many patches of one instrument one step carries, which the widest
 # reconstruction settles: a decoder predicts a whole patch of its instrument for
-# every instrument read, so this many CTX patches is what a 24Gi card holds.
+# every instrument read, so what one step holds is this many of the widest.
 PATCHES_PER_STEP = 512
 
 
