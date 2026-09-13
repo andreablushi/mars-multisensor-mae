@@ -23,9 +23,9 @@ image_extras:
 resources:
   training:
     profile: 1xrtxa5000
-    cpu: 4
+    cpu: 12
     gpu: 1
-    memory: 32Gi
+    memory: 48Gi
     disk: 64Gi
   evaluation:
     profile: 1xrtxa5000-shared

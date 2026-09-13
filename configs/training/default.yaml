@@ -20,7 +20,7 @@ mask_ratio: 0.5
 temperature: 0.5
 
 # How many processes read features beside the training.
-workers: 8
+workers: 12
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

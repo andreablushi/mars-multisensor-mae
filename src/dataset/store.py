@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import random
+import shutil
 from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -31,6 +33,9 @@ from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
 from dataset.patches import PATCHES_PER_STEP, patch_lengths
 
+# What is left free on the disk a run is given, under which nothing more is kept.
+DISK_RESERVE_BYTES = 8 * 1024**3
+
 # The splits a build is read in, which the config gives a share of the features each.
 TRAINING_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
@@ -56,9 +61,10 @@ class DatasetBuild:
     def read_object(self, path: str) -> bytes:
         """Return what one object of the build holds, off disk or from the store.
 
-        A build brought down whole is read off disk. Nothing fetched is written
-        there: a build runs to some hundred gigabytes and the disk a run is
-        given holds a fraction of it.
+        A build runs to some hundred gigabytes and the disk a run is given holds
+        a fraction of it, but a run reads the same few thousand objects of it
+        once an epoch. What is fetched is kept while there is room, so an epoch
+        after the first reads off disk instead of over the network.
 
         Args:
             path: Where it sits, relative to the build's own root, as the index
@@ -70,7 +76,14 @@ class DatasetBuild:
         held = self.root / path
         if held.is_file():
             return held.read_bytes()
-        return self.fetch(path)
+        data = self.fetch(path)
+        held.parent.mkdir(parents=True, exist_ok=True)
+        if shutil.disk_usage(held.parent).free - len(data) > DISK_RESERVE_BYTES:
+            # Written whole then moved, so a reader beside this one finds it finished.
+            temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
+            temporary.write_bytes(data)
+            temporary.replace(held)
+        return data
 
     def read_observation_metadata(self) -> list[ObservationMetadata]:
         """Return what every observation of the build is, reading the index once.
@@ -345,6 +358,7 @@ class DatasetBuild:
                 batch_size=config.training.batch_size,
                 shuffle=name == TRAINING_SPLIT,
                 num_workers=config.training.workers,
+                persistent_workers=config.training.workers > 0,
                 collate_fn=collate,
             )
             for name, held in splits.items()
