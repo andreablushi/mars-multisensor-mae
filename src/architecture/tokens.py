@@ -51,24 +51,22 @@ class Tokens:
 
 
 def collate(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str, float]],
-) -> tuple[dict[str, Tokens], list[str], Tensor]:
-    """Return one batch of every instrument's tokens, the classes, and the read times.
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
+) -> tuple[dict[str, Tokens], list[str]]:
+    """Return one batch of every instrument's tokens, and the classes.
 
     Args:
-        samples: What the dataset read of each feature of the batch, and how
-            long each read took.
+        samples: What the dataset read of each feature of the batch.
 
     Returns:
         batch: Each instrument's patches padded to the most any feature of the
             batch holds, keyed as ODE names it, nothing yet hidden from any
             encoder.
         classes: The class of each feature, in the batch's order.
-        seconds: How long each feature took to read, in that same order. (B,)
     """
     batch = {}
     for name in samples[0][0]:
-        held = [sample[name] for sample, _, _ in samples]
+        held = [sample[name] for sample, _ in samples]
         counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
         padded = {
@@ -79,8 +77,4 @@ def collate(
         }
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         batch[name] = Tokens(**padded, visible=present, present=present)
-    return (
-        batch,
-        [feature_class for _, feature_class, _ in samples],
-        torch.tensor([seconds for _, _, seconds in samples]),  # (B,)
-    )
+    return batch, [feature_class for _, feature_class in samples]

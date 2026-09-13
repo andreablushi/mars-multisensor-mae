@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
@@ -115,10 +114,8 @@ class DatasetSplit(Dataset):
         """
         return len(self.identities)
 
-    def __getitem__(
-        self, index: int
-    ) -> tuple[dict[str, dict[str, np.ndarray]], str, float]:
-        """Return what one feature was drawn as, its class, and how long it took.
+    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
+        """Return what one feature was drawn as, and its class.
 
         Args:
             index: Which feature of the split.
@@ -133,12 +130,10 @@ class DatasetSplit(Dataset):
                 so its loss is the last pass's to beat; one holding none draws
                 anew, so a run reads every patch of a feature over its epochs.
             feature_class: The class of the feature, as ODE names it.
-            seconds: How long reading the feature took.
 
         Raises:
             ValueError: When the feature has no elevation to stand on.
         """
-        started = time.perf_counter()
         identity = self.identities[index]
         rows = self.features[identity]
         held = rows.get(self.elevation)
@@ -186,7 +181,7 @@ class DatasetSplit(Dataset):
                     np.float32,
                 ),
             }
-        return sample, identity[0], time.perf_counter() - started
+        return sample, identity[0]
 
     def normalised(self, patch: Patch, valid_shape: tuple[int, ...]) -> np.ndarray:
         """Return one patch's values centred and scaled by its instrument's moments.

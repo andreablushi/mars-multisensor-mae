@@ -28,7 +28,7 @@ def embed_split(
     held: list[Tensor] = []
     classes: list[str] = []
     with torch.no_grad():
-        for batch, feature_classes, _ in loader:
+        for batch, feature_classes in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             held.append(model.embed(batch).cpu())  # (B, D)
             classes.extend(feature_classes)

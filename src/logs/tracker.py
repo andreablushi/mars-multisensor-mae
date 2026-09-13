@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import asdict
 
 import wandb
@@ -51,15 +51,8 @@ def log_step(
     run.log(logged | dict(measured), step=step)
 
 
-def log_epoch(
-    run: Run,
-    step: int,
-    epoch: int,
-    metrics: Mapping[str, float],
-    loads: Sequence[float],
-    seconds: float,
-) -> None:
-    """Log one epoch's validation, and how the epoch that led to it read.
+def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> None:
+    """Log one epoch's validation.
 
     Args:
         run: The tracked run.
@@ -67,19 +60,9 @@ def log_epoch(
         epoch: Which pass over the training split it was.
         metrics: Every loss term and retrieval metric over the validation
             split, keyed as they name them.
-        loads: How long each feature of the epoch took to read, in seconds.
-        seconds: How long the epoch took, training and validation together.
     """
     logged = {f"validation/{name}": value for name, value in metrics.items()}
-    run.log(
-        logged
-        | {
-            "epoch": epoch,
-            "time/epoch_seconds": seconds,
-            "data/feature_seconds_spread": wandb.Histogram(list(loads)),
-        },
-        step=step,
-    )
+    run.log(logged | {"epoch": epoch}, step=step)
 
 
 def log_summary(run: Run, summary: Mapping[str, object]) -> None:
