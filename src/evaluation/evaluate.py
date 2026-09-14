@@ -6,13 +6,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from torch import Tensor
 from torch.nn import functional
 from torch.utils.data import DataLoader
+from umap import UMAP
 
 from architecture.mae import CrossSensorMAE
 from config.schema import Config
-from evaluation.embed import embed_split
-from evaluation.projection import projected_latent
 from evaluation.retrieval import retrieval_metrics
 from evaluation.separability import (
     class_similarity,
@@ -55,13 +55,22 @@ def evaluate_latent_space(
 
     Returns:
         evaluation: Every metric, the class similarities behind them, and where
-            each latent sits on the plane.
+            each latent sits on the plane. A feature is embedded over every
+            patch it holds of every instrument, none hidden.
 
     Raises:
         ValueError: When fewer than two classes were read, which no metric here
             says anything about.
     """
-    latents, read = embed_split(model, loader, device)  # (N, D)
+    model.eval()
+    embedded: list[Tensor] = []
+    read: list[str] = []
+    with torch.no_grad():
+        for batch, feature_classes in loader:
+            batch = {name: tokens.to(device) for name, tokens in batch.items()}
+            embedded.append(model.embed(batch).cpu())  # (B, D)
+            read.extend(feature_classes)
+    latents = torch.cat(embedded)  # (N, D)
     # A feature holding no patch of any instrument the model reads embeds to nothing.
     counted = latents.norm(dim=-1) > 0  # (N,)
     classes = [one for one, held in zip(read, counted.tolist(), strict=True) if held]
@@ -80,6 +89,9 @@ def evaluate_latent_space(
         },
         similarity=similarity,
         names=names,
-        placed=projected_latent(latents, config.dataset.seed),  # (N, 2)
+        # The layout reads the cosine the metrics do, so a class held together draws so.
+        placed=UMAP(
+            n_components=2, metric="cosine", random_state=config.dataset.seed
+        ).fit_transform(latents.numpy()),  # (N, 2)
         classes=classes,
     )
