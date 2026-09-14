@@ -49,8 +49,10 @@ def load_platform(path: Path = PLATFORM_CONFIG_PATH) -> Platform:
         platform: The settled choices for the submission.
     """
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    pool = "-shared" if config.pop("shared") else ""
     asked = {
         stage: {key: str(value) for key, value in one.items()}
+        | {"profile": f"{one['profile']}{pool}"}
         for stage, one in config["resources"].items()
     }
     return Platform(**config | {"resources": asked})

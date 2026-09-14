@@ -39,7 +39,9 @@ def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> i
     )
 
     # Build the image first, since the job cannot install anything itself.
-    built = function.run(action="build", wait=True)
+    built = function.run(
+        action="build", profile=platform.resources["build"]["profile"], wait=True
+    )
     if built.status.state != "COMPLETED":
         print(f"the image did not build: {built.status.state}")
         return 1
