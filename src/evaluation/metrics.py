@@ -12,6 +12,23 @@ from torch import Tensor
 from training.loss import normalised_patches
 
 
+def confidence(samples: np.ndarray) -> tuple[float, float]:
+    """Return what a set of measurements comes to, and how far that is pinned down.
+
+    Args:
+        samples: One measurement per feature or per query. (N,)
+
+    Returns:
+        mean: Their mean, and zero where none was measured.
+        half: Half the width of the 95% interval around it, read as 1.96
+            standard errors, and zero for fewer than two measurements.
+    """
+    held = np.asarray(samples, dtype=float).ravel()
+    if held.size < 2:
+        return (float(held.mean()) if held.size else 0.0), 0.0
+    return float(held.mean()), float(1.96 * held.std(ddof=1) / np.sqrt(held.size))
+
+
 def retrieval_metrics(
     latents: Tensor, classes: Sequence[str], neighbours: int
 ) -> dict[str, float]:
@@ -26,7 +43,8 @@ def retrieval_metrics(
     Returns:
         metrics: Over those neighbours the precision, the recall against every
             feature of the query's class, their F1, and the average precision
-            under "map". Each is averaged over the queries whose class holds
+            under "map", each as its mean and the half width of its 95%
+            interval. Each is averaged over the queries whose class holds
             another feature of the split, a query whose class holds none being
             one no ranking can answer.
     """
@@ -46,11 +64,11 @@ def retrieval_metrics(
     reachable = torch.minimum(held, torch.tensor(read)).clamp(min=1)  # (N,)
     average = (relevant.cumsum(dim=1) / ranks * relevant).sum(dim=1) / reachable  # (N,)
     return {
-        "precision": float(precision[counted].mean()),
-        "recall": float(recall[counted].mean()),
-        "f1": float(f1[counted].mean()),
-        "map": float(average[counted].mean()),
-        "queries": int(counted.sum()),
+        "precision": confidence(precision[counted].numpy()),
+        "recall": confidence(recall[counted].numpy()),
+        "f1": confidence(f1[counted].numpy()),
+        "map": confidence(average[counted].numpy()),
+        "queries": (int(counted.sum()), 0.0),
     }
 
 
@@ -93,12 +111,23 @@ def similarity_metrics(similarity: np.ndarray) -> dict[str, float]:
     Returns:
         metrics: Under "within" the mean similarity of a class to itself, under
             "between" the mean over every unordered pair of different classes,
-            and under "separation" how far the first stands above the second.
-            Each class weighs the same however many features it holds.
+            and under "separation" how far the first stands above the second,
+            each as its mean and the half width of its 95% interval. Each class
+            weighs the same however many features it holds.
     """
-    within = float(np.nanmean(np.diagonal(similarity)))
-    between = float(np.nanmean(similarity[np.triu_indices(len(similarity), k=1)]))
-    return {"within": within, "between": between, "separation": within - between}
+    held = np.diagonal(similarity)
+    apart = similarity[np.triu_indices(len(similarity), k=1)]
+    within = confidence(held[~np.isnan(held)])
+    between = confidence(apart[~np.isnan(apart)])
+    return {
+        "within": within,
+        "between": between,
+        # A difference of two means, its interval the two of them added in quadrature.
+        "separation": (
+            within[0] - between[0],
+            float(np.hypot(within[1], between[1])),
+        ),
+    }
 
 
 def silhouette_metrics(latents: Tensor, classes: Sequence[str]) -> dict[str, float]:
@@ -112,13 +141,13 @@ def silhouette_metrics(latents: Tensor, classes: Sequence[str]) -> dict[str, flo
         metrics: Under "silhouette" the mean over every feature of how much
             closer it sits to its own class than to the nearest other, from
             minus one to one, and under "silhouette/<class>" that mean over the
-            features of one class.
+            features of one class, each with the half width of its 95% interval.
     """
     held = np.asarray(classes)
     samples = silhouette_samples(latents.numpy(), held, metric="cosine")  # (N,)
-    metrics = {"silhouette": float(samples.mean())}
+    metrics = {"silhouette": confidence(samples)}
     for one in sorted(set(classes)):
-        metrics[f"silhouette/{one}"] = float(samples[held == one].mean())
+        metrics[f"silhouette/{one}"] = confidence(samples[held == one])
     return metrics
 
 

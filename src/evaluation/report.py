@@ -68,6 +68,35 @@ def projection_figure(placed: np.ndarray, classes: Sequence[str]) -> Figure:
     return figure
 
 
+def metrics_figure(
+    metrics: Mapping[str, float], intervals: Mapping[str, float]
+) -> Figure:
+    """Return every measured mean drawn as a bar, with the interval around it.
+
+    Args:
+        metrics: Every measured number, keyed as it is logged.
+        intervals: Half the width of the 95% interval around each.
+
+    Returns:
+        figure: The bars, one per metric that is a mean over features, each
+            written with its own value. A count is left out, having no interval.
+    """
+    shown = [name for name, half in intervals.items() if half > 0]
+    figure, axes = pyplot.subplots(figsize=(2 + len(shown) * 0.7, 4))
+    values = [metrics[name] for name in shown]
+    error = [intervals[name] for name in shown]
+    axes.bar(range(len(shown)), values, yerr=error, capsize=4, color="#4c72b0")
+    axes.set_xticks(range(len(shown)), shown, rotation=90, fontsize=7)
+    axes.axhline(0, color="black", linewidth=0.6)
+    for at, (value, half) in enumerate(zip(values, error, strict=True)):
+        axes.text(
+            at, value + half, f"{value:.2f}", ha="center", va="bottom", fontsize=6
+        )
+    axes.set_ylabel("mean, 95% interval", fontsize=8)
+    figure.tight_layout()
+    return figure
+
+
 def report_latent_space(run: Run, evaluation: Evaluation) -> None:
     """Log what one evaluation made of the latent space, its numbers and its figures.
 
@@ -77,15 +106,21 @@ def report_latent_space(run: Run, evaluation: Evaluation) -> None:
     """
     similarity = class_similarity_figure(evaluation.similarity, evaluation.names)
     projection = projection_figure(evaluation.placed, evaluation.classes)
+    measured = metrics_figure(evaluation.metrics, evaluation.intervals)
     run.log(
         {f"latent/{name}": value for name, value in evaluation.metrics.items()}
         | {
+            f"latent/{name}_interval": half
+            for name, half in evaluation.intervals.items()
+        }
+        | {
             "latent/class_similarity": wandb.Image(similarity),
             "latent/projection": wandb.Image(projection),
+            "latent/metrics": wandb.Image(measured),
         }
     )
-    pyplot.close(similarity)
-    pyplot.close(projection)
+    for figure in (similarity, projection, measured):
+        pyplot.close(figure)
 
 
 def report_reconstruction(run: Run, metrics: Mapping[str, float]) -> None:

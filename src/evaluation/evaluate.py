@@ -31,6 +31,8 @@ class Evaluation:
 
     Attributes:
         metrics: Every measured number, keyed as it is logged.
+        intervals: Half the width of the 95% interval around each that is a
+            mean over features, keyed the same way and zero where it is a count.
         similarity: The mean cosine similarity of every ordered pair of
             classes. (C, C)
         names: The classes, in the order the matrix holds them.
@@ -39,6 +41,7 @@ class Evaluation:
     """
 
     metrics: dict[str, float]
+    intervals: dict[str, float]
     similarity: np.ndarray
     names: list[str]
     placed: np.ndarray
@@ -101,15 +104,19 @@ def evaluate_latent_space(
     if len(set(classes)) < 2:
         raise ValueError(f"{len(set(classes))} classes read, two say the least")
     similarity, names = class_similarity(latents, classes)  # (C, C)
-    return Evaluation(
-        metrics=retrieval_metrics(latents, classes, config.evaluation.neighbours)
+    measured = (
+        retrieval_metrics(latents, classes, config.evaluation.neighbours)
         | silhouette_metrics(latents, classes)
         | similarity_metrics(similarity)
+    )
+    return Evaluation(
+        metrics={name: value for name, (value, _) in measured.items()}
         | {
             "features": len(classes),
             "classes": len(names),
             "empty": len(read) - len(classes),
         },
+        intervals={name: half for name, (_, half) in measured.items()},
         similarity=similarity,
         names=names,
         # The layout reads the cosine the metrics do, so a class held together draws so.
