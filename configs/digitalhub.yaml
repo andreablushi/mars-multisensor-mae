@@ -22,13 +22,13 @@ image_extras:
 # disk. The cores are also how many processes read features beside the training.
 resources:
   training:
-    profile: 1xrtxa5000-shared
+    profile: 1xrtxa5000
     cpu: 4
     gpu: 1
     memory: 32Gi
     disk: 64Gi
   evaluation:
-    profile: 1xrtxa5000-shared
+    profile: 1xrtxa5000
     cpu: 4
     gpu: 1
     memory: 32Gi
