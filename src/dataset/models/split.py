@@ -27,26 +27,18 @@ class DatasetSplit(Dataset):
 
     Attributes:
         build: The build the features are read from.
-        features: The index rows of each instrument of each feature of the
-            split, keyed by what tells the feature apart.
+        features: The index rows of each sensor of each feature, keyed by identity.
         identities: The features, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
-        statistics: What each instrument's values run to over the training
-            split, keyed as ODE names it.
-        sizes: How far a patch of each instrument runs along an axis it is cut
-            on, keyed as ODE names it.
+        statistics: What each sensor's values run to over the training split.
+        sizes: How far a patch of each sensor runs along an axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        wavelengths: What each band of each spectral instrument is centred on,
-            in nanometres, keyed as ODE names it.
-        elevation: The instrument whose values give every surface patch its
-            height.
+        wavelengths: What each band of each spectral sensor is centred on, in nm.
+        elevation: The instrument whose values give every surface patch its height.
         budget: How many patches of each instrument one read draws at most.
-        overlap: The share of every other instrument's patches that must reach
-            ground the anchor instrument's patches reach.
-        seed: The number that fixes every read's draw, or None for a split that
-            draws anew each time.
-        chunk: How many patches of one instrument one read hands back, reading
-            the split whole a chunk at a time, or None to draw once per feature.
+        overlap: The share of each other sensor's patches over the anchor's ground.
+        seed: What fixes every read's draw, or None to draw anew each time.
+        chunk: How many patches one read hands back, or None to draw per feature.
         reads: Which feature, and which of its chunks, each read stands for.
         opened: The observations last read, which the next chunk of one reuses.
     """
@@ -70,30 +62,20 @@ class DatasetSplit(Dataset):
 
         Args:
             build: The build the features are read from.
-            features: The index rows of each instrument of each feature of the
-                split, keyed by what tells the feature apart.
+            features: The index rows of each sensor of each feature, keyed by identity.
             axes: What each axis of each instrument's values holds.
-            statistics: What each instrument's values run to over the training
-                split, keyed as ODE names it.
-            sizes: How far a patch of each instrument runs along an axis it is
-                cut on, keyed as ODE names it.
-            shapes: The shape of one patch of each instrument as the model
-                reads it.
-            wavelengths: What each band of each spectral instrument is centred
-                on, in nanometres, keyed as ODE names it.
-            elevation: The instrument whose values give every surface patch its
-                height.
+            statistics: What each sensor's values run to over the training split.
+            sizes: How far a patch of each sensor runs along an axis it is cut on.
+            shapes: The shape of one patch of each instrument as the model reads it.
+            wavelengths: What each band of each spectral sensor is centred on, in nm.
+            elevation: The instrument whose values give every surface patch its height.
             budget: How many patches of each instrument one read draws at most.
-            overlap: The share of every other instrument's patches that must
-                reach ground the anchor instrument's patches reach.
-            seed: The number that fixes every read's draw, or None for a split
-                that draws anew each time.
-            chunk: How many patches of one instrument one read hands back, or
-                None to draw `budget` of each once per feature.
+            overlap: The share of each other sensor's patches over the anchor's ground.
+            seed: What fixes every read's draw, or None to draw anew each time.
+            chunk: How many patches one read hands back, or None to draw per feature.
 
         Raises:
-            ValueError: When an instrument the model reads has no finite
-                statistics to normalise its patches by.
+            ValueError: When a sensor the model reads has no statistics to scale by.
         """
         self.build = build
         self.features = features
@@ -137,16 +119,8 @@ class DatasetSplit(Dataset):
             index: Which read of the split.
 
         Returns:
-            sample: For each instrument the model reads, its normalised patches
-                under "values" (K, *P), whether each sample of them is a
-                measurement under "valid" (K, *P'), what each of its channels
-                measures under "channels" (K, C), and where each sits and how
-                far it reaches, in metres, under "position" (K, 6), which may
-                hold none. A split holding a seed draws the same patches every
-                time, so its loss is the last pass's to beat; one holding none
-                draws anew, so a run reads every patch over its epochs.
-            identity: The feature the read belongs to, its class and its name,
-                so the chunks of one feature are told from another's.
+            sample: Each sensor's patches: values, valid, channels and position.
+            identity: The feature the read belongs to, its class and its name.
 
         Raises:
             ValueError: When the feature has no elevation to stand on.

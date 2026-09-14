@@ -23,8 +23,7 @@ class Platform:
         source_root: Where that clone lands on the job.
         python_version: The interpreter the image is built on.
         image_extras: What the platform itself asks for, beyond the training.
-        resources: The profile, the cores, the GPU, the memory and the disk
-            each stage asks for, by stage.
+        resources: What each stage asks for: profile, cores, GPU, memory and disk.
         functions: The function each stage is registered as, by stage.
         publishes: What each stage publishes, by the name a read asks for.
     """

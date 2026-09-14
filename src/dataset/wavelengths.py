@@ -19,20 +19,14 @@ def band_wavelengths(
     """Return what each band of every spectral instrument read is centred on.
 
     Args:
-        shapes: The shape of one patch of each instrument, keyed as ODE names
-            it.
-        axes: What each axis of that instrument's values holds, in that same
-            order.
+        shapes: The shape of one patch of each instrument, keyed as ODE names it.
+        axes: What each axis of that instrument's values holds, in that same order.
 
     Returns:
-        nanometres: The centre wavelength of every band, in the order the
-            wavelength axis of a patch runs, keyed as ODE names the instrument.
-            An instrument whose patches hold no wavelength is not in it.
+        nanometres: Every band's centre wavelength, keyed as ODE names the sensor.
 
     Raises:
-        ValueError: When an instrument holds a wavelength axis the table does
-            not cover, which is a build whose bands are no longer the ones
-            written here.
+        ValueError: When a sensor holds a wavelength axis the table does not cover.
     """
     read = {}
     for name, shape in shapes.items():

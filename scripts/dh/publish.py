@@ -18,8 +18,7 @@ def model_name(model: ModelConfig) -> str:
         model: What the run trained, whose architecture names the publication.
 
     Returns:
-        name: That name, which a later publication of the same one versions
-            rather than replaces.
+        name: That name, which a later publication versions rather than replaces.
     """
     return f"{load_platform().publishes['model']}-{model.name}"
 
@@ -30,8 +29,7 @@ def publish_checkpoint(project, path: Path, name: str):
     Args:
         project: The DigitalHub project the model is logged into.
         path: The checkpoint, on this machine.
-        name: What to publish it as, which a later publication of the same name
-            versions rather than replaces.
+        name: What to publish it as, which a later one versions rather than replaces.
 
     Returns:
         model: The logged model.

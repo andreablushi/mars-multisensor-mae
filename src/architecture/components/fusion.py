@@ -11,10 +11,8 @@ def instrument_vector(tokens: Tensor, counted: Tensor) -> Tensor:
     """Return what one instrument makes of each feature, its tokens averaged.
 
     Args:
-        tokens: The instrument's tokens as the cross-sensor encoder hands them.
-            (B, K, D)
-        counted: Which of them count, its visible tokens while training and
-            every present one when embedding. (B, K)
+        tokens: The sensor's tokens from the cross-sensor encoder. (B, K, D)
+        counted: Which count: visible while training, present when embedding. (B, K)
 
     Returns:
         vector: Their global average, zero where none counts. (B, D)
@@ -33,13 +31,11 @@ def feature_latent(tokens: dict[str, Tensor], counted: dict[str, Tensor]) -> Ten
     trains the instruments of a feature to point the same way.
 
     Args:
-        tokens: Each instrument's tokens as the cross-sensor encoder hands
-            them, keyed as ODE names it. (B, K, D)
+        tokens: Each sensor's tokens from the cross-sensor encoder. (B, K, D)
         counted: Which of each instrument's tokens count. (B, K)
 
     Returns:
-        latent: The unit vector along their sum, zero for a feature holding no
-            counted token of any instrument. (B, D)
+        latent: The unit vector along their sum, zero where none counted. (B, D)
     """
     vectors, held = [], []
     for name, one in tokens.items():

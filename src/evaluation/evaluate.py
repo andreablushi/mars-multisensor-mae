@@ -31,10 +31,8 @@ class Evaluation:
 
     Attributes:
         metrics: Every measured number, keyed as it is logged.
-        intervals: Half the width of the 95% interval around each that is a
-            mean over features, keyed the same way and zero where it is a count.
-        similarity: The mean cosine similarity of every ordered pair of
-            classes. (C, C)
+        intervals: Half the 95% interval around each mean, zero for a count.
+        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
         placed: Where each measured latent sits on the plane. (N, 2)
         classes: The class of each of them, in that same order.
@@ -56,18 +54,14 @@ def evaluate_latent_space(
     Args:
         model: The model, loaded from a checkpoint and on the device.
         loader: The split to read, in batches.
-        config: How many neighbours a retrieval reads, and the seed the layout
-            is fixed by.
+        config: How many neighbours a retrieval reads, and the layout seed.
         device: Where the model runs.
 
     Returns:
-        evaluation: Every metric, the class similarities behind them, and where
-            each latent sits on the plane. A feature is embedded over every
-            patch it holds of every instrument, none hidden.
+        evaluation: Every metric, the class similarities, and the plane.
 
     Raises:
-        ValueError: When fewer than two classes were read, which no metric here
-            says anything about.
+        ValueError: When fewer than two classes were read.
     """
     model.eval()
     summed: defaultdict[tuple[tuple[str, str], str], Tensor] = defaultdict(int)
@@ -144,11 +138,7 @@ def evaluate_reconstruction(
         device: Where the model runs.
 
     Returns:
-        metrics: Under "umr/<instrument>/<metric>" what an instrument rebuilt of
-            its own hidden patches, and under "cmr/<instrument>/<metric>" what
-            every other instrument rebuilt of those same patches, averaged over
-            them. Each metric is what reconstruction_metrics names it, averaged
-            over the batches.
+        metrics: Under "umr/<sensor>/<metric>" and "cmr/<sensor>/<metric>", by batch.
     """
     model.eval()
     generator = torch.Generator(device=device).manual_seed(seed)

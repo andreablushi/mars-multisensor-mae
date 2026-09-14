@@ -16,10 +16,8 @@ class Encoder(nn.Module):
     """Embed each channel of a patch, place it on the ground, attend over the set.
 
     Attributes:
-        at: Which axis of a patch its channels run along, or None for an
-            instrument whose patch holds a single channel.
-        embed: From the ground samples of one channel to one token, the same
-            weights reading every channel.
+        at: Which axis a patch's channels run along, or None where it holds one.
+        embed: From one channel's ground samples to one token, shared by all.
         modality: What the instrument is and what each channel of it measures.
         place: The positional encoding.
         blocks: The transformer.
@@ -42,8 +40,7 @@ class Encoder(nn.Module):
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            stride: How far apart two neighbouring patch centres of the
-                instrument sit, in metres.
+            stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
         self.at = channel_axis(axes)
@@ -68,8 +65,7 @@ class Encoder(nn.Module):
             values: The normalised patches. (B, K, *P)
             channels: What each channel of each patch measures. (B, K, C)
             valid: Whether each sample of a patch is a measurement. (B, K, *P')
-            position: Where each patch sits and how far it reaches, in metres.
-                (B, K, 6)
+            position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
             visible: Which patches the encoder may read. (B, K)
 
         Returns:

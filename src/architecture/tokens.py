@@ -16,15 +16,10 @@ class Tokens:
 
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
-        valid: Whether each sample of a patch is a measurement, over the ground
-            axes and broadcastable to the values. (B, K, *P')
-        position: How far east and north of the feature centre each patch
-            centre sits, how high above the areoid, and how far the patch
-            reaches along each of the three, in metres. (B, K, 6)
-        channels: What each channel of each patch measures, in its own unit.
-            (B, K, C)
-        visible: Whether each slot holds a patch its encoder may read, which a
-            hidden patch and padding do not. (B, K)
+        valid: Whether each sample is a measurement. (B, K, *P')
+        position: The patch centre and its span, in metres. (B, K, 6)
+        channels: What each channel of each patch measures, in its own unit. (B, K, C)
+        visible: Whether a slot holds a patch its encoder may read. (B, K)
         present: Whether each slot holds a patch rather than padding. (B, K)
     """
 
@@ -63,11 +58,8 @@ def collate(
         samples: What the dataset read of each feature of the batch.
 
     Returns:
-        batch: Each instrument's patches padded to the most any read of the
-            batch holds, keyed as ODE names it, nothing yet hidden from any
-            encoder.
-        identities: The feature each read belongs to, its class and its name,
-            in the batch's order.
+        batch: Each sensor's patches padded to the most any read holds, none hidden.
+        identities: The feature each read belongs to, in the batch's order.
     """
     batch = {}
     for name in samples[0][0]:

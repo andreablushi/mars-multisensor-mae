@@ -11,14 +11,10 @@ class DatasetConfig:
 
     Attributes:
         build: The build to read, which is published as dataset-<build>.
-        root: Where every build sits on this machine, under a directory of its
-            own name.
-        patchsize: How far a patch runs along every axis it is cut on, by
-            instrument, and under "default" for every instrument unnamed.
-        split: The share of the features each split holds, in the order the
-            code names the splits.
-        overlap: The share of every other instrument's patches one draw holds
-            over ground the anchor instrument's patches reach.
+        root: Where every build sits on this machine, under a directory of its own name.
+        patchsize: How far a patch runs along each cut axis, by instrument.
+        split: The share of the features each split holds, in the code's order.
+        overlap: The share of each other sensor's patches over the anchor's ground.
         seed: The number that fixes where a feature falls.
     """
 
@@ -36,12 +32,9 @@ class ModelConfig:
 
     Attributes:
         name: The architecture.
-        instruments: The instruments whose patches become tokens, as ODE names
-            them. The elevation instrument is not one of them.
-        elevation: The instrument whose values give every surface patch its
-            height.
-        dim: How wide a token is in the instrument encoders and in the
-            cross-sensor encoder, a multiple of 12 for the positional encoding.
+        instruments: The instruments whose patches become tokens, the elevation apart.
+        elevation: The instrument whose values give every surface patch its height.
+        dim: How wide a token is in every encoder, a multiple of 12.
         heads: How many attention heads those encoders run.
         depth: How many blocks each instrument encoder stacks.
         crossencoder_depth: How many blocks the cross-sensor encoder stacks.
@@ -68,18 +61,13 @@ class TrainingConfig:
 
     Attributes:
         epochs: How many passes over the training features, at most.
-        batch_size: How many features one step reads, which also settles how
-            many patches of each instrument a read draws.
-        patches_per_step: How many patches of one instrument one step carries,
-            which the widest reconstruction settles.
+        batch_size: How many features one step reads, which settles patches per read.
+        patches_per_step: How many patches one step carries, set by the widest.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
-        warmup_epochs: How many epochs the learning rate climbs over before
-            the cosine decay.
-        patience: How many epochs without a lower validation loss before the
-            run stops.
-        mask_ratio: The share of each instrument's patches hidden from its
-            encoder.
+        warmup_epochs: How many epochs the rate climbs before the cosine decay.
+        patience: How many epochs without a lower validation loss before the run stops.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
         temperature: What the contrastive term divides its similarities by.
         workers: How many processes read features beside the training.
         checkpoints: Where checkpoints are written, relative to the repository.
@@ -103,14 +91,10 @@ class EvaluationConfig:
     """What a trained model's latent space is measured over, and how.
 
     Attributes:
-        split: The split the latents are read from, as the code names the
-            splits.
+        split: The split the latents are read from, as the code names the splits.
         neighbours: How many nearest latents one retrieval reads.
-        mosaic: How many patches the block a mosaic is drawn over runs along
-            each cut axis.
-        model: The published model to read, as it was published or as the key
-            of one version of it, or None for the latest version of what a run
-            of this architecture publishes.
+        mosaic: How many patches a mosaic block runs along each cut axis.
+        model: The published model to read, or None for the latest of this one.
     """
 
     split: str

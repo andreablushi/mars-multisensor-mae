@@ -55,21 +55,14 @@ def read_feature_patches(
         rows: The feature's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along an axis it is cut on.
-        wavelengths: What each band of each spectral instrument is centred on,
-            in nanometres, keyed as ODE names it.
+        wavelengths: What each band of each spectral sensor is centred on, in nm.
         heights: Where the ground stands over the feature. (N, 3)
         budget: How many patches of each instrument the draw runs to at most.
-        overlap: The share of every other instrument's patches that must reach
-            ground the anchor's patches reach.
+        overlap: The share of each other sensor's patches over the anchor's ground.
         draw: What picks each observation and the patches taken from it.
 
     Returns:
-        read: At most `budget` patches of one observation of each instrument,
-            keyed as ODE names it, and none that measured nothing. The
-            instrument holding the fewest patches anchors the draw and every
-            other meets it over `overlap` of its own, so a cross-modal
-            reconstruction is asked of patches seeing one place rather than
-            one feature.
+        read: At most `budget` patches of one observation of each sensor, none empty.
     """
     records, observations, boxes = {}, {}, {}
     for name, size in sizes.items():
@@ -141,20 +134,13 @@ def cut_patch(
     Args:
         observation: The observation, read whole.
         record: Its index row, which carries what a patch says about the whole.
-        index: Which patch, counting the whole ones in the order the axes run,
-            the last axis fastest.
-        patchsize: How far a patch of this instrument runs along an axis it is
-            cut on.
-        heights: Where the ground stands over the feature, as the elevation
-            instrument measured it. (N, 3)
-        wavelengths: What each band of a spectral instrument is centred on, in
-            nanometres, and empty for every other.
+        index: Which patch, counting whole ones as the axes run, the last fastest.
+        patchsize: How far a patch of this instrument runs along an axis it is cut on.
+        heights: Where the ground stands over the feature. (N, 3)
+        wavelengths: What each band is centred on, in nm, empty for every other.
 
     Returns:
-        patch: The patch, carrying which of its samples were measured, how high
-            its centre stands, and how far it reaches in each direction, which
-            is what tells a surface tile from a sounding column. Copied, so it
-            does not hold the observation behind it.
+        patch: The patch, copied, with what it measured and where it reaches.
     """
     shape, axes = observation.values.shape, observation.axes
     lengths = patch_lengths(shape, axes, patchsize)
@@ -229,10 +215,7 @@ def patch_arrays(
         statistics: What its values run to over the training split.
 
     Returns:
-        arrays: The normalised patches under "values" (K, *P), whether each
-            sample is a measurement under "valid" (K, *P'), what each channel
-            measures under "channels" (K, C), and where each patch sits and how
-            far it reaches, in metres, under "position" (K, 6).
+        arrays: The patches under "values", "valid", "channels" and "position".
     """
     valid_shape = tuple(
         held if holds in (GROUND, WAVELENGTH) else 1
@@ -305,11 +288,7 @@ def every_patch_plan(
         chunk: How many patches of one instrument a chunk holds at most.
 
     Returns:
-        planned: One entry per chunk, naming the observation and the patch of it
-            to cut, per instrument. An instrument holding fewer patches than the
-            rest runs out in an early chunk and is empty in the others, which a
-            feature's average over its chunks does not mind. Read from the index
-            alone, so no observation is opened to plan a pass.
+        planned: One entry per chunk, naming the observation and patch to cut.
     """
     held = {
         name: [
@@ -333,8 +312,7 @@ def channel_axis(axes: Sequence[str]) -> int | None:
         axes: What each axis of the instrument's values holds.
 
     Returns:
-        at: The one axis of it that is not ground, or None for an instrument
-            whose patch is ground alone and so holds a single channel.
+        at: The one axis that is not ground, or None where a patch is ground alone.
     """
     at = [at for at, holds in enumerate(axes) if holds != GROUND]
     return at[0] if at else None
@@ -393,13 +371,10 @@ def patch_boxes(
 
     Args:
         observation: The observation, read whole.
-        patchsize: How far a patch of this instrument runs along an axis it is
-            cut on.
+        patchsize: How far a patch of this instrument runs along an axis it is cut on.
 
     Returns:
-        low: The least east and the least north each whole patch reaches, in
-            metres of the feature's own frame, in the order `cut_patch` counts
-            them. (T, 2)
+        low: The least east and north each whole patch reaches, in metres. (T, 2)
         high: The greatest each reaches, holding the same. (T, 2)
     """
     shape, axes = observation.values.shape, observation.axes
@@ -434,14 +409,11 @@ def read_patch_layout(
 
     Args:
         build: The published build the instruments are read from.
-        sizes: How far a patch of each instrument runs along an axis it is cut
-            on, keyed as ODE names it.
+        sizes: How far a patch of each sensor runs along an axis it is cut on.
 
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
-        strides: How far apart two neighbouring patch centres of each
-            instrument sit, in metres, which sets the shortest period its
-            positions are read at.
+        strides: How far apart two neighbouring patch centres of each sensor sit.
     """
     rows = build.read_row_by_instrument()
     ground = build.read_ground_sample_by_instrument()
@@ -464,8 +436,7 @@ def _beside(
         window: What the patch keeps of each axis of the values.
 
     Returns:
-        beside: Each of those arrays, keyed as it is written, cut along every
-            axis it shares with the values and kept whole along the rest.
+        beside: Each of those arrays, cut along every axis it shares with values.
     """
     taken = dict(zip(observation.dims[observation.measurement], window, strict=True))
     return {

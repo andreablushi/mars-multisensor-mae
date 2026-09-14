@@ -20,8 +20,7 @@ def confidence(samples: np.ndarray) -> tuple[float, float]:
 
     Returns:
         mean: Their mean, and zero where none was measured.
-        half: Half the width of the 95% interval around it, read as 1.96
-            standard errors, and zero for fewer than two measurements.
+        half: Half the 95% interval, 1.96 standard errors, zero under two.
     """
     held = np.asarray(samples, dtype=float).ravel()
     if held.size < 2:
@@ -37,16 +36,10 @@ def retrieval_metrics(
     Args:
         latents: One vector per feature, of unit length. (N, D)
         classes: The class of each of them, in that same order.
-        neighbours: How many nearest latents one query reads, or every other
-            latent where the split holds fewer.
+        neighbours: How many nearest latents one query reads, or all of them.
 
     Returns:
-        metrics: Over those neighbours the precision, the recall against every
-            feature of the query's class, their F1, and the average precision
-            under "map", each as its mean and the half width of its 95%
-            interval. Each is averaged over the queries whose class holds
-            another feature of the split, a query whose class holds none being
-            one no ranking can answer.
+        metrics: The precision, recall, F1 and "map", each a mean and a half width.
     """
     names = sorted(set(classes))
     labels = torch.tensor([names.index(one) for one in classes])  # (N,)
@@ -82,9 +75,7 @@ def class_similarity(
         classes: The class of each of them, in that same order.
 
     Returns:
-        similarity: The mean cosine similarity of every ordered pair of
-            classes, a class against itself counting its own pairs alone and
-            not a latent against itself. (C, C)
+        similarity: The mean cosine of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
     """
     names = sorted(set(classes))
@@ -105,15 +96,10 @@ def similarity_metrics(similarity: np.ndarray) -> dict[str, float]:
     """Return what those similarities come to, within a class and between two.
 
     Args:
-        similarity: The mean cosine similarity of every ordered pair of
-            classes. (C, C)
+        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
 
     Returns:
-        metrics: Under "within" the mean similarity of a class to itself, under
-            "between" the mean over every unordered pair of different classes,
-            and under "separation" how far the first stands above the second,
-            each as its mean and the half width of its 95% interval. Each class
-            weighs the same however many features it holds.
+        metrics: "within", "between" and "separation", each a mean and a half width.
     """
     held = np.diagonal(similarity)
     apart = similarity[np.triu_indices(len(similarity), k=1)]
@@ -138,10 +124,7 @@ def silhouette_metrics(latents: Tensor, classes: Sequence[str]) -> dict[str, flo
         classes: The class of each of them, in that same order.
 
     Returns:
-        metrics: Under "silhouette" the mean over every feature of how much
-            closer it sits to its own class than to the nearest other, from
-            minus one to one, and under "silhouette/<class>" that mean over the
-            features of one class, each with the half width of its 95% interval.
+        metrics: "silhouette" and "silhouette/<class>", each a mean and a half width.
     """
     held = np.asarray(classes)
     samples = silhouette_samples(latents.numpy(), held, metric="cosine")  # (N,)
@@ -163,12 +146,7 @@ def reconstruction_metrics(
         weight: How much each patch counts. (B, K)
 
     Returns:
-        metrics: Under "mse" the squared error over the measured samples, under
-            "r2" the share of a patch's variance it accounts for, the target
-            carrying unit variance so the error is already what is left, and
-            under "psnr" the peak signal to noise ratio in decibels, read
-            against the range of the patch's own measured samples. Each is
-            averaged over the counted patches, and zero where none counts.
+        metrics: The "mse", the "r2" it accounts for, and the "psnr" in decibels.
     """
     target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))

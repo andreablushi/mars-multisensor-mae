@@ -23,8 +23,7 @@ def normalised_patches(
     Returns:
         target: The patches, each of zero mean and unit deviation. (B, K, *P)
         counted: Whether each sample is a measurement, spread over them. (B, K, *P)
-        mean: What each patch was centred by, to put a prediction back in the
-            instrument's own units. (B, K, 1...)
+        mean: What each patch was centred by, to undo it. (B, K, 1...)
         deviation: What each was scaled by, holding the same. (B, K, 1...)
     """
     counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
@@ -49,8 +48,7 @@ def reconstruction_error(
         weight: How much each patch counts. (B, K)
 
     Returns:
-        error: The mean squared error over the measured samples of the counted
-            patches, against each patch normalised by its own. Zero when none counts.
+        error: The mean squared error over the counted patches, zero where none is.
     """
     target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
@@ -66,20 +64,12 @@ def mutual_information(
     """Return the contrastive term holding a feature's instruments to each other.
 
     Args:
-        tokens: Each instrument's tokens as the cross-sensor encoder hands
-            them, keyed as ODE names it. (B, K, D)
+        tokens: Each sensor's tokens from the cross-sensor encoder. (B, K, D)
         visible: Which of each instrument's tokens its encoder read. (B, K)
         temperature: What the similarities are divided by.
 
     Returns:
-        loss: The paper's L_MIM, averaged over every ordered pair of
-            instruments: for each feature, minus the log of its own pair of
-            vectors' similarity over that of its vector against every
-            feature of the batch, its own pair among them. One vector stands
-            for a feature under an instrument, the average of the tokens that
-            instrument read of it. A feature holding no visible token of either
-            instrument of a pair is neither a query nor a key of it. Zero where
-            the model reads one instrument alone.
+        loss: The paper's L_MIM, over every ordered pair of sensors, its positive kept.
     """
     vectors = {
         name: functional.normalize(instrument_vector(held, visible[name]), dim=-1)
@@ -118,12 +108,7 @@ def csmae_loss(
         temperature: What the contrastive term divides its similarities by.
 
     Returns:
-        terms: Under "umr/<instrument>" the uni-modal reconstruction of its
-            hidden patches, read from its own visible tokens, under
-            "cmr/<instrument>" the cross-modal reconstruction of those same
-            patches read from each other instrument's, averaged, under "mim"
-            the contrastive term, and under "loss" every reconstruction term
-            summed plus it.
+        terms: "umr/<sensor>", "cmr/<sensor>", "mim", and "loss" summing them all.
     """
     terms = {}
     total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()

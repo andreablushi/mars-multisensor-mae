@@ -18,24 +18,15 @@ class Observation:
     Attributes:
         instrument: The instrument that took it, as ODE names it.
         identifier: What that instrument was asked for.
-        measurement: What the values are called, which is what the archive
-            publishes them as and how the dims name their axes.
+        measurement: What the values are called, as the archive publishes them.
         values: The values themselves, in the shape the instrument publishes.
         axes: What each axis of the values holds, in the array's own order.
-        dims: What each axis of every array it holds is called, keyed as
-            that array is written.
-        measured: Whether each ground sample is a measurement of the feature
-            rather than a fill or ground outside its box, over the ground axes
-            alone. A CTX scan spreads over a hundred million samples, so this is
-            worked out once for every patch cut from it.
-        north: How far each sample sits from the feature centre northward, as
-            the build wrote it: degrees, or the metres of the grid it was
-            placed on, and one value per line alone where that grid is
-            separable.
+        dims: What each axis of every array is called, keyed as it is written.
+        measured: Whether each ground sample measures the feature, over ground alone.
+        north: How far each sample sits north of the feature centre, as written.
         east: How far it sits eastward, holding the same.
         beside: What else the instrument stores, keyed as it is written.
-        described: What the build wrote beside the arrays, which is what places
-            them back on the ground.
+        described: What the build wrote beside the arrays, which places them.
     """
 
     instrument: str
@@ -65,12 +56,10 @@ class Observation:
         """Return where the ground samples one cut keeps sit, in metres.
 
         Args:
-            taken: What the cut keeps of each ground axis, in the order those
-                axes run, and empty for every sample of the observation.
+            taken: What the cut keeps of each ground axis, empty for every sample.
 
         Returns:
-            north: The ground metres north of the feature centre, one per
-                sample the cut keeps.
+            north: The ground metres north of the centre, one per sample kept.
             east: The ground metres east of it, in the same frame.
         """
         grid = self.described["polar"]

@@ -48,8 +48,7 @@ class DatasetBuild:
     Attributes:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
-        records: What every observation of the build is, once the index has
-            been read, and None until then.
+        records: What every observation is, once the index is read, else None.
     """
 
     root: Path
@@ -65,8 +64,7 @@ class DatasetBuild:
         after the first reads off disk instead of over the network.
 
         Args:
-            path: Where it sits, relative to the build's own root, as the index
-                names it.
+            path: Where it sits, relative to the build root, as the index names it.
 
         Returns:
             data: The bytes of that object.
@@ -104,9 +102,7 @@ class DatasetBuild:
         """Return the observations of each feature, by the instrument that took them.
 
         Returns:
-            standing: The rows of each instrument of each feature, keyed by
-                what tells the feature apart and then as ODE names the
-                instrument, in the order the index holds them.
+            standing: The rows of each sensor of each feature, keyed by identity.
         """
         standing = defaultdict(lambda: defaultdict(list))
         for one in self.read_observation_metadata():
@@ -117,8 +113,7 @@ class DatasetBuild:
         """Return one index row of each instrument the build reached.
 
         Returns:
-            rows: One row per instrument, keyed as ODE names it, which says
-                what each axis of its values holds and how far each runs.
+            rows: One row per sensor, saying what each axis holds and how far it runs.
         """
         return {one.instrument: one for one in self.read_observation_metadata()}
 
@@ -126,9 +121,7 @@ class DatasetBuild:
         """Return how much ground one sample of each instrument spans, over the build.
 
         Returns:
-            ground_sample_m: One length per instrument, keyed as ODE names it:
-                the median over its observations of the finest of its ground
-                axes, so one scan of an odd resolution does not settle it.
+            ground_sample_m: One length per sensor, its median finest ground axis.
         """
         standing = defaultdict(list)
         for one in self.read_observation_metadata():
@@ -142,10 +135,7 @@ class DatasetBuild:
             observations: The feature's index rows of the elevation instrument.
 
         Returns:
-            heights: One row per measured sample, pooled over the observations:
-                how far north of the feature centre it sits, how far east, and
-                how high above the areoid the ground stands there, in metres.
-                (N, 3)
+            heights: One row per sample: north, east and height, in metres. (N, 3)
 
         Raises:
             ValueError: When none of them measured anything.
@@ -177,11 +167,7 @@ class DatasetBuild:
             features: The features to pool over, or None for every one.
 
         Returns:
-            statistics: One entry per instrument, keyed as ODE names it, holding
-                how many measurements it pooled, their mean and their deviation.
-                A spectral instrument is pooled a band at a time and its moments
-                run along its own wavelength axis, so they divide one of its
-                patches as a single number divides any other.
+            statistics: Per sensor, how many measurements, their mean and deviation.
         """
         standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
         spreads: dict[str, list[int]] = {}
@@ -277,33 +263,21 @@ class DatasetBuild:
         """Return every split of the build in batches, whole features at a time.
 
         Args:
-            sizes: How far a patch of each instrument runs along an axis it is
-                cut on, keyed as ODE names it, which is also which instruments
-                the model reads.
-            shapes: The shape of one patch of each instrument as the model
-                reads it.
-            wavelengths: What each band of each spectral instrument is centred
-                on, in nanometres, keyed as ODE names it.
-            collate: How one batch of drawn features becomes what the model is
-                handed.
-            shares: The share of the features each split holds, in the order
-                the code names the splits.
-            seed: The number that fixes where a feature falls, and every draw
-                of a split that does not draw anew.
-            elevation: The instrument whose values give every surface patch its
-                height.
+            sizes: How far a patch of each sensor runs along a cut axis, and which ones.
+            shapes: The shape of one patch of each instrument as the model reads it.
+            wavelengths: What each band of each spectral sensor is centred on, in nm.
+            collate: How one batch of drawn features becomes what the model is handed.
+            shares: The share of the features each split holds, in the code's order.
+            seed: What fixes where a feature falls, and every draw that is not anew.
+            elevation: The instrument whose values give every surface patch its height.
             budget: How many patches of each instrument one read draws at most.
-            overlap: The share of every other instrument's patches that must
-                reach ground the anchor instrument's patches reach.
+            overlap: The share of each other sensor's patches over the anchor's ground.
             batch_size: How many features one step reads.
             workers: How many processes read features beside the training.
-            chunk: How many patches of one instrument one read hands back,
-                reading a split whole, or None to draw once per feature.
+            chunk: How many patches one read hands back, or None to draw per feature.
 
         Returns:
-            loaders: One loader per split, keyed as `SPLITS` names it, the
-                training one shuffled and every other read in the index's own
-                order.
+            loaders: One loader per split, the training one shuffled and the rest not.
         """
         by_feature = self.read_observation_metadata_by_feature()
         total = sum(shares)

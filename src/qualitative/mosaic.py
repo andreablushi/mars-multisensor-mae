@@ -50,8 +50,7 @@ def tiled(patches: list[np.ndarray], origins: list[tuple[int, ...]]) -> np.ndarr
         origins: Where each of them starts along those same two axes.
 
     Returns:
-        mosaic: The block they cover, nan where no patch reached, and a single
-            nan where the block measured nothing at all. (H, W)
+        mosaic: The block they cover, nan where no patch reached. (H, W)
     """
     if not patches:
         return np.full((1, 1), np.nan, np.float32)
@@ -75,8 +74,7 @@ def looked_at(values: np.ndarray, axes: tuple[str, ...]) -> np.ndarray:
         axes: What each of its axes holds, in that same order.
 
     Returns:
-        flat: The patch with any wavelength axis averaged away, a spectral
-            instrument being looked at over its bands together. (H, W)
+        flat: The patch with any wavelength axis averaged away. (H, W)
     """
     at = tuple(one for one, holds in enumerate(axes) if holds == WAVELENGTH)
     return values.mean(axis=at) if at else values
@@ -122,10 +120,8 @@ def observation_mosaic(
         device: Where the model runs.
 
     Returns:
-        measured: The block as the instrument measured it, nan where no patch
-            reached. (H, W)
-        filled: The same, every hidden patch standing as the model rebuilt it
-            from the ones it was shown. (H, W)
+        measured: The block as measured, nan where no patch reached. (H, W)
+        filled: The same, every hidden patch as the model rebuilt it. (H, W)
         hidden: Whether each sample of the block was hidden from the encoder. (H, W)
     """
     cut = [
@@ -172,8 +168,7 @@ def mosaic_figure(
         name: The instrument, as ODE names it.
 
     Returns:
-        figure: The two mosaics side by side on one scale, the hidden patches
-            outlined on both so what the model wrote is plain.
+        figure: The two mosaics side by side on one scale, and what was hidden.
     """
     low, high = np.nanpercentile(measured, [2, 98])
     figure, panels = pyplot.subplots(1, 3, figsize=(13, 4.4))

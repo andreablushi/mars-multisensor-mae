@@ -16,8 +16,7 @@ def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> i
     """Register a version of one stage from a pushed commit, and run it.
 
     Args:
-        stage: Which stage to submit, naming the function it is registered as
-            and the resources it is given.
+        stage: Which stage, naming its registered function and the resources it gets.
         handler: The dotted path the platform imports and calls.
         ref: The branch, tag, or commit the platform clones.
         overrides: What the run composes its config with, as hydra spells them.

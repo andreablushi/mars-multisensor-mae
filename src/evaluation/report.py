@@ -17,13 +17,11 @@ def class_similarity_figure(similarity: np.ndarray, names: Sequence[str]) -> Fig
     """Return how alike each pair of classes is, drawn as a heatmap.
 
     Args:
-        similarity: The mean cosine similarity of every ordered pair of
-            classes. (C, C)
+        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
 
     Returns:
-        figure: The heatmap, each cell written with its own similarity, the
-            diagonal holding a class against itself.
+        figure: The heatmap, each cell written with its own similarity.
     """
     side = 2 + len(names) * 0.6
     figure, axes = pyplot.subplots(figsize=(side, side))
@@ -78,8 +76,7 @@ def metrics_figure(
         intervals: Half the width of the 95% interval around each.
 
     Returns:
-        figure: The bars, one per metric that is a mean over features, each
-            written with its own value. A count is left out, having no interval.
+        figure: The bars, one per mean, each written with its own value.
     """
     shown = [name for name, half in intervals.items() if half > 0]
     figure, axes = pyplot.subplots(figsize=(2 + len(shown) * 0.7, 4))

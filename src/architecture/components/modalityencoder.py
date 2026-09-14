@@ -26,12 +26,10 @@ def by_channel(held: Tensor, at: int | None) -> Tensor:
 
     Args:
         held: The patches, in the instrument's own axis order. (B, K, *P)
-        at: Which axis of a patch its channels run along, or None for one that
-            holds a single channel.
+        at: Which axis a patch's channels run along, or None where it holds one.
 
     Returns:
-        held: The same, its channels along one axis and their ground flattened
-            behind it. (B, K, C, G)
+        held: The same, channels on one axis, ground behind. (B, K, C, G)
     """
     if at is None:
         return held.flatten(2).unsqueeze(2)  # (B, K, 1, G)
@@ -51,17 +49,14 @@ class ModalityEncoder(nn.Module):
 
     Attributes:
         mark: What the instrument is, the same under every channel of it. (D)
-        periods: What each sinusoid repeats over, in the unit the channels are
-            measured in, spaced evenly in the log over the range they run, and
-            None for an instrument whose channels measure nothing. (D / 2)
+        periods: What each sinusoid repeats over, None where nothing is. (D / 2)
     """
 
     def __init__(self, axes: tuple[str, ...], dim: int) -> None:
         """Build the encoding for one instrument at one token width.
 
         Args:
-            axes: What each axis of the instrument's values holds, which says
-                what its channels measure and so what they are read against.
+            axes: What each axis holds, which says what the channels are read against.
             dim: The token width, even so each period gets a cosine and a sine.
         """
         super().__init__()
@@ -82,13 +77,10 @@ class ModalityEncoder(nn.Module):
         """Return what each channel of each patch is.
 
         Args:
-            channels: What each channel of each patch measures, in its own unit.
-                (B, K, C)
+            channels: What each channel of each patch measures, in its unit. (B, K, C)
 
         Returns:
-            encoded: The instrument's own vector, and under an instrument whose
-                channels measure something the cosines then the sines of each
-                over the periods added to it. (B, K, C, D)
+            encoded: The sensor's vector, plus each channel's phases. (B, K, C, D)
         """
         if self.periods is None:
             return self.mark.expand(*channels.shape, -1)  # (B, K, C, D)

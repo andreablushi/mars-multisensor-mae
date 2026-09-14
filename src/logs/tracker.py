@@ -20,8 +20,7 @@ def run_name() -> str:
     """Return what one run is tracked under, the branch it runs and when it started.
 
     Returns:
-        name: The branch, or the short commit where the head names none, and
-            the local date and time the run started, to the second.
+        name: The branch, or the short commit, and when the run started.
     """
     head = REPO_ROOT / ".git"
     if head.is_file():
@@ -39,8 +38,7 @@ def sectioned(split: str, term: str) -> str:
         term: The term, as the loss names it.
 
     Returns:
-        key: The term under "<split>_<term>", so umr, cmr, mim and loss each
-            panel on their own and an instrument sits inside its term's panel.
+        key: The term under "<split>_<term>", so each panels on its own.
     """
     named, _, instrument = term.partition("/")
     return f"{split}_{named}" + (f"/{instrument}" if instrument else "")
@@ -50,18 +48,11 @@ def start_run(config: Config, facts: Mapping[str, object]) -> Run:
     """Return the tracked run every metric of one training is logged to.
 
     Args:
-        config: What the run reads, trains and how, which the run is recorded
-            with.
-        facts: What only the assembled run knows, recorded beside the config:
-            the device, the parameter count, the patch shapes and how many
-            features each split holds.
+        config: What the run reads, trains and how, which the run is recorded with.
+        facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named for its branch and start, to log to and to finish.
-            Which entity and project it
-            lands under, and the key it presents, are read from the
-            environment, or from the `.env` beside the repository on a run
-            here: WANDB_ENTITY, WANDB_PROJECT and WANDB_API_KEY.
+        run: The run, named for its branch and start, its place read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
     run = wandb.init(config=asdict(config), name=run_name())
@@ -90,8 +81,7 @@ def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> 
         run: The tracked run.
         step: Which step of the whole run the epoch ended on.
         epoch: Which pass over the training split it was.
-        metrics: Every loss term and retrieval metric over the validation
-            split, keyed as they name them.
+        metrics: Every loss term over the validation split, keyed as they name them.
     """
     logged = {sectioned("validation", name): value for name, value in metrics.items()}
     run.log(logged | {"epoch": epoch}, step=step)

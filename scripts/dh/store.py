@@ -23,12 +23,10 @@ def published_build(dataset: DatasetConfig) -> DatasetBuild:
     """Return the build the config names, read from the platform's store.
 
     Args:
-        dataset: What a run reads, which names the build to read and where it
-            lands on this machine.
+        dataset: What a run reads, naming the build and where it lands here.
 
     Returns:
-        build: The build, reading off disk every observation it has already fetched and
-            asking the store for the rest.
+        build: The build, off disk where already fetched and from the store otherwise.
     """
     platform = load_platform()
     project = dh.get_or_create_project(platform.project)
@@ -60,10 +58,8 @@ def published_checkpoint(name: str, destination: Path) -> Path:
     """Return where one published model landed on this machine, fetched again each time.
 
     Args:
-        name: What it was published as, or the key of one version of it, the
-            name alone being read as its latest version.
-        destination: The file to write it to, whose directory is made if it is
-            missing.
+        name: What it was published as, or one version's key, the name meaning latest.
+        destination: The file to write it to, whose directory is made if it is missing.
 
     Returns:
         path: The checkpoint, on this machine.
