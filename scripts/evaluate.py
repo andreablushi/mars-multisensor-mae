@@ -14,7 +14,6 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import collate
 from config.load import load_config
 from config.paths import REPO_ROOT
-from config.schema import Config
 from dataset.patches import patch_sizes, read_patch_layout
 from dataset.wavelengths import band_wavelengths
 from evaluation.evaluate import evaluate_latent_space
@@ -28,13 +27,15 @@ EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 log = logger(__name__)
 
 
-def evaluate_model(config: Config) -> None:
+@handler()
+def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     """Measure what one published model's latent space made of the feature classes.
 
     Args:
-        config: What the run reads, what it built, which model is read and how
-            it is measured.
+        project: The DigitalHub project the model was published in, unused here.
+        overrides: What to compose the config with, as hydra spells them.
     """
+    config = load_config(overrides or [])
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
@@ -72,17 +73,6 @@ def evaluate_model(config: Config) -> None:
     run.finish()
 
 
-@handler()
-def run_evaluation(project, overrides: list[str] | None = None) -> None:
-    """Evaluate one published model on DigitalHub.
-
-    Args:
-        project: The DigitalHub project the model was published in.
-        overrides: What to compose the config with, as hydra spells them.
-    """
-    evaluate_model(load_config(overrides or []))
-
-
 def main() -> int:
     """Run the evaluation where it was asked for.
 
@@ -104,7 +94,8 @@ def main() -> int:
         return submit.submitted(
             "evaluation", EVALUATION_HANDLER, arguments.ref, arguments.overrides
         )
-    evaluate_model(load_config(arguments.overrides))
+    # The platform calls the handler, a run here the function under it.
+    run_evaluation.__wrapped__(overrides=arguments.overrides)
     return 0
 
 

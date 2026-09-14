@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 import torch
 from dh import submit
@@ -15,7 +14,6 @@ from digitalhub_runtime_python import handler
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import collate
 from config.load import load_config
-from config.schema import Config
 from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from dataset.wavelengths import band_wavelengths
@@ -30,15 +28,18 @@ _MODEL = load_platform().publishes["model"]
 log = logger(__name__)
 
 
-def train_model(config: Config) -> Path:
-    """Return the best checkpoint of one run, trained as the config describes it.
+@handler(outputs=[_MODEL])
+def run_training(project=None, overrides: list[str] | None = None):
+    """Train one run, and publish the best checkpoint it left.
 
     Args:
-        config: What the run reads, trains and how.
+        project: The DigitalHub project the model is logged into, or None here.
+        overrides: What to compose the config with, as hydra spells them.
 
     Returns:
-        best: The checkpoint with the lowest validation loss.
+        model: The published checkpoint, or where it was written on a run here.
     """
+    config = load_config(overrides or [])
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
@@ -77,22 +78,8 @@ def train_model(config: Config) -> Path:
     )
     best = train(model, training, validation, config, device, run)
     run.finish()
-    return best
-
-
-@handler(outputs=[_MODEL])
-def run_training(project, overrides: list[str] | None = None):
-    """Train one run on DigitalHub and publish the best checkpoint it left.
-
-    Args:
-        project: The DigitalHub project the model is logged into.
-        overrides: What to compose the config with, as hydra spells them.
-
-    Returns:
-        model: The published checkpoint.
-    """
-    config = load_config(overrides or [])
-    best = train_model(config)
+    if project is None:
+        return best
     return publish_checkpoint(project, best, model_name(config.model))
 
 
@@ -117,7 +104,8 @@ def main() -> int:
         return submit.submitted(
             "training", TRAINING_HANDLER, arguments.ref, arguments.overrides
         )
-    train_model(load_config(arguments.overrides))
+    # The platform calls the handler, a run here the function under it.
+    run_training.__wrapped__(overrides=arguments.overrides)
     return 0
 
 
