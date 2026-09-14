@@ -28,10 +28,8 @@ from building.preprocessing.common.store import (
 from shared.disk import parquet
 from torch.utils.data import DataLoader
 
-from config.schema import Config
 from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
-from dataset.patches import PATCHES_PER_STEP, patch_lengths
 
 # What is left free on the disk a run is given, under which nothing more is kept.
 DISK_RESERVE_BYTES = 8 * 1024**3
@@ -261,58 +259,22 @@ class DatasetBuild:
             described=described,
         )
 
-    def read_patch_layout(
-        self, sizes: Mapping[str, int]
-    ) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
-        """Return the shape of one patch of each instrument, and how far two sit apart.
-
-        Args:
-            sizes: How far a patch of each instrument runs along an axis it is
-                cut on, keyed as ODE names it.
-
-        Returns:
-            shapes: The shape of one patch of each instrument, keyed as ODE
-                names it.
-            strides: How far apart two neighbouring patch centres of each
-                instrument sit, in metres, which sets the shortest period its
-                positions are read at.
-        """
-        rows = self.read_row_by_instrument()
-        ground = self.read_ground_sample_by_instrument()
-        return (
-            {
-                name: patch_lengths(rows[name].shape, rows[name].axes, size)
-                for name, size in sizes.items()
-            },
-            {name: size * ground[name] for name, size in sizes.items()},
-        )
-
     def loaders_by_split(
         self,
-        config: Config,
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         collate: Callable,
+        shares: Sequence[float],
+        seed: int,
+        elevation: str,
+        budget: int,
+        overlap: float,
+        batch_size: int,
+        workers: int,
     ) -> dict[str, DataLoader]:
         """Return every split of the build in batches, whole features at a time.
 
-        A feature falls in one split by its name alone, so no two patches of it
-        straddle two splits and a later build that adds features leaves the
-        ones already placed where they were.
-
-        A feature runs to more patches than one step can carry, so a read draws
-        what a step holds beside the other features of its batch. The training
-        split draws anew every read, so a run reads every patch of a feature
-        over its epochs; the others draw against the seed, so what one pass
-        measured the next measures again.
-
         Args:
-            config: What the run reads and how much of it one step reads: the
-                share of the build each split holds, the number that fixes
-                where a feature falls, the instrument every surface patch
-                takes its height from, and how many features and processes a
-                step runs, which is also what settles how many patches of each
-                instrument one read draws.
             sizes: How far a patch of each instrument runs along an axis it is
                 cut on, keyed as ODE names it, which is also which instruments
                 the model reads.
@@ -320,6 +282,17 @@ class DatasetBuild:
                 reads it.
             collate: How one batch of drawn features becomes what the model is
                 handed.
+            shares: The share of the features each split holds, in the order
+                the code names the splits.
+            seed: The number that fixes where a feature falls, and every draw
+                of a split that does not draw anew.
+            elevation: The instrument whose values give every surface patch its
+                height.
+            budget: How many patches of each instrument one read draws at most.
+            overlap: The share of every other instrument's patches that must
+                reach ground the anchor instrument's patches reach.
+            batch_size: How many features one step reads.
+            workers: How many processes read features beside the training.
 
         Returns:
             loaders: One loader per split, keyed as `SPLITS` names it, the
@@ -327,8 +300,6 @@ class DatasetBuild:
                 order.
         """
         by_feature = self.read_observation_metadata_by_feature()
-        shares = config.dataset.split
-        seed = config.dataset.seed
         total = sum(shares)
         splits: dict[str, list[tuple[str, str]]] = {name: [] for name in SPLITS}
         for identity in by_feature:
@@ -341,7 +312,6 @@ class DatasetBuild:
             splits[name].append(identity)
         statistics = self.compute_stats(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
-        budget = max(PATCHES_PER_STEP // config.training.batch_size, 1)
         return {
             name: DataLoader(
                 DatasetSplit(
@@ -351,14 +321,15 @@ class DatasetBuild:
                     statistics,
                     sizes,
                     shapes,
-                    config.model.elevation,
+                    elevation,
                     budget,
+                    overlap,
                     None if name == TRAINING_SPLIT else seed,
                 ),
-                batch_size=config.training.batch_size,
+                batch_size=batch_size,
                 shuffle=name == TRAINING_SPLIT,
-                num_workers=config.training.workers,
-                persistent_workers=config.training.workers > 0,
+                num_workers=workers,
+                persistent_workers=workers > 0,
                 collate_fn=collate,
             )
             for name, held in splits.items()

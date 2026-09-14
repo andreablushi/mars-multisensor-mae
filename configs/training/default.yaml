@@ -7,6 +7,10 @@ epochs: 1000
 # instrument a read draws: the fewer the features, the more patches each, so a
 # step carries the same and reads fewer observations for it.
 batch_size: 16
+# How many patches of one instrument one step carries, which the widest
+# reconstruction settles: a decoder predicts a whole patch of its instrument for
+# every instrument read, so what one step holds is this many of the widest.
+patches_per_step: 512
 learning_rate: 0.00015
 weight_decay: 0.05
 warmup_epochs: 10

@@ -15,7 +15,7 @@ from architecture.tokens import collate
 from config.load import load_config
 from config.paths import REPO_ROOT
 from config.schema import Config
-from dataset.patches import patch_sizes
+from dataset.patches import patch_sizes, read_patch_layout
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.report import report_evaluation
 from logs.console import logger
@@ -36,10 +36,19 @@ def evaluate_model(config: Config) -> None:
     """
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = build.read_patch_layout(sizes)
-    loader = build.loaders_by_split(config, sizes, shapes, collate)[
-        config.evaluation.split
-    ]
+    shapes, strides = read_patch_layout(build, sizes)
+    loader = build.loaders_by_split(
+        sizes,
+        shapes,
+        collate,
+        config.dataset.split,
+        config.dataset.seed,
+        config.model.elevation,
+        max(config.training.patches_per_step // config.training.batch_size, 1),
+        config.dataset.overlap,
+        config.training.batch_size,
+        config.training.workers,
+    )[config.evaluation.split]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(shapes, strides, config.model).to(device)
     name = config.evaluation.model or model_name(config.model)

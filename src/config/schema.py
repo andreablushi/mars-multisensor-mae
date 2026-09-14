@@ -17,6 +17,8 @@ class DatasetConfig:
             instrument, and under "default" for every instrument unnamed.
         split: The share of the features each split holds, in the order the
             code names the splits.
+        overlap: The share of every other instrument's patches one draw holds
+            over ground the anchor instrument's patches reach.
         seed: The number that fixes where a feature falls.
     """
 
@@ -24,6 +26,7 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, int] = field(default_factory=dict)
     split: list[float] = field(default_factory=list)
+    overlap: float = 0.5
     seed: int = 42
 
 
@@ -67,6 +70,8 @@ class TrainingConfig:
         epochs: How many passes over the training features, at most.
         batch_size: How many features one step reads, which also settles how
             many patches of each instrument a read draws.
+        patches_per_step: How many patches of one instrument one step carries,
+            which the widest reconstruction settles.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the learning rate climbs over before
@@ -82,6 +87,7 @@ class TrainingConfig:
 
     epochs: int
     batch_size: int
+    patches_per_step: int
     learning_rate: float
     weight_decay: float
     warmup_epochs: int

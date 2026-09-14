@@ -7,5 +7,5 @@ split: test
 neighbours: 10
 
 # The published model to read, or nothing for the latest one this architecture
-# published. A single version is read by its own key, evaluation.model=store://...
+# published.
 model: null

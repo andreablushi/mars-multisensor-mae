@@ -16,7 +16,7 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import collate
 from config.load import load_config
 from config.schema import Config
-from dataset.patches import patch_sizes
+from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from dataset.wavelengths import band_wavelengths
 from logs.console import logger
@@ -41,9 +41,20 @@ def train_model(config: Config) -> Path:
     """
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = build.read_patch_layout(sizes)
+    shapes, strides = read_patch_layout(build, sizes)
     axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
-    loaders = build.loaders_by_split(config, sizes, shapes, collate)
+    loaders = build.loaders_by_split(
+        sizes,
+        shapes,
+        collate,
+        config.dataset.split,
+        config.dataset.seed,
+        config.model.elevation,
+        max(config.training.patches_per_step // config.training.batch_size, 1),
+        config.dataset.overlap,
+        config.training.batch_size,
+        config.training.workers,
+    )
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)

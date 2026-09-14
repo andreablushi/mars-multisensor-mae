@@ -12,7 +12,7 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import read_patches
+from dataset.patches import read_feature_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -53,6 +53,8 @@ class DatasetSplit(Dataset):
         elevation: The instrument whose values give every surface patch its
             height.
         budget: How many patches of each instrument one read draws at most.
+        overlap: The share of every other instrument's patches that must reach
+            ground the anchor instrument's patches reach.
         seed: The number that fixes every read's draw, or None for a split that
             draws anew each time.
     """
@@ -67,6 +69,7 @@ class DatasetSplit(Dataset):
         shapes: Mapping[str, tuple[int, ...]],
         elevation: str,
         budget: int,
+        overlap: float,
         seed: int | None,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
@@ -85,6 +88,8 @@ class DatasetSplit(Dataset):
             elevation: The instrument whose values give every surface patch its
                 height.
             budget: How many patches of each instrument one read draws at most.
+            overlap: The share of every other instrument's patches that must
+                reach ground the anchor instrument's patches reach.
             seed: The number that fixes every read's draw, or None for a split
                 that draws anew each time.
 
@@ -101,6 +106,7 @@ class DatasetSplit(Dataset):
         self.shapes = shapes
         self.elevation = elevation
         self.budget = budget
+        self.overlap = overlap
         self.seed = seed
         for name in sizes:
             if name not in statistics:
@@ -141,11 +147,11 @@ class DatasetSplit(Dataset):
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
         heights = self.build.read_heights(held)
         draw = random.Random(None if self.seed is None else f"{self.seed}/{identity}")
+        read = read_feature_patches(
+            rows, self.build, self.sizes, heights, self.budget, self.overlap, draw
+        )
         sample = {}
-        for name, size in self.sizes.items():
-            drawn = read_patches(
-                rows.get(name, []), self.build, size, heights, self.budget, draw
-            )
+        for name, drawn in read.items():
             shape = self.shapes[name]
             valid_shape = tuple(
                 held if holds in (GROUND, WAVELENGTH) else 1
