@@ -14,6 +14,21 @@ from config.paths import REPO_ROOT
 from config.schema import Config
 
 
+def sectioned(split: str, term: str) -> str:
+    """Return one loss term's key, its own name giving the section it is panelled in.
+
+    Args:
+        split: Which split it was measured over.
+        term: The term, as the loss names it.
+
+    Returns:
+        key: The term under "<split>_<term>", so umr, cmr, mim and loss each
+            panel on their own and an instrument sits inside its term's panel.
+    """
+    named, _, instrument = term.partition("/")
+    return f"{split}_{named}" + (f"/{instrument}" if instrument else "")
+
+
 def start_run(config: Config, facts: Mapping[str, object]) -> Run:
     """Return the tracked run every metric of one training is logged to.
 
@@ -44,7 +59,10 @@ def log_step(run: Run, step: int, terms: Mapping[str, Tensor]) -> None:
         step: Which step of the whole run it is.
         terms: Every loss term, keyed as the loss names them.
     """
-    run.log({f"train/{name}": value.item() for name, value in terms.items()}, step=step)
+    run.log(
+        {sectioned("train", name): value.item() for name, value in terms.items()},
+        step=step,
+    )
 
 
 def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> None:
@@ -57,7 +75,7 @@ def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> 
         metrics: Every loss term and retrieval metric over the validation
             split, keyed as they name them.
     """
-    logged = {f"validation/{name}": value for name, value in metrics.items()}
+    logged = {sectioned("validation", name): value for name, value in metrics.items()}
     run.log(logged | {"epoch": epoch}, step=step)
 
 
