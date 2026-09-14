@@ -13,9 +13,9 @@ from umap import UMAP
 
 from architecture.mae import CrossSensorMAE
 from config.schema import Config
-from evaluation.retrieval import retrieval_metrics
-from evaluation.separability import (
+from evaluation.metrics import (
     class_similarity,
+    retrieval_metrics,
     silhouette_metrics,
     similarity_metrics,
 )
