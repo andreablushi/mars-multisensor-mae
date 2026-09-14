@@ -16,8 +16,8 @@ from config.load import load_config
 from config.paths import REPO_ROOT
 from dataset.patches import patch_sizes, read_patch_layout
 from dataset.wavelengths import band_wavelengths
-from evaluation.evaluate import evaluate_latent_space
-from evaluation.report import report_evaluation
+from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
+from evaluation.report import report_latent_space, report_reconstruction
 from logs.console import logger
 from logs.tracker import start_run
 from training.checkpoint import load_checkpoint
@@ -69,7 +69,17 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
             "features": len(loader.dataset),
         },
     )
-    report_evaluation(run, evaluate_latent_space(model, loader, config, device))
+    report_latent_space(run, evaluate_latent_space(model, loader, config, device))
+    report_reconstruction(
+        run,
+        evaluate_reconstruction(
+            model,
+            loader,
+            config.training.mask_ratio,
+            config.dataset.seed,
+            device,
+        ),
+    )
     run.finish()
 
 

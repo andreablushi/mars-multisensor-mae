@@ -11,6 +11,26 @@ from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
 
+def normalised_patches(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
+    """Return each patch centred and scaled by the measured samples of its own.
+
+    Args:
+        values: The patches, as the model was handed them. (B, K, *P)
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
+
+    Returns:
+        target: The patches, each of zero mean and unit deviation. (B, K, *P)
+        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
+    """
+    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
+    over = tuple(range(2, values.dim()))
+    spread = (*values.shape[:2], *([1] * len(over)))
+    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
+    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
+    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    return (values - mean) / (variance.reshape(spread) + 1e-6).sqrt(), counted
+
+
 def reconstruction_error(
     prediction: Tensor, values: Tensor, valid: Tensor, weight: Tensor
 ) -> Tensor:
@@ -19,22 +39,16 @@ def reconstruction_error(
     Args:
         prediction: The predicted patches. (B, K, *P)
         values: The true ones, as the model was handed them. (B, K, *P)
-        valid: Whether each sample of a patch is a measurement, broadcastable
-            to the values. (B, K, *P')
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
         weight: How much each patch counts. (B, K)
 
     Returns:
         error: The mean squared error over the measured samples of the counted
-            patches, each patch first centred and scaled by the mean and
-            deviation of its own measured samples. Zero when none counts.
+            patches, against each patch normalised by its own. Zero when none counts.
     """
-    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
+    target, counted = normalised_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
-    spread = (*values.shape[:2], *([1] * len(over)))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
-    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    target = (values - mean) / (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, *P)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)
     weight = weight.to(values.dtype)  # (B, K)
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()

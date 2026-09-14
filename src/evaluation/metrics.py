@@ -9,6 +9,8 @@ import torch
 from sklearn.metrics import silhouette_samples
 from torch import Tensor
 
+from training.loss import normalised_patches
+
 
 def retrieval_metrics(
     latents: Tensor, classes: Sequence[str], neighbours: int
@@ -118,3 +120,40 @@ def silhouette_metrics(latents: Tensor, classes: Sequence[str]) -> dict[str, flo
     for one in sorted(set(classes)):
         metrics[f"silhouette/{one}"] = float(samples[held == one].mean())
     return metrics
+
+
+def reconstruction_metrics(
+    prediction: Tensor, values: Tensor, valid: Tensor, weight: Tensor
+) -> dict[str, float]:
+    """Return how closely one instrument's predicted patches stand to the true ones.
+
+    Args:
+        prediction: The predicted patches. (B, K, *P)
+        values: The true ones, as the model was handed them. (B, K, *P)
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
+        weight: How much each patch counts. (B, K)
+
+    Returns:
+        metrics: Under "mse" the squared error over the measured samples, under
+            "r2" the share of a patch's variance it accounts for, the target
+            carrying unit variance so the error is already what is left, and
+            under "psnr" the peak signal to noise ratio in decibels, read
+            against the range of the patch's own measured samples. Each is
+            averaged over the counted patches, and zero where none counts.
+    """
+    target, counted = normalised_patches(values, valid)  # (B, K, *P)
+    over = tuple(range(2, values.dim()))
+    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
+    error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    measured = counted > 0  # (B, K, *P)
+    peak = target.masked_fill(~measured, -torch.inf).amax(dim=over)  # (B, K)
+    trough = target.masked_fill(~measured, torch.inf).amin(dim=over)  # (B, K)
+    spread = (peak - trough).clamp(min=1e-6)  # (B, K)
+    ratio = 10 * (spread**2 / error.clamp(min=1e-12)).log10()  # (B, K)
+    weight = weight.to(values.dtype)  # (B, K)
+    held = weight.sum().clamp(min=1)  # ()
+    return {
+        "mse": float((error * weight).sum() / held),
+        "r2": float(((1 - error) * weight).sum() / held),
+        "psnr": float((ratio * weight).sum() / held),
+    }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,10 +16,12 @@ from architecture.mae import CrossSensorMAE
 from config.schema import Config
 from evaluation.metrics import (
     class_similarity,
+    reconstruction_metrics,
     retrieval_metrics,
     silhouette_metrics,
     similarity_metrics,
 )
+from training.masking import random_correspondence
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,3 +98,54 @@ def evaluate_latent_space(
         ).fit_transform(latents.numpy()),  # (N, 2)
         classes=classes,
     )
+
+
+def evaluate_reconstruction(
+    model: CrossSensorMAE,
+    loader: DataLoader,
+    mask_ratio: float,
+    seed: int,
+    device: torch.device,
+) -> dict[str, float]:
+    """Return how well the model rebuilds the patches it was never shown.
+
+    Args:
+        model: The model, which is switched to evaluation.
+        loader: The split to read, in batches.
+        mask_ratio: The share of each instrument's patches hidden from it.
+        seed: What the mask is drawn from, so two passes hide the same patches.
+        device: Where the model runs.
+
+    Returns:
+        metrics: Under "umr/<instrument>/<metric>" what an instrument rebuilt of
+            its own hidden patches, and under "cmr/<instrument>/<metric>" what
+            every other instrument rebuilt of those same patches, averaged over
+            them. Each metric is what reconstruction_metrics names it, averaged
+            over the batches.
+    """
+    model.eval()
+    generator = torch.Generator(device=device).manual_seed(seed)
+    totals: defaultdict[str, float] = defaultdict(float)
+    batches = 0
+    with torch.no_grad():
+        for batch, _ in loader:
+            batch = {name: tokens.to(device) for name, tokens in batch.items()}
+            batch = random_correspondence(batch, mask_ratio, generator)
+            reconstruction = model(batch)
+            others = max(len(batch) - 1, 1)
+            for asked, tokens in batch.items():
+                hidden = tokens.present & ~tokens.visible  # (B, K)
+                for read in batch:
+                    readable = batch[read].visible.any(dim=1, keepdim=True)  # (B, 1)
+                    own = read == asked
+                    measured = reconstruction_metrics(
+                        reconstruction.predictions[asked, read],
+                        tokens.values,
+                        tokens.valid,
+                        hidden if own else hidden & readable,
+                    )
+                    for name, value in measured.items():
+                        key = f"{'umr' if own else 'cmr'}/{asked}/{name}"
+                        totals[key] += value if own else value / others
+            batches += 1
+    return {name: value / max(batches, 1) for name, value in totals.items()}

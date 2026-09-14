@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import wandb
@@ -68,8 +68,8 @@ def projection_figure(placed: np.ndarray, classes: Sequence[str]) -> Figure:
     return figure
 
 
-def report_evaluation(run: Run, evaluation: Evaluation) -> None:
-    """Log what one evaluation measured, its numbers and its two figures.
+def report_latent_space(run: Run, evaluation: Evaluation) -> None:
+    """Log what one evaluation made of the latent space, its numbers and its figures.
 
     Args:
         run: The tracked run.
@@ -86,3 +86,13 @@ def report_evaluation(run: Run, evaluation: Evaluation) -> None:
     )
     pyplot.close(similarity)
     pyplot.close(projection)
+
+
+def report_reconstruction(run: Run, metrics: Mapping[str, float]) -> None:
+    """Log what one evaluation made of the reconstruction.
+
+    Args:
+        run: The tracked run.
+        metrics: What the masked pass rebuilt, keyed as the evaluation names it.
+    """
+    run.log({f"recon_{name}": value for name, value in metrics.items()})
