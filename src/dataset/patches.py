@@ -244,7 +244,7 @@ def patch_arrays(
         np.where(
             one.valid,
             (one.values.astype(np.float32) - statistics["mean"])
-            / max(statistics["deviation"], 1e-6),
+            / np.maximum(statistics["deviation"], 1e-6),
             0.0,
         )
         for one in patches
