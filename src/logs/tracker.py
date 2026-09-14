@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 
 import wandb
 from dotenv import load_dotenv
@@ -12,6 +14,21 @@ from wandb.sdk.wandb_run import Run
 
 from config.paths import REPO_ROOT
 from config.schema import Config
+
+
+def run_name() -> str:
+    """Return what one run is tracked under, the branch it runs and when it started.
+
+    Returns:
+        name: The branch, or the short commit where the head names none, and
+            the local date and time the run started, to the second.
+    """
+    head = REPO_ROOT / ".git"
+    if head.is_file():
+        head = Path(head.read_text().partition("gitdir:")[2].strip())
+    held = (head / "HEAD").read_text().strip() if (head / "HEAD").exists() else ""
+    branch = held.rpartition("/")[2] if held.startswith("ref:") else held[:7]
+    return f"{branch or 'detached'}-{datetime.now():%Y%m%d-%H%M%S}"
 
 
 def sectioned(split: str, term: str) -> str:
@@ -40,13 +57,14 @@ def start_run(config: Config, facts: Mapping[str, object]) -> Run:
             features each split holds.
 
     Returns:
-        run: The run, to log to and to finish. Which entity and project it
+        run: The run, named for its branch and start, to log to and to finish.
+            Which entity and project it
             lands under, and the key it presents, are read from the
             environment, or from the `.env` beside the repository on a run
             here: WANDB_ENTITY, WANDB_PROJECT and WANDB_API_KEY.
     """
     load_dotenv(REPO_ROOT / ".env")
-    run = wandb.init(config=asdict(config))
+    run = wandb.init(config=asdict(config), name=run_name())
     run.config.update(dict(facts))
     return run
 
