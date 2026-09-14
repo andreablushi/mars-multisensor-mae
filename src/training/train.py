@@ -78,24 +78,14 @@ def train(
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             batch = random_correspondence(batch, settings.mask_ratio, generator)
             terms = csmae_loss(model(batch), batch, settings.temperature)
-            rate = scheduler.get_last_lr()[0]
             optimizer.zero_grad()
             terms["loss"].backward()
             # One patch a sounder wrote badly must not carry the whole run off.
-            gradient = clip_grad_norm_(model.parameters(), 1.0)
+            clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
             step += 1
-            log_step(
-                run,
-                step,
-                terms,
-                {
-                    "epoch": epoch,
-                    "learning_rate": rate,
-                    "gradient_norm": float(gradient),
-                },
-            )
+            log_step(run, step, terms)
         metrics = validate(model, validation, config, device)
         log_epoch(run, step, epoch, metrics)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])

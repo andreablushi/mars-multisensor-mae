@@ -36,19 +36,15 @@ def start_run(config: Config, facts: Mapping[str, object]) -> Run:
     return run
 
 
-def log_step(
-    run: Run, step: int, terms: Mapping[str, Tensor], measured: Mapping[str, float]
-) -> None:
+def log_step(run: Run, step: int, terms: Mapping[str, Tensor]) -> None:
     """Log one training step.
 
     Args:
         run: The tracked run.
         step: Which step of the whole run it is.
         terms: Every loss term, keyed as the loss names them.
-        measured: What was measured around the step, keyed as it is logged.
     """
-    logged = {f"train/{name}": value.item() for name, value in terms.items()}
-    run.log(logged | dict(measured), step=step)
+    run.log({f"train/{name}": value.item() for name, value in terms.items()}, step=step)
 
 
 def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> None:
