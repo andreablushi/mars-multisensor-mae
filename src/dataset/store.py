@@ -263,6 +263,7 @@ class DatasetBuild:
         self,
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
+        wavelengths: Mapping[str, tuple[float, ...]],
         collate: Callable,
         shares: Sequence[float],
         seed: int,
@@ -280,6 +281,8 @@ class DatasetBuild:
                 the model reads.
             shapes: The shape of one patch of each instrument as the model
                 reads it.
+            wavelengths: What each band of each spectral instrument is centred
+                on, in nanometres, keyed as ODE names it.
             collate: How one batch of drawn features becomes what the model is
                 handed.
             shares: The share of the features each split holds, in the order
@@ -321,6 +324,7 @@ class DatasetBuild:
                     statistics,
                     sizes,
                     shapes,
+                    wavelengths,
                     elevation,
                     budget,
                     overlap,

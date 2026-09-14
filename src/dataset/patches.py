@@ -43,6 +43,7 @@ def read_feature_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, int],
+    wavelengths: Mapping[str, Sequence[float]],
     heights: np.ndarray,
     budget: int,
     overlap: float,
@@ -54,6 +55,8 @@ def read_feature_patches(
         rows: The feature's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along an axis it is cut on.
+        wavelengths: What each band of each spectral instrument is centred on,
+            in nanometres, keyed as ODE names it.
         heights: Where the ground stands over the feature. (N, 3)
         budget: How many patches of each instrument the draw runs to at most.
         overlap: The share of every other instrument's patches that must reach
@@ -109,7 +112,14 @@ def read_feature_patches(
             ]
             chosen += draw.sample(spare, min(budget - wanted, len(spare)))
         cut = (
-            cut_patch(observations[name], records[name], index, sizes[name], heights)
+            cut_patch(
+                observations[name],
+                records[name],
+                index,
+                sizes[name],
+                heights,
+                wavelengths.get(name, ()),
+            )
             for index in chosen
         )
         read[name] = [patch for patch in cut if patch.valid.any()]
@@ -124,6 +134,7 @@ def cut_patch(
     index: int,
     patchsize: int,
     heights: np.ndarray,
+    wavelengths: Sequence[float],
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -136,6 +147,8 @@ def cut_patch(
             cut on.
         heights: Where the ground stands over the feature, as the elevation
             instrument measured it. (N, 3)
+        wavelengths: What each band of a spectral instrument is centred on, in
+            nanometres, and empty for every other.
 
     Returns:
         patch: The patch, carrying which of its samples were measured, how high
@@ -169,9 +182,12 @@ def cut_patch(
         valid = valid & measured.reshape(band_shape)
     beside = _beside(observation, window)
     if ELEVATION in axes:
+        # A sounder reads one delay at one height, which tells its channels apart.
+        channels = np.asarray(beside[HEIGHTS], np.float32)
         height_m = float(np.mean(beside[HEIGHTS]))
         height_span_m = float(np.ptp(beside[HEIGHTS]))
     else:
+        channels = np.asarray(wavelengths or [0.0], np.float32)
         height_span_m = 0.0
         nearest = np.argmin(
             (heights[:, 0] - north_m) ** 2 + (heights[:, 1] - east_m) ** 2
@@ -183,6 +199,7 @@ def cut_patch(
         values=observation.values[window].copy(),
         valid=valid,
         axes=axes,
+        channels=channels,
         origin=origin,
         ground_sample_m=record.ground_sample_m,
         beside=beside,
@@ -195,6 +212,20 @@ def cut_patch(
         t_start=record.t_start,
         t_end=record.t_end,
     )
+
+
+def channel_axis(axes: Sequence[str]) -> int | None:
+    """Return which axis of a patch its channels run along.
+
+    Args:
+        axes: What each axis of the instrument's values holds.
+
+    Returns:
+        at: The one axis of it that is not ground, or None for an instrument
+            whose patch is ground alone and so holds a single channel.
+    """
+    at = [at for at, holds in enumerate(axes) if holds != GROUND]
+    return at[0] if at else None
 
 
 def patch_lengths(

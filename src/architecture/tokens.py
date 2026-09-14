@@ -21,6 +21,8 @@ class Tokens:
         position: How far east and north of the feature centre each patch
             centre sits, how high above the areoid, and how far the patch
             reaches along each of the three, in metres. (B, K, 6)
+        channels: What each channel of each patch measures, in its own unit.
+            (B, K, C)
         visible: Whether each slot holds a patch its encoder may read, which a
             hidden patch and padding do not. (B, K)
         present: Whether each slot holds a patch rather than padding. (B, K)
@@ -29,6 +31,7 @@ class Tokens:
     values: Tensor
     valid: Tensor
     position: Tensor
+    channels: Tensor
     visible: Tensor
     present: Tensor
 
@@ -45,6 +48,7 @@ class Tokens:
             self.values.to(device),
             self.valid.to(device),
             self.position.to(device),
+            self.channels.to(device),
             self.visible.to(device),
             self.present.to(device),
         )

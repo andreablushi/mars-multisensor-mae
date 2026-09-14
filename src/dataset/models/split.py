@@ -12,7 +12,7 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import read_feature_patches
+from dataset.patches import channel_axis, read_feature_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -50,6 +50,8 @@ class DatasetSplit(Dataset):
         sizes: How far a patch of each instrument runs along an axis it is cut
             on, keyed as ODE names it.
         shapes: The shape of one patch of each instrument as the model reads it.
+        wavelengths: What each band of each spectral instrument is centred on,
+            in nanometres, keyed as ODE names it.
         elevation: The instrument whose values give every surface patch its
             height.
         budget: How many patches of each instrument one read draws at most.
@@ -67,6 +69,7 @@ class DatasetSplit(Dataset):
         statistics: Mapping[str, dict[str, float]],
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
+        wavelengths: Mapping[str, tuple[float, ...]],
         elevation: str,
         budget: int,
         overlap: float,
@@ -85,6 +88,8 @@ class DatasetSplit(Dataset):
                 cut on, keyed as ODE names it.
             shapes: The shape of one patch of each instrument as the model
                 reads it.
+            wavelengths: What each band of each spectral instrument is centred
+                on, in nanometres, keyed as ODE names it.
             elevation: The instrument whose values give every surface patch its
                 height.
             budget: How many patches of each instrument one read draws at most.
@@ -104,6 +109,7 @@ class DatasetSplit(Dataset):
         self.statistics = statistics
         self.sizes = sizes
         self.shapes = shapes
+        self.wavelengths = wavelengths
         self.elevation = elevation
         self.budget = budget
         self.overlap = overlap
@@ -129,7 +135,8 @@ class DatasetSplit(Dataset):
         Returns:
             sample: For each instrument the model reads, its normalised patches
                 under "values" (K, *P), whether each sample of them is a
-                measurement under "valid" (K, *P'), and where each sits and how
+                measurement under "valid" (K, *P'), what each of its channels
+                measures under "channels" (K, C), and where each sits and how
                 far it reaches, in metres, under "position" (K, 6), K being
                 what the budget drew of the feature, which may be none. A split
                 holding a seed draws the same patches of a feature every time,
@@ -148,7 +155,14 @@ class DatasetSplit(Dataset):
         heights = self.build.read_heights(held)
         draw = random.Random(None if self.seed is None else f"{self.seed}/{identity}")
         read = read_feature_patches(
-            rows, self.build, self.sizes, heights, self.budget, self.overlap, draw
+            rows,
+            self.build,
+            self.sizes,
+            self.wavelengths,
+            heights,
+            self.budget,
+            self.overlap,
+            draw,
         )
         sample = {}
         for name, drawn in read.items():
@@ -157,11 +171,16 @@ class DatasetSplit(Dataset):
                 held if holds in (GROUND, WAVELENGTH) else 1
                 for held, holds in zip(shape, self.axes[name], strict=True)
             )
+            at = channel_axis(self.axes[name])
+            channels = shape[at] if at is not None else 1
             sample[name] = {
                 "values": stacked(
                     [self.normalised(patch) for patch in drawn], shape, np.float32
                 ),
                 "valid": stacked([patch.valid for patch in drawn], valid_shape, bool),
+                "channels": stacked(
+                    [patch.channels for patch in drawn], (channels,), np.float32
+                ),
                 "position": stacked(
                     [
                         np.array(

@@ -16,6 +16,7 @@ from config.load import load_config
 from config.paths import REPO_ROOT
 from config.schema import Config
 from dataset.patches import patch_sizes, read_patch_layout
+from dataset.wavelengths import band_wavelengths
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.report import report_evaluation
 from logs.console import logger
@@ -37,9 +38,12 @@ def evaluate_model(config: Config) -> None:
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
+    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
+    wavelengths = band_wavelengths(shapes, axes)
     loader = build.loaders_by_split(
         sizes,
         shapes,
+        wavelengths,
         collate,
         config.dataset.split,
         config.dataset.seed,
@@ -50,7 +54,7 @@ def evaluate_model(config: Config) -> None:
         config.training.workers,
     )[config.evaluation.split]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CrossSensorMAE(shapes, strides, config.model).to(device)
+    model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
     name = config.evaluation.model or model_name(config.model)
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
     epochs = load_checkpoint(published_checkpoint(name, held), model) + 1

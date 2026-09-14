@@ -44,6 +44,7 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
+        axes: dict[str, tuple[str, ...]],
         strides: dict[str, float],
         config: ModelConfig,
     ) -> None:
@@ -52,6 +53,8 @@ class CrossSensorMAE(nn.Module):
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE
                 names it.
+            axes: What each axis of each instrument's values holds, keyed the
+                same way.
             strides: How far apart two neighbouring patch centres of each
                 instrument sit, in metres, which sets the shortest period its
                 positions are read at.
@@ -61,7 +64,12 @@ class CrossSensorMAE(nn.Module):
         self.encoders = nn.ModuleDict(
             {
                 name: Encoder(
-                    shape, config.dim, config.heads, config.depth, strides[name]
+                    shape,
+                    axes[name],
+                    config.dim,
+                    config.heads,
+                    config.depth,
+                    strides[name],
                 )
                 for name, shape in shapes.items()
             }
@@ -73,6 +81,7 @@ class CrossSensorMAE(nn.Module):
             {
                 name: Decoder(
                     shape,
+                    axes[name],
                     config.dim,
                     config.decoder_dim,
                     config.decoder_heads,
@@ -100,7 +109,7 @@ class CrossSensorMAE(nn.Module):
                 tokens.values.shape[0], 0, self.dim
             )  # (B, 0, D)
         encoded = self.encoders[name](
-            tokens.values, tokens.position, visible
+            tokens.values, tokens.channels, tokens.valid, tokens.position, visible
         )  # (B, K, D)
         return self.crossencoder(encoded, visible)  # (B, K, D)
 
@@ -158,6 +167,7 @@ class CrossSensorMAE(nn.Module):
                     batch[read].position,
                     batch[read].visible,
                     tokens.position,
+                    tokens.channels,
                     hidden,
                 )  # (B, K, *P)
         return Reconstruction(predictions, encoded)

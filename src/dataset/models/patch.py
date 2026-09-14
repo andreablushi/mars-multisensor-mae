@@ -21,6 +21,10 @@ class Patch:
             it broadcasts over the values. A band the observation never
             measured was filled rather than read, and carries none.
         axes: What each axis of the values holds, in that same order.
+        channels: What each channel of the patch measures, in its own unit: the
+            nanometres a band is centred on, the metres above the areoid a
+            sounder reads one delay at, and one nothing for a patch that is
+            ground alone. (C)
         origin: Where the patch starts along each axis of the observation.
         ground_sample_m: How much ground one sample spans along each ground
             axis, in the order those axes run.
@@ -46,6 +50,7 @@ class Patch:
     values: np.ndarray
     valid: np.ndarray
     axes: tuple[str, ...]
+    channels: np.ndarray
     origin: tuple[int, ...]
     ground_sample_m: tuple[float, ...]
     beside: dict[str, np.ndarray]
