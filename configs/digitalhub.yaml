@@ -22,16 +22,16 @@ image_extras:
 # disk. The cores are also how many processes read features beside the training.
 resources:
   training:
-    profile: 1xrtxa5000
-    cpu: 12
+    profile: 1xrtxa5000-shared
+    cpu: 4
     gpu: 1
     memory: 32Gi
     disk: 64Gi
   evaluation:
-    profile: 1xrtxa5000
+    profile: 1xrtxa5000-shared
     cpu: 4
     gpu: 1
-    memory: 8Gi
+    memory: 32Gi
     disk: 64Gi
 
 # The function each run is registered as, the project scoping it so it needs no prefix
