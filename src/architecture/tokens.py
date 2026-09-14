@@ -55,18 +55,19 @@ class Tokens:
 
 
 def collate(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
-) -> tuple[dict[str, Tokens], list[str]]:
-    """Return one batch of every instrument's tokens, and the classes.
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]],
+) -> tuple[dict[str, Tokens], list[tuple[str, str]]]:
+    """Return one batch of every instrument's tokens, and whose each read is.
 
     Args:
         samples: What the dataset read of each feature of the batch.
 
     Returns:
-        batch: Each instrument's patches padded to the most any feature of the
+        batch: Each instrument's patches padded to the most any read of the
             batch holds, keyed as ODE names it, nothing yet hidden from any
             encoder.
-        classes: The class of each feature, in the batch's order.
+        identities: The feature each read belongs to, its class and its name,
+            in the batch's order.
     """
     batch = {}
     for name in samples[0][0]:
@@ -81,4 +82,4 @@ def collate(
         }
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         batch[name] = Tokens(**padded, visible=present, present=present)
-    return batch, [feature_class for _, feature_class in samples]
+    return batch, [identity for _, identity in samples]

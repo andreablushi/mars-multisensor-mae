@@ -3,37 +3,23 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import channel_axis, read_feature_patches
+from dataset.patches import (
+    cut_patch,
+    every_patch_plan,
+    patch_arrays,
+    read_feature_patches,
+)
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
-
-
-def stacked(
-    arrays: list[np.ndarray], shape: tuple[int, ...], dtype: np.dtype | type
-) -> np.ndarray:
-    """Return a list of same-shaped arrays as one array, empty where none were given.
-
-    Args:
-        arrays: The arrays, every one of that shape.
-        shape: Their shape, which an empty list cannot say.
-        dtype: What they hold, which an empty list cannot say either.
-
-    Returns:
-        stacked: The arrays along a new first axis. (K, *shape)
-    """
-    if not arrays:
-        return np.zeros((0, *shape), dtype)
-    return np.stack(arrays)
 
 
 class DatasetSplit(Dataset):
@@ -59,6 +45,10 @@ class DatasetSplit(Dataset):
             ground the anchor instrument's patches reach.
         seed: The number that fixes every read's draw, or None for a split that
             draws anew each time.
+        chunk: How many patches of one instrument one read hands back, reading
+            the split whole a chunk at a time, or None to draw once per feature.
+        reads: Which feature, and which of its chunks, each read stands for.
+        opened: The observations last read, which the next chunk of one reuses.
     """
 
     def __init__(
@@ -74,6 +64,7 @@ class DatasetSplit(Dataset):
         budget: int,
         overlap: float,
         seed: int | None,
+        chunk: int | None = None,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
@@ -97,6 +88,8 @@ class DatasetSplit(Dataset):
                 reach ground the anchor instrument's patches reach.
             seed: The number that fixes every read's draw, or None for a split
                 that draws anew each time.
+            chunk: How many patches of one instrument one read hands back, or
+                None to draw `budget` of each once per feature.
 
         Raises:
             ValueError: When an instrument the model reads has no finite
@@ -114,110 +107,113 @@ class DatasetSplit(Dataset):
         self.budget = budget
         self.overlap = overlap
         self.seed = seed
+        self.chunk = chunk
+        self.opened: dict[str, object] = {}
+        self.reads = [(at, None) for at in range(len(self.identities))]
+        if chunk is not None:
+            self.reads = [
+                (at, planned)
+                for at, identity in enumerate(self.identities)
+                for planned in every_patch_plan(features[identity], sizes, chunk)
+            ]
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
 
     def __len__(self) -> int:
-        """Return how many features the split holds.
+        """Return how many reads the split holds.
 
         Returns:
-            count: The number of features.
+            count: One per feature, or one per chunk where the split is read whole.
         """
-        return len(self.identities)
+        return len(self.reads)
 
-    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
-        """Return what one feature was drawn as, and its class.
+    def __getitem__(
+        self, index: int
+    ) -> tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]:
+        """Return what one read of a feature holds, and whose it is.
 
         Args:
-            index: Which feature of the split.
+            index: Which read of the split.
 
         Returns:
             sample: For each instrument the model reads, its normalised patches
                 under "values" (K, *P), whether each sample of them is a
                 measurement under "valid" (K, *P'), what each of its channels
                 measures under "channels" (K, C), and where each sits and how
-                far it reaches, in metres, under "position" (K, 6), K being
-                what the budget drew of the feature, which may be none. A split
-                holding a seed draws the same patches of a feature every time,
-                so its loss is the last pass's to beat; one holding none draws
-                anew, so a run reads every patch of a feature over its epochs.
-            feature_class: The class of the feature, as ODE names it.
+                far it reaches, in metres, under "position" (K, 6), which may
+                hold none. A split holding a seed draws the same patches every
+                time, so its loss is the last pass's to beat; one holding none
+                draws anew, so a run reads every patch over its epochs.
+            identity: The feature the read belongs to, its class and its name,
+                so the chunks of one feature are told from another's.
 
         Raises:
             ValueError: When the feature has no elevation to stand on.
         """
-        identity = self.identities[index]
+        at, planned = self.reads[index]
+        identity = self.identities[at]
         rows = self.features[identity]
         held = rows.get(self.elevation)
         if not held:
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
         heights = self.build.read_heights(held)
-        draw = random.Random(None if self.seed is None else f"{self.seed}/{identity}")
-        read = read_feature_patches(
-            rows,
-            self.build,
-            self.sizes,
-            self.wavelengths,
-            heights,
-            self.budget,
-            self.overlap,
-            draw,
-        )
-        sample = {}
-        for name, drawn in read.items():
-            shape = self.shapes[name]
-            valid_shape = tuple(
-                held if holds in (GROUND, WAVELENGTH) else 1
-                for held, holds in zip(shape, self.axes[name], strict=True)
+        if planned is None:
+            draw = random.Random(
+                None if self.seed is None else f"{self.seed}/{identity}"
             )
-            at = channel_axis(self.axes[name])
-            channels = shape[at] if at is not None else 1
-            sample[name] = {
-                "values": stacked(
-                    [self.normalised(patch) for patch in drawn], shape, np.float32
-                ),
-                "valid": stacked([patch.valid for patch in drawn], valid_shape, bool),
-                "channels": stacked(
-                    [patch.channels for patch in drawn], (channels,), np.float32
-                ),
-                "position": stacked(
-                    [
-                        np.array(
-                            [
-                                patch.east_m,
-                                patch.north_m,
-                                patch.height_m,
-                                patch.east_span_m,
-                                patch.north_span_m,
-                                patch.height_span_m,
-                            ],
-                            np.float32,
-                        )
-                        for patch in drawn
-                    ],
-                    (6,),
-                    np.float32,
-                ),
+            read = read_feature_patches(
+                rows,
+                self.build,
+                self.sizes,
+                self.wavelengths,
+                heights,
+                self.budget,
+                self.overlap,
+                draw,
+            )
+        else:
+            read = {
+                name: self.cut_planned(name, taken, heights)
+                for name, taken in planned.items()
             }
-        return sample, identity[0]
+        sample = {
+            name: patch_arrays(
+                drawn, self.shapes[name], self.axes[name], self.statistics[name]
+            )
+            for name, drawn in read.items()
+        }
+        return sample, identity
 
-    def normalised(self, patch: Patch) -> np.ndarray:
-        """Return one patch's values centred and scaled by its instrument's moments.
+    def cut_planned(
+        self,
+        name: str,
+        taken: Sequence[tuple[ObservationMetadata, int]],
+        heights: np.ndarray,
+    ) -> list[Patch]:
+        """Return the planned patches of one instrument, cut from their observations.
 
         Args:
-            patch: The patch.
+            name: The instrument, as ODE names it.
+            taken: Which observation and which patch of it to cut, in order.
+            heights: Where the ground stands over the feature. (N, 3)
 
         Returns:
-            values: The values less their mean over their deviation, the
-                instrument's own over the training split, one number for an
-                instrument measuring one thing and one per band for a spectral
-                one, and zero where the sample is no measurement. An encoder
-                reads every sample of a patch, mask or no mask, so a sample a
-                sounder wrote as nan is read as the instrument's average
-                instead. (*P)
+            patches: The patches, holding none that measured nothing.
         """
-        held = self.statistics[patch.instrument]
-        values = patch.values.astype(np.float32)  # (*P)
-        scaled = (values - held["mean"]) / np.maximum(held["deviation"], 1e-6)  # (*P)
-        return np.where(patch.valid, scaled, 0.0)  # (*P)
+        # The chunks of one observation run together, so it is read once for all.
+        cut = []
+        for record, at in taken:
+            if record.path not in self.opened:
+                self.opened = {record.path: self.build.read_observation(record.path)}
+            patch = cut_patch(
+                self.opened[record.path],
+                record,
+                at,
+                self.sizes[name],
+                heights,
+                self.wavelengths.get(name, ()),
+            )
+            if patch.valid.any():
+                cut.append(patch)
+        return cut

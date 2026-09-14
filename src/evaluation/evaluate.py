@@ -12,6 +12,7 @@ from torch.nn import functional
 from torch.utils.data import DataLoader
 from umap import UMAP
 
+from architecture.components.fusion import feature_latent
 from architecture.mae import CrossSensorMAE
 from config.schema import Config
 from evaluation.metrics import (
@@ -66,18 +67,37 @@ def evaluate_latent_space(
             says anything about.
     """
     model.eval()
-    embedded: list[Tensor] = []
-    read: list[str] = []
+    summed: defaultdict[tuple[tuple[str, str], str], Tensor] = defaultdict(int)
+    held: defaultdict[tuple[tuple[str, str], str], Tensor] = defaultdict(int)
+    order: dict[tuple[str, str], None] = {}
     with torch.no_grad():
-        for batch, feature_classes in loader:
+        for batch, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            embedded.append(model.embed(batch).cpu())  # (B, D)
-            read.extend(feature_classes)
-    latents = torch.cat(embedded)  # (N, D)
+            for name, encoded in model.encode(batch).items():
+                weight = batch[name].present.unsqueeze(-1).to(encoded.dtype)  # (B,K,1)
+                totals = (encoded * weight).sum(dim=1).cpu()  # (B, D)
+                counts = weight.sum(dim=1).cpu()  # (B, 1)
+                for at, identity in enumerate(identities):
+                    summed[identity, name] = summed[identity, name] + totals[at]
+                    held[identity, name] = held[identity, name] + counts[at]
+            order.update(dict.fromkeys(identities))
+    # One vector per instrument per feature, averaged over every chunk it was read in.
+    read = list(order)
+    averaged = {
+        name: torch.stack(
+            [summed[one, name] / held[one, name].clamp(min=1) for one in read]
+        ).unsqueeze(1)
+        for name in model.encoders
+    }  # (N, 1, D)
+    counted = {
+        name: torch.stack([held[one, name] > 0 for one in read])
+        for name in model.encoders
+    }  # (N, 1)
+    latents = feature_latent(averaged, counted)  # (N, D)
     # A feature holding no patch of any instrument the model reads embeds to nothing.
-    counted = latents.norm(dim=-1) > 0  # (N,)
-    classes = [one for one, held in zip(read, counted.tolist(), strict=True) if held]
-    latents = functional.normalize(latents[counted], dim=-1)  # (N, D)
+    kept = latents.norm(dim=-1) > 0  # (N,)
+    classes = [one[0] for one, was in zip(read, kept.tolist(), strict=True) if was]
+    latents = functional.normalize(latents[kept], dim=-1)  # (N, D)
     if len(set(classes)) < 2:
         raise ValueError(f"{len(set(classes))} classes read, two say the least")
     similarity, names = class_similarity(latents, classes)  # (C, C)

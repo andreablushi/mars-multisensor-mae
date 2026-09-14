@@ -272,6 +272,7 @@ class DatasetBuild:
         overlap: float,
         batch_size: int,
         workers: int,
+        chunk: int | None = None,
     ) -> dict[str, DataLoader]:
         """Return every split of the build in batches, whole features at a time.
 
@@ -296,6 +297,8 @@ class DatasetBuild:
                 reach ground the anchor instrument's patches reach.
             batch_size: How many features one step reads.
             workers: How many processes read features beside the training.
+            chunk: How many patches of one instrument one read hands back,
+                reading a split whole, or None to draw once per feature.
 
         Returns:
             loaders: One loader per split, keyed as `SPLITS` names it, the
@@ -329,6 +332,7 @@ class DatasetBuild:
                     budget,
                     overlap,
                     None if name == TRAINING_SPLIT else seed,
+                    chunk,
                 ),
                 batch_size=batch_size,
                 shuffle=name == TRAINING_SPLIT,

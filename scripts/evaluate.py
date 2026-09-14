@@ -41,7 +41,8 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     shapes, strides = read_patch_layout(build, sizes)
     axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
     wavelengths = band_wavelengths(shapes, axes)
-    loader = build.loaders_by_split(
+    chunk = max(config.training.patches_per_step // config.training.batch_size, 1)
+    read = (
         sizes,
         shapes,
         wavelengths,
@@ -49,11 +50,14 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         config.dataset.split,
         config.dataset.seed,
         config.model.elevation,
-        max(config.training.patches_per_step // config.training.batch_size, 1),
+        chunk,
         config.dataset.overlap,
         config.training.batch_size,
         config.training.workers,
-    )[config.evaluation.split]
+    )
+    # The latents are read over every patch, the reconstruction over one draw of them.
+    loader = build.loaders_by_split(*read)[config.evaluation.split]
+    whole = build.loaders_by_split(*read, chunk)[config.evaluation.split]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
     name = config.evaluation.model or model_name(config.model)
@@ -67,9 +71,10 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
             "model": name,
             "epochs_trained": epochs,
             "features": len(loader.dataset),
+            "chunks": len(whole.dataset),
         },
     )
-    report_latent_space(run, evaluate_latent_space(model, loader, config, device))
+    report_latent_space(run, evaluate_latent_space(model, whole, config, device))
     report_reconstruction(
         run,
         evaluate_reconstruction(

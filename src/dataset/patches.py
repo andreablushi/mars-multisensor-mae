@@ -214,6 +214,118 @@ def cut_patch(
     )
 
 
+def patch_arrays(
+    patches: Sequence[Patch],
+    shape: Sequence[int],
+    axes: Sequence[str],
+    statistics: Mapping[str, float],
+) -> dict[str, np.ndarray]:
+    """Return one instrument's drawn patches as the arrays a model is handed.
+
+    Args:
+        patches: The patches, all of one instrument.
+        shape: The shape of one patch of it as the model reads it.
+        axes: What each axis of its values holds.
+        statistics: What its values run to over the training split.
+
+    Returns:
+        arrays: The normalised patches under "values" (K, *P), whether each
+            sample is a measurement under "valid" (K, *P'), what each channel
+            measures under "channels" (K, C), and where each patch sits and how
+            far it reaches, in metres, under "position" (K, 6).
+    """
+    valid_shape = tuple(
+        held if holds in (GROUND, WAVELENGTH) else 1
+        for held, holds in zip(shape, axes, strict=True)
+    )
+    at = channel_axis(axes)
+    channels = shape[at] if at is not None else 1
+    scaled = [
+        np.where(
+            one.valid,
+            (one.values.astype(np.float32) - statistics["mean"])
+            / max(statistics["deviation"], 1e-6),
+            0.0,
+        )
+        for one in patches
+    ]
+    return {
+        "values": stacked(scaled, tuple(shape), np.float32),
+        "valid": stacked([one.valid for one in patches], valid_shape, bool),
+        "channels": stacked([one.channels for one in patches], (channels,), np.float32),
+        "position": stacked(
+            [
+                np.array(
+                    [
+                        one.east_m,
+                        one.north_m,
+                        one.height_m,
+                        one.east_span_m,
+                        one.north_span_m,
+                        one.height_span_m,
+                    ],
+                    np.float32,
+                )
+                for one in patches
+            ],
+            (6,),
+            np.float32,
+        ),
+    }
+
+
+def stacked(
+    arrays: Sequence[np.ndarray], shape: tuple[int, ...], dtype: np.dtype | type
+) -> np.ndarray:
+    """Return same-shaped arrays as one array, empty where none were given.
+
+    Args:
+        arrays: The arrays, every one of that shape.
+        shape: Their shape, which an empty list cannot say.
+        dtype: What they hold, which an empty list cannot say either.
+
+    Returns:
+        stacked: The arrays along a new first axis. (K, *shape)
+    """
+    if not arrays:
+        return np.zeros((0, *shape), dtype)
+    return np.stack(list(arrays))
+
+
+def every_patch_plan(
+    rows: Mapping[str, Sequence[ObservationMetadata]],
+    sizes: Mapping[str, int],
+    chunk: int,
+) -> list[dict[str, list[tuple[ObservationMetadata, int]]]]:
+    """Return every patch of every observation of one feature, cut into chunks.
+
+    Args:
+        rows: The feature's index rows of each instrument, keyed as ODE names it.
+        sizes: How far a patch of each instrument runs along an axis it is cut on.
+        chunk: How many patches of one instrument a chunk holds at most.
+
+    Returns:
+        planned: One entry per chunk, naming the observation and the patch of it
+            to cut, per instrument. An instrument holding fewer patches than the
+            rest runs out in an early chunk and is empty in the others, which a
+            feature's average over its chunks does not mind. Read from the index
+            alone, so no observation is opened to plan a pass.
+    """
+    held = {
+        name: [
+            (record, at)
+            for record in rows.get(name, ())
+            for at in range(math.prod(patch_counts(record.shape, record.axes, size)))
+        ]
+        for name, size in sizes.items()
+    }
+    count = max((math.ceil(len(one) / chunk) for one in held.values()), default=0)
+    return [
+        {name: one[at * chunk : (at + 1) * chunk] for name, one in held.items()}
+        for at in range(count)
+    ]
+
+
 def channel_axis(axes: Sequence[str]) -> int | None:
     """Return which axis of a patch its channels run along.
 
