@@ -1,4 +1,4 @@
-"""Where a token sits and how far it reaches, as sines and cosines of its metres."""
+"""Saying where a patch sits and how far it reaches, in metres read as sinusoids."""
 
 from __future__ import annotations
 

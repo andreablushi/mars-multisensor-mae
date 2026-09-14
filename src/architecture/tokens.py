@@ -1,4 +1,4 @@
-"""What the model is handed: one instrument's patches over a batch of features."""
+"""What the model is handed: one sensor's patches over a batch of features."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 @dataclass(frozen=True, slots=True)
 class Tokens:
-    """One instrument's patches over a batch of features, padded to one count.
+    """One sensor's patches over a batch of features, padded to one count.
 
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)

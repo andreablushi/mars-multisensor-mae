@@ -1,4 +1,4 @@
-"""What one channel of one instrument is, beside the numbers that channel holds."""
+"""Saying what a channel measures, which the numbers it holds do not."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def by_channel(held: Tensor, at: int | None) -> Tensor:
 
 
 class ModalityEncoder(nn.Module):
-    """What each channel of one instrument is, as the vector its token is enriched by.
+    """Say what a sensor is and what each channel of it measures, as one vector.
 
     A token carries the numbers a channel holds and nothing saying what they
     are. This says it: which instrument read them, and what that channel of it

@@ -1,4 +1,4 @@
-"""One instrument's decoder, predicting its hidden patches from any instrument."""
+"""Writing a sensor's hidden patches back out of tokens, whichever sensor read them."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from dataset.patches import channel_axis
 
 
 class Decoder(nn.Module):
-    """A transformer over read tokens and mask tokens, ending in a map to a patch.
+    """Attend over the tokens read and one stand-in per patch asked for, then write it.
 
     Attributes:
         shape: The shape of one patch this decoder predicts.

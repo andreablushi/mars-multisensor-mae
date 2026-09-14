@@ -1,4 +1,4 @@
-"""One instrument's encoder, a transformer over the patches it is shown."""
+"""Turning the patches one sensor was shown into tokens, one token a patch."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from dataset.patches import channel_axis
 
 
 class Encoder(nn.Module):
-    """One instrument's encoder: embed each channel, place the patch, attend over it.
+    """Embed each channel of a patch, place it on the ground, attend over the set.
 
     Attributes:
         at: Which axis of a patch its channels run along, or None for an

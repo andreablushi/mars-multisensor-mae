@@ -1,4 +1,4 @@
-"""Bringing a feature's instruments together into the one vector that stands for it."""
+"""Bringing what every sensor made of a feature into the one vector standing for it."""
 
 from __future__ import annotations
 

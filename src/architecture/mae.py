@@ -31,7 +31,7 @@ class Reconstruction:
 
 
 class CrossSensorMAE(nn.Module):
-    """An encoder and a decoder per instrument, one cross-sensor encoder between.
+    """An encoder and a decoder per sensor, one shared encoder aligning them between.
 
     Attributes:
         encoders: Each instrument's own encoder, keyed as ODE names it.

@@ -1,4 +1,4 @@
-"""A stack of transformer blocks, read with a mask over the tokens to skip."""
+"""Attending over a set of tokens, skipping the ones that carry nothing."""
 
 from __future__ import annotations
 
