@@ -11,7 +11,9 @@ from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
 
-def normalised_patches(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
+def normalised_patches(
+    values: Tensor, valid: Tensor
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     """Return each patch centred and scaled by the measured samples of its own.
 
     Args:
@@ -21,6 +23,9 @@ def normalised_patches(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
     Returns:
         target: The patches, each of zero mean and unit deviation. (B, K, *P)
         counted: Whether each sample is a measurement, spread over them. (B, K, *P)
+        mean: What each patch was centred by, to put a prediction back in the
+            instrument's own units. (B, K, 1...)
+        deviation: What each was scaled by, holding the same. (B, K, 1...)
     """
     counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
@@ -28,7 +33,8 @@ def normalised_patches(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
     variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    return (values - mean) / (variance.reshape(spread) + 1e-6).sqrt(), counted
+    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
+    return (values - mean) / deviation, counted, mean, deviation
 
 
 def reconstruction_error(
@@ -46,7 +52,7 @@ def reconstruction_error(
         error: The mean squared error over the measured samples of the counted
             patches, against each patch normalised by its own. Zero when none counts.
     """
-    target, counted = normalised_patches(values, valid)  # (B, K, *P)
+    target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)

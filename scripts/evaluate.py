@@ -20,6 +20,7 @@ from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
 from evaluation.report import report_latent_space, report_reconstruction
 from logs.console import logger
 from logs.tracker import start_run
+from qualitative.mosaic import report_mosaics
 from training.checkpoint import load_checkpoint
 
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
@@ -84,6 +85,15 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
             config.dataset.seed,
             device,
         ),
+    )
+    report_mosaics(
+        run,
+        model,
+        loader.dataset,
+        config.evaluation.mosaic,
+        config.training.mask_ratio,
+        config.dataset.seed,
+        device,
     )
     run.finish()
 

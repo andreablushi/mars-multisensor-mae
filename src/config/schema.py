@@ -106,6 +106,8 @@ class EvaluationConfig:
         split: The split the latents are read from, as the code names the
             splits.
         neighbours: How many nearest latents one retrieval reads.
+        mosaic: How many patches the block a mosaic is drawn over runs along
+            each cut axis.
         model: The published model to read, as it was published or as the key
             of one version of it, or None for the latest version of what a run
             of this architecture publishes.
@@ -113,6 +115,7 @@ class EvaluationConfig:
 
     split: str
     neighbours: int
+    mosaic: int
     model: str | None = None
 
 

@@ -170,7 +170,7 @@ def reconstruction_metrics(
             against the range of the patch's own measured samples. Each is
             averaged over the counted patches, and zero where none counts.
     """
-    target, counted = normalised_patches(values, valid)  # (B, K, *P)
+    target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)
