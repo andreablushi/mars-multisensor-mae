@@ -14,12 +14,13 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import collate
 from config.load import load_config
 from config.paths import REPO_ROOT
-from config.schema import Config
-from dataset.patches import patch_sizes
-from evaluation.evaluate import evaluate_latent_space
-from evaluation.report import report_evaluation
+from dataset.patches import patch_sizes, read_patch_layout
+from dataset.wavelengths import band_wavelengths
+from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
+from evaluation.report import report_latent_space, report_reconstruction
 from logs.console import logger
 from logs.tracker import start_run
+from qualitative.mosaic import report_mosaics
 from training.checkpoint import load_checkpoint
 
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
@@ -27,21 +28,39 @@ EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 log = logger(__name__)
 
 
-def evaluate_model(config: Config) -> None:
+@handler()
+def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     """Measure what one published model's latent space made of the feature classes.
 
     Args:
-        config: What the run reads, what it built, which model is read and how
-            it is measured.
+        project: The DigitalHub project the model was published in, unused here.
+        overrides: What to compose the config with, as hydra spells them.
     """
+    config = load_config(overrides or [])
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = build.read_patch_layout(sizes)
-    loader = build.loaders_by_split(config, sizes, shapes, collate)[
-        config.evaluation.split
-    ]
+    shapes, strides = read_patch_layout(build, sizes)
+    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
+    wavelengths = band_wavelengths(shapes, axes)
+    chunk = max(config.training.patches_per_step // config.training.batch_size, 1)
+    read = (
+        sizes,
+        shapes,
+        wavelengths,
+        collate,
+        config.dataset.split,
+        config.dataset.seed,
+        config.model.elevation,
+        chunk,
+        config.dataset.overlap,
+        config.training.batch_size,
+        config.training.workers,
+    )
+    # The latents are read over every patch, the reconstruction over one draw of them.
+    loader = build.loaders_by_split(*read)[config.evaluation.split]
+    whole = build.loaders_by_split(*read, chunk)[config.evaluation.split]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CrossSensorMAE(shapes, strides, config.model).to(device)
+    model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
     name = config.evaluation.model or model_name(config.model)
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
     epochs = load_checkpoint(published_checkpoint(name, held), model) + 1
@@ -53,21 +72,30 @@ def evaluate_model(config: Config) -> None:
             "model": name,
             "epochs_trained": epochs,
             "features": len(loader.dataset),
+            "chunks": len(whole.dataset),
         },
     )
-    report_evaluation(run, evaluate_latent_space(model, loader, config, device))
+    report_latent_space(run, evaluate_latent_space(model, whole, config, device))
+    report_reconstruction(
+        run,
+        evaluate_reconstruction(
+            model,
+            loader,
+            config.training.mask_ratio,
+            config.dataset.seed,
+            device,
+        ),
+    )
+    report_mosaics(
+        run,
+        model,
+        loader.dataset,
+        config.evaluation.mosaic,
+        config.training.mask_ratio,
+        config.dataset.seed,
+        device,
+    )
     run.finish()
-
-
-@handler()
-def run_evaluation(project, overrides: list[str] | None = None) -> None:
-    """Evaluate one published model on DigitalHub.
-
-    Args:
-        project: The DigitalHub project the model was published in.
-        overrides: What to compose the config with, as hydra spells them.
-    """
-    evaluate_model(load_config(overrides or []))
 
 
 def main() -> int:
@@ -91,7 +119,8 @@ def main() -> int:
         return submit.submitted(
             "evaluation", EVALUATION_HANDLER, arguments.ref, arguments.overrides
         )
-    evaluate_model(load_config(arguments.overrides))
+    # The platform calls the handler, a run here the function under it.
+    run_evaluation.__wrapped__(overrides=arguments.overrides)
     return 0
 
 

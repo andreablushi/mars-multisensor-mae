@@ -16,15 +16,11 @@ def random_correspondence(
 
     Args:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
-        ratio: The share of an instrument's present patches to hide from its
-            encoder, rounded down.
+        ratio: The share of a sensor's present patches to hide, rounded down.
         generator: What fixes the draw, on the batch's own device.
 
     Returns:
-        masked: The same patches, `visible` now holding what each instrument's
-            encoder may read. The draws are independent, so two instruments
-            hide the same ground only as often as chance has it, which is the
-            paper's random correspondence, |M1 intersect M2| >= 0.
+        masked: The same patches, `visible` now what each encoder may read.
     """
     masked = {}
     for name, tokens in batch.items():

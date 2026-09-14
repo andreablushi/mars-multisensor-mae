@@ -17,14 +17,10 @@ def load_config(overrides: Sequence[str] = ()) -> Config:
     """Return what one run is settled from, composed and read under the schema.
 
     Args:
-        overrides: What to compose it with instead of the defaults, as hydra
-            spells them: `dataset=full` for another file of a group,
-            `dataset.seed=7` for one value of one.
+        overrides: What to compose it with, as hydra spells them: `dataset=full`.
 
     Returns:
-        config: The run's choices, every key checked against the schema, so a
-            key the schema does not declare is an error rather than a line that
-            settles nothing.
+        config: The run's choices, every key checked against the schema.
     """
     with initialize_config_dir(version_base=None, config_dir=str(CONFIGS_ROOT)):
         composed = compose(config_name=ROOT_CONFIG_NAME, overrides=list(overrides))

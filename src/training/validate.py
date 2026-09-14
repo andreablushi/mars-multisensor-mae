@@ -25,16 +25,14 @@ def validate(
         device: Where the model runs.
 
     Returns:
-        metrics: Every loss term averaged over the batches, keyed as the loss
-            names them. The mask is drawn from the seed again on every call, so
-            one epoch's loss is the next one's to beat.
+        metrics: Every loss term averaged over the batches, on the same mask.
     """
     model.eval()
     generator = torch.Generator(device=device).manual_seed(config.dataset.seed)
     totals = defaultdict(float)
     batches = 0
     with torch.no_grad():
-        for batch, _, _ in loader:
+        for batch, _ in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             batch = random_correspondence(batch, config.training.mask_ratio, generator)
             terms = csmae_loss(model(batch), batch, config.training.temperature)

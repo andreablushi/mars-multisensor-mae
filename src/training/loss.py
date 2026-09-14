@@ -11,6 +11,31 @@ from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
 
+def normalised_patches(
+    values: Tensor, valid: Tensor
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Return each patch centred and scaled by the measured samples of its own.
+
+    Args:
+        values: The patches, as the model was handed them. (B, K, *P)
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
+
+    Returns:
+        target: The patches, each of zero mean and unit deviation. (B, K, *P)
+        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
+        mean: What each patch was centred by, to undo it. (B, K, 1...)
+        deviation: What each was scaled by, holding the same. (B, K, 1...)
+    """
+    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
+    over = tuple(range(2, values.dim()))
+    spread = (*values.shape[:2], *([1] * len(over)))
+    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
+    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
+    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
+    return (values - mean) / deviation, counted, mean, deviation
+
+
 def reconstruction_error(
     prediction: Tensor, values: Tensor, valid: Tensor, weight: Tensor
 ) -> Tensor:
@@ -19,22 +44,15 @@ def reconstruction_error(
     Args:
         prediction: The predicted patches. (B, K, *P)
         values: The true ones, as the model was handed them. (B, K, *P)
-        valid: Whether each sample of a patch is a measurement, broadcastable
-            to the values. (B, K, *P')
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
         weight: How much each patch counts. (B, K)
 
     Returns:
-        error: The mean squared error over the measured samples of the counted
-            patches, each patch first centred and scaled by the mean and
-            deviation of its own measured samples. Zero when none counts.
+        error: The mean squared error over the counted patches, zero where none is.
     """
-    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
+    target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
-    spread = (*values.shape[:2], *([1] * len(over)))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
-    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    target = (values - mean) / (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, *P)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)
     weight = weight.to(values.dtype)  # (B, K)
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
@@ -46,20 +64,12 @@ def mutual_information(
     """Return the contrastive term holding a feature's instruments to each other.
 
     Args:
-        tokens: Each instrument's tokens as the cross-sensor encoder hands
-            them, keyed as ODE names it. (B, K, D)
+        tokens: Each sensor's tokens from the cross-sensor encoder. (B, K, D)
         visible: Which of each instrument's tokens its encoder read. (B, K)
         temperature: What the similarities are divided by.
 
     Returns:
-        loss: The paper's L_MIM, averaged over every ordered pair of
-            instruments: for each feature, minus the log of its own pair of
-            vectors' similarity over that of its vector against every other
-            feature of the batch. One vector stands for a feature under an
-            instrument, the average of the tokens that instrument read of it.
-            A feature holding no visible token of either instrument of a pair
-            is neither a query nor a negative of it. Zero where the model reads
-            one instrument alone.
+        loss: The paper's L_MIM, over every ordered pair of sensors, its positive kept.
     """
     vectors = {
         name: functional.normalize(instrument_vector(held, visible[name]), dim=-1)
@@ -72,14 +82,12 @@ def mutual_information(
             if against == asked:
                 continue
             similarity = query @ key.T / temperature  # (B, B)
-            paired = read[asked] & read[against]  # (B,)
-            others = paired.unsqueeze(0) & ~torch.eye(
-                paired.shape[0], dtype=torch.bool, device=paired.device
-            )  # (B, B)
+            counted = read[asked] & read[against]  # (B,)
             floor = torch.finfo(similarity.dtype).min
-            against_others = similarity.masked_fill(~others, floor)  # (B, B)
-            denominator = against_others.logsumexp(dim=1)  # (B,)
-            counted = paired & others.any(dim=1)  # (B,)
+            against_counted = similarity.masked_fill(
+                ~counted.unsqueeze(0), floor
+            )  # (B, B)
+            denominator = against_counted.logsumexp(dim=1)  # (B,)
             error = denominator - similarity.diagonal()  # (B,)
             terms.append(
                 torch.where(counted, error, 0.0).sum() / counted.sum().clamp(min=1)
@@ -100,12 +108,7 @@ def csmae_loss(
         temperature: What the contrastive term divides its similarities by.
 
     Returns:
-        terms: Under "umr/<instrument>" the uni-modal reconstruction of its
-            hidden patches, read from its own visible tokens, under
-            "cmr/<instrument>" the cross-modal reconstruction of those same
-            patches read from each other instrument's, averaged, under "mim"
-            the contrastive term, and under "loss" every reconstruction term
-            summed plus it.
+        terms: "umr/<sensor>", "cmr/<sensor>", "mim", and "loss" summing them all.
     """
     terms = {}
     total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()

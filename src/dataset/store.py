@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import random
+import shutil
 from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -24,13 +26,13 @@ from building.preprocessing.common.store import (
     VALID,
 )
 from shared.disk import parquet
-from shared.disk.files import atomic_path
 from torch.utils.data import DataLoader
 
-from config.schema import Config
 from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
-from dataset.patches import patch_lengths
+
+# What is left free on the disk a run is given, under which nothing more is kept.
+DISK_RESERVE_BYTES = 8 * 1024**3
 
 # The splits a build is read in, which the config gives a share of the features each.
 TRAINING_SPLIT = "train"
@@ -46,41 +48,53 @@ class DatasetBuild:
     Attributes:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
+        records: What every observation is, once the index is read, else None.
     """
 
     root: Path
     fetch: Callable[[str], bytes]
+    records: list[ObservationMetadata] | None = None
 
     def read_object(self, path: str) -> bytes:
-        """Return what one object of the build holds, fetching it only once.
+        """Return what one object of the build holds, off disk or from the store.
+
+        A build runs to some hundred gigabytes and the disk a run is given holds
+        a fraction of it, but a run reads the same few thousand objects of it
+        once an epoch. What is fetched is kept while there is room, so an epoch
+        after the first reads off disk instead of over the network.
 
         Args:
-            path: Where it sits, relative to the build's own root, as the index
-                names it.
+            path: Where it sits, relative to the build root, as the index names it.
 
         Returns:
             data: The bytes of that object.
         """
         held = self.root / path
-        # What one pass fetched every later pass reads off the run's own disk.
         if held.is_file():
             return held.read_bytes()
         data = self.fetch(path)
-        # Staged under a name of its own, so a killed run leaves no half object.
-        with atomic_path(held) as staged:
-            staged.write_bytes(data)
+        held.parent.mkdir(parents=True, exist_ok=True)
+        if shutil.disk_usage(held.parent).free - len(data) > DISK_RESERVE_BYTES:
+            # Written whole then moved, so a reader beside this one finds it finished.
+            temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
+            temporary.write_bytes(data)
+            temporary.replace(held)
         return data
 
     def read_observation_metadata(self) -> list[ObservationMetadata]:
-        """Return what every observation of the build is, without reading one.
+        """Return what every observation of the build is, reading the index once.
 
         Returns:
             records: One row per observation, in the order the index holds them.
         """
-        held = pq.read_table(
-            io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
-        )
-        return [parquet.build(ObservationMetadata, row) for row in held.to_pylist()]
+        if self.records is None:
+            held = pq.read_table(
+                io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
+            )
+            self.records = [
+                parquet.build(ObservationMetadata, row) for row in held.to_pylist()
+            ]
+        return self.records
 
     def read_observation_metadata_by_feature(
         self,
@@ -88,9 +102,7 @@ class DatasetBuild:
         """Return the observations of each feature, by the instrument that took them.
 
         Returns:
-            standing: The rows of each instrument of each feature, keyed by
-                what tells the feature apart and then as ODE names the
-                instrument, in the order the index holds them.
+            standing: The rows of each sensor of each feature, keyed by identity.
         """
         standing = defaultdict(lambda: defaultdict(list))
         for one in self.read_observation_metadata():
@@ -101,8 +113,7 @@ class DatasetBuild:
         """Return one index row of each instrument the build reached.
 
         Returns:
-            rows: One row per instrument, keyed as ODE names it, which says
-                what each axis of its values holds and how far each runs.
+            rows: One row per sensor, saying what each axis holds and how far it runs.
         """
         return {one.instrument: one for one in self.read_observation_metadata()}
 
@@ -110,9 +121,7 @@ class DatasetBuild:
         """Return how much ground one sample of each instrument spans, over the build.
 
         Returns:
-            ground_sample_m: One length per instrument, keyed as ODE names it:
-                the median over its observations of the finest of its ground
-                axes, so one scan of an odd resolution does not settle it.
+            ground_sample_m: One length per sensor, its median finest ground axis.
         """
         standing = defaultdict(list)
         for one in self.read_observation_metadata():
@@ -126,10 +135,7 @@ class DatasetBuild:
             observations: The feature's index rows of the elevation instrument.
 
         Returns:
-            heights: One row per measured sample, pooled over the observations:
-                how far north of the feature centre it sits, how far east, and
-                how high above the areoid the ground stands there, in metres.
-                (N, 3)
+            heights: One row per sample: north, east and height, in metres. (N, 3)
 
         Raises:
             ValueError: When none of them measured anything.
@@ -161,11 +167,7 @@ class DatasetBuild:
             features: The features to pool over, or None for every one.
 
         Returns:
-            statistics: One entry per instrument, keyed as ODE names it, holding
-                how many measurements it pooled, their mean and their deviation.
-                A spectral instrument is pooled a band at a time and its moments
-                run along its own wavelength axis, so they divide one of its
-                patches as a single number divides any other.
+            statistics: Per sensor, how many measurements, their mean and deviation.
         """
         standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
         spreads: dict[str, list[int]] = {}
@@ -221,12 +223,13 @@ class DatasetBuild:
         Returns:
             observation: The observation, its arrays as the build wrote them.
         """
+        # What INSIDE and VALID hold is what MEASURED holds, and reading one of
+        # them costs as much as reading the values, so they are left unread.
+        skipped = (META, INSIDE, VALID)
         with np.load(io.BytesIO(self.read_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
-            arrays = {name: held[name] for name in held.files if name != META}
-        for name in (INSIDE, VALID):
-            arrays.pop(name, None)
+            arrays = {name: held[name] for name in held.files if name not in skipped}
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
@@ -242,67 +245,41 @@ class DatasetBuild:
             described=described,
         )
 
-    def read_patch_layout(
-        self, sizes: Mapping[str, int]
-    ) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
-        """Return the shape of one patch of each instrument, and how far two sit apart.
-
-        Args:
-            sizes: How far a patch of each instrument runs along an axis it is
-                cut on, keyed as ODE names it.
-
-        Returns:
-            shapes: The shape of one patch of each instrument, keyed as ODE
-                names it.
-            strides: How far apart two neighbouring patch centres of each
-                instrument sit, in metres, which sets the shortest period its
-                positions are read at.
-        """
-        rows = self.read_row_by_instrument()
-        ground = self.read_ground_sample_by_instrument()
-        return (
-            {
-                name: patch_lengths(rows[name].shape, rows[name].axes, size)
-                for name, size in sizes.items()
-            },
-            {name: size * ground[name] for name, size in sizes.items()},
-        )
-
     def loaders_by_split(
         self,
-        config: Config,
         sizes: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
+        wavelengths: Mapping[str, tuple[float, ...]],
         collate: Callable,
+        shares: Sequence[float],
+        seed: int,
+        elevation: str,
+        budget: int,
+        overlap: float,
+        batch_size: int,
+        workers: int,
+        chunk: int | None = None,
     ) -> dict[str, DataLoader]:
         """Return every split of the build in batches, whole features at a time.
 
-        A feature falls in one split by its name alone, so no two patches of it
-        straddle two splits and a later build that adds features leaves the
-        ones already placed where they were.
-
         Args:
-            config: What the run reads and how much of it one step reads: the
-                share of the build each split holds, the number that fixes
-                where a feature falls, the instrument every surface patch
-                takes its height from, and how many features and processes a
-                step runs.
-            sizes: How far a patch of each instrument runs along an axis it is
-                cut on, keyed as ODE names it, which is also which instruments
-                the model reads.
-            shapes: The shape of one patch of each instrument as the model
-                reads it.
-            collate: How one batch of drawn features becomes what the model is
-                handed.
+            sizes: How far a patch of each sensor runs along a cut axis, and which ones.
+            shapes: The shape of one patch of each instrument as the model reads it.
+            wavelengths: What each band of each spectral sensor is centred on, in nm.
+            collate: How one batch of drawn features becomes what the model is handed.
+            shares: The share of the features each split holds, in the code's order.
+            seed: What fixes where a feature falls, and every draw that is not anew.
+            elevation: The instrument whose values give every surface patch its height.
+            budget: How many patches of each instrument one read draws at most.
+            overlap: The share of each other sensor's patches over the anchor's ground.
+            batch_size: How many features one step reads.
+            workers: How many processes read features beside the training.
+            chunk: How many patches one read hands back, or None to draw per feature.
 
         Returns:
-            loaders: One loader per split, keyed as `SPLITS` names it, the
-                training one shuffled and every other read in the index's own
-                order.
+            loaders: One loader per split, the training one shuffled and the rest not.
         """
         by_feature = self.read_observation_metadata_by_feature()
-        shares = config.dataset.split
-        seed = config.dataset.seed
         total = sum(shares)
         splits: dict[str, list[tuple[str, str]]] = {name: [] for name in SPLITS}
         for identity in by_feature:
@@ -324,11 +301,17 @@ class DatasetBuild:
                     statistics,
                     sizes,
                     shapes,
-                    config.model.elevation,
+                    wavelengths,
+                    elevation,
+                    budget,
+                    overlap,
+                    None if name == TRAINING_SPLIT else seed,
+                    chunk,
                 ),
-                batch_size=config.training.batch_size,
+                batch_size=batch_size,
                 shuffle=name == TRAINING_SPLIT,
-                num_workers=config.training.workers,
+                num_workers=workers,
+                persistent_workers=workers > 0,
                 collate_fn=collate,
             )
             for name, held in splits.items()

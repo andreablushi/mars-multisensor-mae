@@ -1,4 +1,4 @@
-"""Where a token sits and how far it reaches, as sines and cosines of its metres."""
+"""Saying where a patch sits and how far it reaches, in metres read as sinusoids."""
 
 from __future__ import annotations
 
@@ -24,22 +24,15 @@ class PositionalEncoding(nn.Module):
     one track, are told apart without either being named to the model.
 
     Attributes:
-        periods: The ground distance each sinusoid repeats over, spaced
-            evenly in the log from one patch stride to the widest a feature
-            runs, a span read at the same ones as the coordinate it spans.
-            (6, D / 12)
+        periods: What each sinusoid repeats over, from the stride up. (6, D / 12)
     """
 
     def __init__(self, dim: int, stride: float) -> None:
         """Lay out the periods for one instrument at one token width.
 
         Args:
-            dim: The token width, a multiple of 12 so that each of the six
-                coordinates gets a cosine and a sine per period.
-            stride: How far apart two neighbouring patch centres of the
-                instrument sit, in metres. Nothing shorter is worth reading:
-                what is encoded is a patch centre, and a period under the
-                stride gives two neighbours the same phase.
+            dim: The token width, a multiple of 12, a cosine and a sine per coordinate.
+            stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
         if dim % (2 * COORDINATES):
@@ -60,12 +53,10 @@ class PositionalEncoding(nn.Module):
         """Return the encoding of every position.
 
         Args:
-            position: East, north and height of every patch centre, then how
-                far it spans along each of the three, in metres. (B, K, 6)
+            position: The centre east, north and height, then each span. (B, K, 6)
 
         Returns:
-            encoded: The cosines then the sines of each coordinate over its
-                periods, the six coordinates side by side. (B, K, D)
+            encoded: The cosines then sines of each coordinate, side by side. (B, K, D)
         """
         phase = 2 * math.pi * position.unsqueeze(-1) / self.periods  # (B, K, 6, D/12)
         encoded = torch.cat([phase.cos(), phase.sin()], dim=-1)  # (B, K, 6, D / 6)

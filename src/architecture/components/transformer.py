@@ -1,4 +1,4 @@
-"""A stack of transformer blocks, read with a mask over the tokens to skip."""
+"""Attending over a set of tokens, skipping the ones that carry nothing."""
 
 from __future__ import annotations
 
@@ -42,9 +42,7 @@ class Transformer(nn.Module):
             attended: Which of them carry something to attend to. (B, N)
 
         Returns:
-            tokens: One per slot, meaningful where attended. A row with nothing
-                to attend to skips no key, so it comes out finite and is
-                dropped downstream. (B, N, D)
+            tokens: One per slot, meaningful where attended. (B, N, D)
         """
         padding = ~attended  # (B, N)
         padding[padding.all(dim=1)] = False

@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 import torch
-from torch.nn.utils import get_total_norm
+from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
@@ -74,45 +74,20 @@ def train(
     step, best_epoch = 0, -1
     for epoch in range(settings.epochs):
         model.train()
-        epoch_started = time.perf_counter()
-        loads: list[float] = []
-        waiting = time.perf_counter()
-        for batch, _, seconds in training:
-            waited = time.perf_counter() - waiting
-            step_started = time.perf_counter()
+        for batch, _ in training:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             batch = random_correspondence(batch, settings.mask_ratio, generator)
             terms = csmae_loss(model(batch), batch, settings.temperature)
-            rate = scheduler.get_last_lr()[0]
             optimizer.zero_grad()
             terms["loss"].backward()
-            gradient = get_total_norm(
-                [one.grad for one in model.parameters() if one.grad is not None]
-            )
+            # One patch a sounder wrote badly must not carry the whole run off.
+            clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
             step += 1
-            loads.extend(seconds.tolist())
-            taken = time.perf_counter() - step_started
-            rate_of_work = len(seconds) / max(taken + waited, 1e-9)
-            log_step(
-                run,
-                step,
-                terms,
-                {
-                    "epoch": epoch,
-                    "learning_rate": rate,
-                    "gradient_norm": float(gradient),
-                    "time/step_seconds": taken,
-                    "time/loader_seconds": waited,
-                    "time/features_per_second": rate_of_work,
-                    "data/feature_seconds": float(seconds.mean()),
-                    "data/feature_seconds_max": float(seconds.max()),
-                },
-            )
-            waiting = time.perf_counter()
+            log_step(run, step, terms)
         metrics = validate(model, validation, config, device)
-        log_epoch(run, step, epoch, metrics, loads, time.perf_counter() - epoch_started)
+        log_epoch(run, step, epoch, metrics)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, epoch)

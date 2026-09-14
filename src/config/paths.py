@@ -15,8 +15,7 @@ def build_root(dataset: DatasetConfig) -> Path:
     """Return where the build a read is made of sits on this machine.
 
     Args:
-        dataset: What a run reads, which names the build and the directory every
-            build sits under.
+        dataset: What a run reads, naming the build and where builds sit.
 
     Returns:
         root: That build's own directory, which need not exist yet.

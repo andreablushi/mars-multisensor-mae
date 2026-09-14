@@ -1,4 +1,4 @@
-"""What the model is handed: one instrument's patches over a batch of features."""
+"""What the model is handed: one sensor's patches over a batch of features."""
 
 from __future__ import annotations
 
@@ -12,23 +12,21 @@ from torch.nn.utils.rnn import pad_sequence
 
 @dataclass(frozen=True, slots=True)
 class Tokens:
-    """One instrument's patches over a batch of features, padded to one count.
+    """One sensor's patches over a batch of features, padded to one count.
 
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
-        valid: Whether each sample of a patch is a measurement, over the ground
-            axes and broadcastable to the values. (B, K, *P')
-        position: How far east and north of the feature centre each patch
-            centre sits, how high above the areoid, and how far the patch
-            reaches along each of the three, in metres. (B, K, 6)
-        visible: Whether each slot holds a patch its encoder may read, which a
-            hidden patch and padding do not. (B, K)
+        valid: Whether each sample is a measurement. (B, K, *P')
+        position: The patch centre and its span, in metres. (B, K, 6)
+        channels: What each channel of each patch measures, in its own unit. (B, K, C)
+        visible: Whether a slot holds a patch its encoder may read. (B, K)
         present: Whether each slot holds a patch rather than padding. (B, K)
     """
 
     values: Tensor
     valid: Tensor
     position: Tensor
+    channels: Tensor
     visible: Tensor
     present: Tensor
 
@@ -45,30 +43,27 @@ class Tokens:
             self.values.to(device),
             self.valid.to(device),
             self.position.to(device),
+            self.channels.to(device),
             self.visible.to(device),
             self.present.to(device),
         )
 
 
 def collate(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str, float]],
-) -> tuple[dict[str, Tokens], list[str], Tensor]:
-    """Return one batch of every instrument's tokens, the classes, and the read times.
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]],
+) -> tuple[dict[str, Tokens], list[tuple[str, str]]]:
+    """Return one batch of every instrument's tokens, and whose each read is.
 
     Args:
-        samples: What the dataset read of each feature of the batch, and how
-            long each read took.
+        samples: What the dataset read of each feature of the batch.
 
     Returns:
-        batch: Each instrument's patches padded to the most any feature of the
-            batch holds, keyed as ODE names it, nothing yet hidden from any
-            encoder.
-        classes: The class of each feature, in the batch's order.
-        seconds: How long each feature took to read, in that same order. (B,)
+        batch: Each sensor's patches padded to the most any read holds, none hidden.
+        identities: The feature each read belongs to, in the batch's order.
     """
     batch = {}
     for name in samples[0][0]:
-        held = [sample[name] for sample, _, _ in samples]
+        held = [sample[name] for sample, _ in samples]
         counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
         padded = {
@@ -79,8 +74,4 @@ def collate(
         }
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         batch[name] = Tokens(**padded, visible=present, present=present)
-    return (
-        batch,
-        [feature_class for _, feature_class, _ in samples],
-        torch.tensor([seconds for _, _, seconds in samples]),  # (B,)
-    )
+    return batch, [identity for _, identity in samples]

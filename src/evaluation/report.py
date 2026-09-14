@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import wandb
@@ -17,13 +17,11 @@ def class_similarity_figure(similarity: np.ndarray, names: Sequence[str]) -> Fig
     """Return how alike each pair of classes is, drawn as a heatmap.
 
     Args:
-        similarity: The mean cosine similarity of every ordered pair of
-            classes. (C, C)
+        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
 
     Returns:
-        figure: The heatmap, each cell written with its own similarity, the
-            diagonal holding a class against itself.
+        figure: The heatmap, each cell written with its own similarity.
     """
     side = 2 + len(names) * 0.6
     figure, axes = pyplot.subplots(figsize=(side, side))
@@ -68,8 +66,36 @@ def projection_figure(placed: np.ndarray, classes: Sequence[str]) -> Figure:
     return figure
 
 
-def report_evaluation(run: Run, evaluation: Evaluation) -> None:
-    """Log what one evaluation measured, its numbers and its two figures.
+def metrics_figure(
+    metrics: Mapping[str, float], intervals: Mapping[str, float]
+) -> Figure:
+    """Return every measured mean drawn as a bar, with the interval around it.
+
+    Args:
+        metrics: Every measured number, keyed as it is logged.
+        intervals: Half the width of the 95% interval around each.
+
+    Returns:
+        figure: The bars, one per mean, each written with its own value.
+    """
+    shown = [name for name, half in intervals.items() if half > 0]
+    figure, axes = pyplot.subplots(figsize=(2 + len(shown) * 0.7, 4))
+    values = [metrics[name] for name in shown]
+    error = [intervals[name] for name in shown]
+    axes.bar(range(len(shown)), values, yerr=error, capsize=4, color="#4c72b0")
+    axes.set_xticks(range(len(shown)), shown, rotation=90, fontsize=7)
+    axes.axhline(0, color="black", linewidth=0.6)
+    for at, (value, half) in enumerate(zip(values, error, strict=True)):
+        axes.text(
+            at, value + half, f"{value:.2f}", ha="center", va="bottom", fontsize=6
+        )
+    axes.set_ylabel("mean, 95% interval", fontsize=8)
+    figure.tight_layout()
+    return figure
+
+
+def report_latent_space(run: Run, evaluation: Evaluation) -> None:
+    """Log what one evaluation made of the latent space, its numbers and its figures.
 
     Args:
         run: The tracked run.
@@ -77,12 +103,28 @@ def report_evaluation(run: Run, evaluation: Evaluation) -> None:
     """
     similarity = class_similarity_figure(evaluation.similarity, evaluation.names)
     projection = projection_figure(evaluation.placed, evaluation.classes)
+    measured = metrics_figure(evaluation.metrics, evaluation.intervals)
     run.log(
         {f"latent/{name}": value for name, value in evaluation.metrics.items()}
         | {
+            f"latent/{name}_interval": half
+            for name, half in evaluation.intervals.items()
+        }
+        | {
             "latent/class_similarity": wandb.Image(similarity),
             "latent/projection": wandb.Image(projection),
+            "latent/metrics": wandb.Image(measured),
         }
     )
-    pyplot.close(similarity)
-    pyplot.close(projection)
+    for figure in (similarity, projection, measured):
+        pyplot.close(figure)
+
+
+def report_reconstruction(run: Run, metrics: Mapping[str, float]) -> None:
+    """Log what one evaluation made of the reconstruction.
+
+    Args:
+        run: The tracked run.
+        metrics: What the masked pass rebuilt, keyed as the evaluation names it.
+    """
+    run.log({f"recon_{name}": value for name, value in metrics.items()})

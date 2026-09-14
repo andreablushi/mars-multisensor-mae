@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 import torch
 from dh import submit
@@ -15,9 +14,9 @@ from digitalhub_runtime_python import handler
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import collate
 from config.load import load_config
-from config.schema import Config
-from dataset.patches import patch_sizes
+from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
+from dataset.wavelengths import band_wavelengths
 from logs.console import logger
 from logs.tracker import start_run
 from training.train import train
@@ -29,23 +28,40 @@ _MODEL = load_platform().publishes["model"]
 log = logger(__name__)
 
 
-def train_model(config: Config) -> Path:
-    """Return the best checkpoint of one run, trained as the config describes it.
+@handler(outputs=[_MODEL])
+def run_training(project=None, overrides: list[str] | None = None):
+    """Train one run, and publish the best checkpoint it left.
 
     Args:
-        config: What the run reads, trains and how.
+        project: The DigitalHub project the model is logged into, or None here.
+        overrides: What to compose the config with, as hydra spells them.
 
     Returns:
-        best: The checkpoint with the lowest validation loss.
+        model: The published checkpoint, or where it was written on a run here.
     """
+    config = load_config(overrides or [])
     build = published_build(config.dataset)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = build.read_patch_layout(sizes)
-    loaders = build.loaders_by_split(config, sizes, shapes, collate)
+    shapes, strides = read_patch_layout(build, sizes)
+    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
+    wavelengths = band_wavelengths(shapes, axes)
+    loaders = build.loaders_by_split(
+        sizes,
+        shapes,
+        wavelengths,
+        collate,
+        config.dataset.split,
+        config.dataset.seed,
+        config.model.elevation,
+        max(config.training.patches_per_step // config.training.batch_size, 1),
+        config.dataset.overlap,
+        config.training.batch_size,
+        config.training.workers,
+    )
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
-    model = CrossSensorMAE(shapes, strides, config.model).to(device)
+    model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
     run = start_run(
         config,
         {
@@ -53,6 +69,7 @@ def train_model(config: Config) -> Path:
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
             "strides": strides,
+            "wavelengths_nm": wavelengths,
             "features": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),
@@ -61,22 +78,8 @@ def train_model(config: Config) -> Path:
     )
     best = train(model, training, validation, config, device, run)
     run.finish()
-    return best
-
-
-@handler(outputs=[_MODEL])
-def run_training(project, overrides: list[str] | None = None):
-    """Train one run on DigitalHub and publish the best checkpoint it left.
-
-    Args:
-        project: The DigitalHub project the model is logged into.
-        overrides: What to compose the config with, as hydra spells them.
-
-    Returns:
-        model: The published checkpoint.
-    """
-    config = load_config(overrides or [])
-    best = train_model(config)
+    if project is None:
+        return best
     return publish_checkpoint(project, best, model_name(config.model))
 
 
@@ -101,7 +104,8 @@ def main() -> int:
         return submit.submitted(
             "training", TRAINING_HANDLER, arguments.ref, arguments.overrides
         )
-    train_model(load_config(arguments.overrides))
+    # The platform calls the handler, a run here the function under it.
+    run_training.__wrapped__(overrides=arguments.overrides)
     return 0
 
 

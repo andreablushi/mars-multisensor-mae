@@ -19,11 +19,8 @@ class Reconstruction:
     """What one masked pass hands the loss.
 
     Attributes:
-        predictions: The predicted hidden patches of each instrument, read from
-            each instrument's visible tokens, keyed (predicted, read).
-            (B, K, *P)
-        tokens: Each instrument's tokens in the space they share, meaningful
-            where visible, keyed as ODE names it. (B, K, D)
+        predictions: Each sensor's hidden patches, keyed (predicted, read). (B, K, *P)
+        tokens: Each sensor's tokens in the shared space, where visible. (B, K, D)
     """
 
     predictions: dict[tuple[str, str], Tensor]
@@ -31,12 +28,11 @@ class Reconstruction:
 
 
 class CrossSensorMAE(nn.Module):
-    """An encoder and a decoder per instrument, one cross-sensor encoder between.
+    """An encoder and a decoder per sensor, one shared encoder aligning them between.
 
     Attributes:
         encoders: Each instrument's own encoder, keyed as ODE names it.
-        crossencoder: The cross-sensor encoder every instrument's tokens pass
-            through.
+        crossencoder: The cross-sensor encoder every instrument's tokens pass through.
         decoders: Each instrument's own decoder.
         dim: The token width the cross-sensor encoder hands tokens at.
     """
@@ -44,24 +40,28 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
+        axes: dict[str, tuple[str, ...]],
         strides: dict[str, float],
         config: ModelConfig,
     ) -> None:
         """Build every part for the instruments the model reads.
 
         Args:
-            shapes: The shape of one patch of each instrument, keyed as ODE
-                names it.
-            strides: How far apart two neighbouring patch centres of each
-                instrument sit, in metres, which sets the shortest period its
-                positions are read at.
+            shapes: The shape of one patch of each instrument, keyed as ODE names it.
+            axes: What each axis of each instrument's values holds, keyed the same way.
+            strides: How far apart two neighbouring patch centres of each sensor sit.
             config: How wide and deep each part is.
         """
         super().__init__()
         self.encoders = nn.ModuleDict(
             {
                 name: Encoder(
-                    shape, config.dim, config.heads, config.depth, strides[name]
+                    shape,
+                    axes[name],
+                    config.dim,
+                    config.heads,
+                    config.depth,
+                    strides[name],
                 )
                 for name, shape in shapes.items()
             }
@@ -73,6 +73,7 @@ class CrossSensorMAE(nn.Module):
             {
                 name: Decoder(
                     shape,
+                    axes[name],
                     config.dim,
                     config.decoder_dim,
                     config.decoder_heads,
@@ -100,7 +101,7 @@ class CrossSensorMAE(nn.Module):
                 tokens.values.shape[0], 0, self.dim
             )  # (B, 0, D)
         encoded = self.encoders[name](
-            tokens.values, tokens.position, visible
+            tokens.values, tokens.channels, tokens.valid, tokens.position, visible
         )  # (B, K, D)
         return self.crossencoder(encoded, visible)  # (B, K, D)
 
@@ -108,12 +109,10 @@ class CrossSensorMAE(nn.Module):
         """Return every present patch of every instrument as a token, none hidden.
 
         Args:
-            batch: Each instrument's patches over the batch, keyed as ODE names
-                it.
+            batch: Each instrument's patches over the batch, keyed as ODE names it.
 
         Returns:
-            tokens: Each instrument's tokens, meaningful where present.
-                (B, K, D)
+            tokens: Each instrument's tokens, meaningful where present. (B, K, D)
         """
         return {
             name: self.shared_tokens(name, tokens, tokens.present)
@@ -124,12 +123,10 @@ class CrossSensorMAE(nn.Module):
         """Return the one vector standing for each feature of a batch.
 
         Args:
-            batch: Each instrument's patches over the batch, keyed as ODE names
-                it.
+            batch: Each instrument's patches over the batch, keyed as ODE names it.
 
         Returns:
-            latent: One vector per feature, over every patch it holds of every
-                instrument, none hidden. (B, D)
+            latent: One vector per feature, over every patch, none hidden. (B, D)
         """
         return feature_latent(
             self.encode(batch), {name: one.present for name, one in batch.items()}
@@ -139,8 +136,7 @@ class CrossSensorMAE(nn.Module):
         """Return every instrument's hidden patches, predicted from every instrument.
 
         Args:
-            batch: Each instrument's patches over the batch, keyed as ODE names
-                it, which say which of them are hidden from its encoder.
+            batch: Each sensor's patches, which say which are hidden from its encoder.
 
         Returns:
             reconstruction: The predictions, and the tokens they were read from.
@@ -158,6 +154,7 @@ class CrossSensorMAE(nn.Module):
                     batch[read].position,
                     batch[read].visible,
                     tokens.position,
+                    tokens.channels,
                     hidden,
                 )  # (B, K, *P)
         return Reconstruction(predictions, encoded)

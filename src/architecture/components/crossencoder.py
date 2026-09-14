@@ -1,4 +1,4 @@
-"""The cross-sensor encoder, one set of weights every instrument passes through."""
+"""Bringing every sensor's tokens into one space, on weights they all pass through."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from architecture.components.transformer import Transformer
 
 
 class CrossSensorEncoder(nn.Module):
-    """A transformer applied to each instrument's tokens on their own, weights shared.
+    """Attend over one sensor's tokens alone, on weights shared with every other.
 
     Attributes:
         blocks: The transformer.
