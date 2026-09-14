@@ -59,23 +59,23 @@ def reconstruction_error(
 
 
 def mutual_information(
-    tokens: dict[str, Tensor], visible: dict[str, Tensor], temperature: float
+    tokens: dict[str, Tensor], present: dict[str, Tensor], temperature: float
 ) -> Tensor:
     """Return the contrastive term holding a feature's instruments to each other.
 
     Args:
-        tokens: Each sensor's tokens from the cross-sensor encoder. (B, K, D)
-        visible: Which of each instrument's tokens its encoder read. (B, K)
+        tokens: Each sensor's tokens, none hidden. (B, K, D)
+        present: Which of each instrument's slots hold a patch. (B, K)
         temperature: What the similarities are divided by.
 
     Returns:
         loss: The paper's L_MIM, over every ordered pair of sensors, its positive kept.
     """
     vectors = {
-        name: functional.normalize(instrument_vector(held, visible[name]), dim=-1)
+        name: functional.normalize(instrument_vector(held, present[name]), dim=-1)
         for name, held in tokens.items()
     }  # (B, D)
-    read = {name: held.any(dim=1) for name, held in visible.items()}  # (B,)
+    read = {name: held.any(dim=1) for name, held in present.items()}  # (B,)
     terms = []
     for asked, query in vectors.items():
         for against, key in vectors.items():
@@ -139,7 +139,7 @@ def csmae_loss(
         total = total + umr + cmr
     terms["mim"] = mutual_information(
         reconstruction.tokens,
-        {name: tokens.visible for name, tokens in batch.items()},
+        {name: tokens.present for name, tokens in batch.items()},
         temperature,
     )  # ()
     terms["loss"] = total + terms["mim"]  # ()

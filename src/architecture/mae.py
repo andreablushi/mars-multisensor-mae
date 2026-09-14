@@ -20,7 +20,7 @@ class Reconstruction:
 
     Attributes:
         predictions: Each sensor's hidden patches, keyed (predicted, read). (B, K, *P)
-        tokens: Each sensor's tokens in the shared space, where visible. (B, K, D)
+        tokens: Each sensor's tokens in the shared space, none hidden. (B, K, D)
     """
 
     predictions: dict[tuple[str, str], Tensor]
@@ -139,7 +139,7 @@ class CrossSensorMAE(nn.Module):
             batch: Each sensor's patches, which say which are hidden from its encoder.
 
         Returns:
-            reconstruction: The predictions, and the tokens they were read from.
+            reconstruction: The predictions, and every patch's tokens, none hidden.
         """
         encoded = {
             name: self.shared_tokens(name, tokens, tokens.visible)
@@ -157,4 +157,4 @@ class CrossSensorMAE(nn.Module):
                     tokens.channels,
                     hidden,
                 )  # (B, K, *P)
-        return Reconstruction(predictions, encoded)
+        return Reconstruction(predictions, self.encode(batch))
