@@ -54,12 +54,12 @@ def mutual_information(
     Returns:
         loss: The paper's L_MIM, averaged over every ordered pair of
             instruments: for each feature, minus the log of its own pair of
-            vectors' similarity over that of its vector against every other
-            feature of the batch. One vector stands for a feature under an
-            instrument, the average of the tokens that instrument read of it.
-            A feature holding no visible token of either instrument of a pair
-            is neither a query nor a negative of it. Zero where the model reads
-            one instrument alone.
+            vectors' similarity over that of its vector against every
+            feature of the batch, its own pair among them. One vector stands
+            for a feature under an instrument, the average of the tokens that
+            instrument read of it. A feature holding no visible token of either
+            instrument of a pair is neither a query nor a key of it. Zero where
+            the model reads one instrument alone.
     """
     vectors = {
         name: functional.normalize(instrument_vector(held, visible[name]), dim=-1)
@@ -72,14 +72,12 @@ def mutual_information(
             if against == asked:
                 continue
             similarity = query @ key.T / temperature  # (B, B)
-            paired = read[asked] & read[against]  # (B,)
-            others = paired.unsqueeze(0) & ~torch.eye(
-                paired.shape[0], dtype=torch.bool, device=paired.device
-            )  # (B, B)
+            counted = read[asked] & read[against]  # (B,)
             floor = torch.finfo(similarity.dtype).min
-            against_others = similarity.masked_fill(~others, floor)  # (B, B)
-            denominator = against_others.logsumexp(dim=1)  # (B,)
-            counted = paired & others.any(dim=1)  # (B,)
+            against_counted = similarity.masked_fill(
+                ~counted.unsqueeze(0), floor
+            )  # (B, B)
+            denominator = against_counted.logsumexp(dim=1)  # (B,)
             error = denominator - similarity.diagonal()  # (B,)
             terms.append(
                 torch.where(counted, error, 0.0).sum() / counted.sum().clamp(min=1)
