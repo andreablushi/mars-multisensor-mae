@@ -6,11 +6,11 @@ from dataclasses import dataclass
 
 from torch import Tensor, nn
 
+from architecture.components.crossattention_fusion import feature_latent
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.components.fusion import feature_latent
-from architecture.tokens import Tokens
+from architecture.models import Tokens
 from config.schema import ModelConfig
 
 

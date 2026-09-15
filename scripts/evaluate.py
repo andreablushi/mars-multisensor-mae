@@ -11,7 +11,7 @@ from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import collate
+from architecture.models import collate
 from config.load import load_config
 from config.paths import REPO_ROOT
 from dataset.patches import patch_sizes, read_patch_layout

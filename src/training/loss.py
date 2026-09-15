@@ -6,9 +6,9 @@ import torch
 from torch import Tensor
 from torch.nn import functional
 
-from architecture.components.fusion import instrument_vector
+from architecture.components.crossattention_fusion import instrument_vector
 from architecture.mae import Reconstruction
-from architecture.tokens import Tokens
+from architecture.models import Tokens
 from dataset.patches import normalize_patches
 
 

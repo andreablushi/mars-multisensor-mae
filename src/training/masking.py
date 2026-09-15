@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import torch
 
-from architecture.tokens import Tokens
+from architecture.models import Tokens
 
 
 def random_correspondence(
