@@ -7,7 +7,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.modalityencoder import ModalityEncoder
+from architecture.components.modality_encoding import ModalityEncoder
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 from dataset.patches import channel_axis

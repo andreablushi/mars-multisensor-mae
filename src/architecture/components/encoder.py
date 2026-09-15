@@ -6,7 +6,7 @@ import math
 
 from torch import Tensor, nn
 
-from architecture.components.modalityencoder import ModalityEncoder, by_channel
+from architecture.components.modality_encoding import ModalityEncoder, by_channel
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 from dataset.patches import channel_axis
