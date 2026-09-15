@@ -23,6 +23,7 @@ class CrossSensorEncoder(nn.Module):
             depth: How many blocks are stacked.
         """
         super().__init__()
+        # Shared Transformer encoder stack operating across all sensor modalities
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(self, tokens: Tensor, visible: Tensor) -> Tensor:
@@ -35,4 +36,5 @@ class CrossSensorEncoder(nn.Module):
         Returns:
             tokens: The mapped tokens, meaningful where visible. (B, K, D)
         """
+        # Project instrument tokens into the shared space, masking unread patches
         return self.blocks(tokens, visible)  # (B, K, D)

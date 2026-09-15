@@ -7,7 +7,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.modality_encoding import ModalityEncoder
+from architecture.components.modality_encoding import ModalityEncoding
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 from dataset.patches import channel_axis
@@ -52,13 +52,19 @@ class Decoder(nn.Module):
         super().__init__()
         self.shape = shape
         self.at = channel_axis(axes)
+        # Isolate spatial dimensions excluding the channel axis
         self.ground = tuple(size for at, size in enumerate(shape) if at != self.at)
-        self.modality = ModalityEncoder(axes, dim)
+        self.modality = ModalityEncoding(axes, dim)
+        # Project the cross-sensor encoder width up to the decoder width
         self.expand = nn.Linear(shared, dim)
+        # Initialize learnable mask token used as a placeholder for hidden patches
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
+        # Continuous geospatial positional encodings
         self.place = PositionalEncoding(dim, stride)
+        # Decoder Transformer stack for cross-token self-attention
         self.blocks = Transformer(dim, heads, depth)
+        # Map a token back to one channel's flattened ground samples
         self.predict = nn.Linear(dim, math.prod(self.ground))
 
     def forward(
@@ -83,17 +89,25 @@ class Decoder(nn.Module):
         Returns:
             prediction: One patch per slot, meaningful where hidden. (B, K, *P)
         """
+        # Guard clause for empty target inputs
         if position.shape[1] == 0:
             return position.new_zeros(position.shape[0], 0, *self.shape)  # (B, 0, *P)
+        # Project visible encoder context tokens and inject spatial coordinates
         read = self.expand(context) + self.place(context_position)  # (B, C, D')
+        # Broadcast mask token across target queries and inject spatial coordinates
         asked = self.mask + self.place(position)  # (B, K, D')
+        # Concatenate context tokens and target mask queries into a unified sequence
         sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
+        # Run combined sequence through Transformer blocks
         decoded = self.blocks(sequence, attended)  # (B, C + K, D')
+        # Slice reconstructed query tokens and add sensor modality/channel metadata
         held = decoded[:, read.shape[1] :].unsqueeze(2) + self.modality(
             channels
         )  # (B, K, C, D')
+        # Write the tokens out as samples and unflatten to the patch shape
         spread = self.predict(held).unflatten(-1, self.ground)  # (B, K, C, *ground)
+        # Move the channel axis back where the patch holds it
         if self.at is None:
             return spread.squeeze(2)  # (B, K, *P)
         return spread.movedim(2, 2 + self.at)  # (B, K, *P)

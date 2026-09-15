@@ -6,7 +6,7 @@ import math
 
 from torch import Tensor, nn
 
-from architecture.components.modality_encoding import ModalityEncoder, by_channel
+from architecture.components.modality_encoding import ModalityEncoding, by_channel
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 from dataset.patches import channel_axis
@@ -43,12 +43,17 @@ class Encoder(nn.Module):
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
+        # Identify which axis index corresponds to sensor channels
         self.at = channel_axis(axes)
+        # Map one channel's ground samples into the token width
         self.embed = nn.Linear(
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
-        self.modality = ModalityEncoder(axes, dim)
+        # Module for embedding channel metadata (e.g., band type, wavelength)
+        self.modality = ModalityEncoding(axes, dim)
+        # Module for continuous geospatial (metric coordinate) positional embeddings
         self.place = PositionalEncoding(dim, stride)
+        # Transformer encoder stack for intra-sensor self-attention
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(
@@ -71,13 +76,16 @@ class Encoder(nn.Module):
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
+        # Embed each channel's samples and add what that channel measures
         held = self.embed(by_channel(values, self.at)) + self.modality(
             channels
         )  # (B, K, C, D)
-        # A channel nothing measured was filled rather than read, so it is left out.
+        # Mark which channels hold a measurement
         weight = by_channel(valid, self.at).any(dim=-1).unsqueeze(-1)  # (B, K, C', 1)
         weight = weight.to(held.dtype)  # (B, K, C', 1)
+        # Pool the channels that hold one into a single patch token
         tokens = (held * weight).sum(dim=2) / weight.sum(dim=2).clamp(
             min=1
         )  # (B, K, D)
+        # Place the tokens on the ground and attend over the visible ones
         return self.blocks(tokens + self.place(position), visible)  # (B, K, D)

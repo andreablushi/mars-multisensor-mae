@@ -35,10 +35,14 @@ class PositionalEncoding(nn.Module):
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
+        # The width must hold a cosine and a sine for each coordinate
         if dim % (2 * COORDINATES):
             raise ValueError(f"the token width must be a multiple of 12, not {dim}")
+        # Set minimum frequency bounds (stride for ground, 10m for height)
         shortest = (stride, stride, HEIGHT_M[0])
+        # Set maximum frequency bounds (1000km for ground, 30km for height)
         longest = (GROUND_LONGEST_M, GROUND_LONGEST_M, HEIGHT_M[1])
+        # Generate logarithmically spaced sinusoid periods for 3D centers and 3D extents
         periods = torch.stack(
             [
                 torch.logspace(
@@ -58,6 +62,9 @@ class PositionalEncoding(nn.Module):
         Returns:
             encoded: The cosines then sines of each coordinate, side by side. (B, K, D)
         """
+        # The phase of each coordinate against each of its periods
         phase = 2 * math.pi * position.unsqueeze(-1) / self.periods  # (B, K, 6, D/12)
+        # Compute cosine and sine harmonic pairs for each coordinate axis
         encoded = torch.cat([phase.cos(), phase.sin()], dim=-1)  # (B, K, 6, D / 6)
+        # Flatten coordinate components into a unified D-dimensional positional vector
         return encoded.flatten(-2)  # (B, K, D)

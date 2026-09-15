@@ -31,14 +31,8 @@ class Tokens:
     present: Tensor
 
     def to(self, device: torch.device) -> Tokens:
-        """Return the same tokens held on one device.
-
-        Args:
-            device: Where the model runs.
-
-        Returns:
-            tokens: The tokens, every array moved there.
-        """
+        """Return the same tokens held on one device."""
+        # Transfer all underlying data and mask tensors to target execution device
         return Tokens(
             self.values.to(device),
             self.valid.to(device),
@@ -52,26 +46,24 @@ class Tokens:
 def collate(
     samples: list[tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]],
 ) -> tuple[dict[str, Tokens], list[tuple[str, str]]]:
-    """Return one batch of every instrument's tokens, and whose each read is.
-
-    Args:
-        samples: What the dataset read of each feature of the batch.
-
-    Returns:
-        batch: Each sensor's patches padded to the most any read holds, none hidden.
-        identities: The feature each read belongs to, in the batch's order.
-    """
+    """Return one batch of every instrument's tokens, and whose each read is."""
     batch = {}
+    # Process each instrument/sensor present in the first dataset sample
     for name in samples[0][0]:
         held = [sample[name] for sample, _ in samples]
+        # Count number of active patches per sample to find max sequence length K
         counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
+        # Pad variable-length patch arrays across batch samples to uniform length K
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
             )
             for key in held[0]
         }
+        # Construct boolean mask identifying real patches versus zero-padded slots
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
+        # Instantiate Tokens container (defaulting visible patches to present patches)
         batch[name] = Tokens(**padded, visible=present, present=present)
+    # Return dictionary of sensor Tokens and associated feature identity tuples
     return batch, [identity for _, identity in samples]

@@ -17,7 +17,9 @@ def instrument_vector(tokens: Tensor, counted: Tensor) -> Tensor:
     Returns:
         vector: Their global average, zero where none counts. (B, D)
     """
+    # Convert valid token mask into broadcastable float weights
     weight = counted.unsqueeze(-1).to(tokens.dtype)  # (B, K, 1)
+    # Compute masked spatial mean across patch tokens for a single instrument
     return (tokens * weight).sum(dim=1) / weight.sum(dim=1).clamp(min=1)  # (B, D)
 
 
@@ -39,10 +41,14 @@ def feature_latent(tokens: dict[str, Tensor], counted: dict[str, Tensor]) -> Ten
     """
     vectors, held = [], []
     for name, one in tokens.items():
+        # Mean-pool patch tokens per sensor and normalize to unit L2 length
         vectors.append(
             functional.normalize(instrument_vector(one, counted[name]), dim=-1)
         )  # (B, D)
+        # Check whether the instrument has any valid tokens present in the batch sample
         held.append(counted[name].any(dim=1))  # (B,)
+    # Stack per-sensor unit vectors and validity masks across modalities
     stacked = torch.stack(vectors, dim=1)  # (B, J, D)
     weight = torch.stack(held, dim=1).unsqueeze(-1).to(stacked.dtype)  # (B, J, 1)
+    # Sum the instrument vectors the feature holds and normalise
     return functional.normalize((stacked * weight).sum(dim=1), dim=-1)  # (B, D)
