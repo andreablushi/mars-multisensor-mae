@@ -70,7 +70,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         config,
         {
             "device": str(device),
-            "model": name,
+            "checkpoint": name,
             "epochs_trained": epochs,
             "features": len(loader.dataset),
             "patch_ceiling": ceiling,
