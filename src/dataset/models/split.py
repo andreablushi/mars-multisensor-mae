@@ -35,6 +35,7 @@ class DatasetSplit(Dataset):
         overlap: The share of each other sensor's patches over the anchor's ground.
         seed: What fixes every read's draw, or None to draw anew each time.
         ceiling: How many patches one whole read hands back, or None to draw.
+        kept: What each seeded draw held, since it hands back the same every read.
     """
 
     def __init__(
@@ -84,6 +85,7 @@ class DatasetSplit(Dataset):
         self.overlap = overlap
         self.seed = seed
         self.ceiling = ceiling
+        self.kept: dict[tuple[str, str], dict[str, dict[str, np.ndarray]]] = {}
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -112,6 +114,8 @@ class DatasetSplit(Dataset):
             ValueError: When the feature has no elevation to stand on.
         """
         identity = self.identities[index]
+        if identity in self.kept:
+            return self.kept[identity], identity
         rows = self.features[identity]
         held = rows.get(self.elevation)
         if not held:
@@ -140,12 +144,15 @@ class DatasetSplit(Dataset):
                 heights,
                 self.ceiling,
             )
-        return {
+        sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
             )
             for name, drawn in read.items()
-        }, identity
+        }
+        if self.seed is not None and self.ceiling is None:
+            self.kept[identity] = sample
+        return sample, identity
 
 
 def patch_arrays(
