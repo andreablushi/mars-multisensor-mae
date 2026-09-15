@@ -9,8 +9,6 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
-CELL_KEY = 1 << 20
-
 
 @dataclass(frozen=True, slots=True)
 class Tokens:
@@ -47,30 +45,24 @@ class Tokens:
 
 @dataclass(frozen=True, slots=True)
 class Cells:
-    """The cells a batch of features is cut into, and which instrument reaches each.
+    """The cells a batch of features is cut into, padded to one count.
 
-    A cell is a square of ground the same size for every feature, so a cell
+    A cell is a square of ground the same size for every feature, so one cell
     offset stands for the same place whichever feature holds it and two
-    features are compared over the offsets they share. How many cells a
-    feature holds is its own, since a patch reaches every cell its span covers.
+    features are compared over the offsets they share. How many cells a feature
+    holds is its own, since a patch reaches every cell its span covers.
 
     Attributes:
         offset: Which cell each slot stands for, east then north. (B, Q, 2)
-        covered: Whether each instrument reaches the cell, keyed as ODE names it. (B, Q)
         present: Whether a slot holds a cell rather than padding. (B, Q)
     """
 
     offset: Tensor
-    covered: dict[str, Tensor]
     present: Tensor
 
     def to(self, device: torch.device) -> Cells:
         """Return the same cells held on one device."""
-        return Cells(
-            self.offset.to(device),
-            {name: one.to(device) for name, one in self.covered.items()},
-            self.present.to(device),
-        )
+        return Cells(self.offset.to(device), self.present.to(device))
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +70,7 @@ class FeatureGrid:
     """A batch of features as a grid of cells, each standing for the ground it covers.
 
     Attributes:
-        values: The cell vectors, of unit length where occupied. (B, Q, D)
+        values: The cell vectors, of unit length where occupied, else zero. (B, Q, D)
         occupied: Whether an instrument it was built from reaches the cell. (B, Q)
         offset: Which cell each slot stands for, east then north. (B, Q, 2)
     """
@@ -86,47 +78,6 @@ class FeatureGrid:
     values: Tensor
     occupied: Tensor
     offset: Tensor
-
-
-def reached_cells(position: np.ndarray, cell_m: float) -> np.ndarray:
-    """Return every cell one instrument's patches reach, without repeats.
-
-    Args:
-        position: Where each patch sits and how far it reaches, in metres. (K, 6)
-        cell_m: How far a cell runs along the ground, in metres.
-
-    Returns:
-        cells: The east and north index of each cell reached, sorted. (C, 2)
-    """
-    if not len(position):
-        return np.zeros((0, 2), np.int64)
-    centre, span = position[:, :2], position[:, 3:5]  # (K, 2)
-    low = np.floor((centre - span / 2) / cell_m).astype(np.int64)  # (K, 2)
-    high = np.floor((centre + span / 2) / cell_m).astype(np.int64)  # (K, 2)
-    spread = [
-        np.stack(
-            np.meshgrid(
-                np.arange(east, east_end + 1),
-                np.arange(north, north_end + 1),
-                indexing="ij",
-            ),
-            axis=-1,
-        ).reshape(-1, 2)
-        for (east, north), (east_end, north_end) in zip(low, high, strict=True)
-    ]
-    return np.unique(np.concatenate(spread), axis=0)  # (C, 2)
-
-
-def cell_keys(cells: np.ndarray) -> np.ndarray:
-    """Return one number standing for each cell, so two sets of them can be matched.
-
-    Args:
-        cells: The east and north index of each cell. (C, 2)
-
-    Returns:
-        keys: One number per cell, telling it from every other. (C,)
-    """
-    return cells[:, 0] * CELL_KEY + cells[:, 1]  # (C,)
 
 
 def collate(
@@ -141,7 +92,7 @@ def collate(
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
-        cells: The cells those patches reach, and which instrument reaches each.
+        cells: Every cell those patches reach, in one order for the whole batch.
         identities: The feature each read belongs to, in the batch's own order.
     """
     batch = {}
@@ -162,45 +113,37 @@ def collate(
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         # Instantiate Tokens container (defaulting visible patches to present patches)
         batch[name] = Tokens(**padded, visible=present, present=present)
-    return batch, feature_cells(samples, cell_m), [one for _, one in samples]
-
-
-def feature_cells(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]],
-    cell_m: float,
-) -> Cells:
-    """Return the cells each read of the batch reaches, padded to one count.
-
-    Args:
-        samples: What one read of each feature holds, and the feature it belongs to.
-        cell_m: How far a cell runs along the ground, in metres.
-
-    Returns:
-        cells: One slot per cell reached, saying where it sits and who reaches it.
-    """
-    every: list[Tensor] = []
-    covered: list[dict[str, Tensor]] = []
+    reached = []
     for sample, _ in samples:
-        reached = {
-            name: reached_cells(held["position"], cell_m)
-            for name, held in sample.items()
-        }
-        held = np.unique(np.concatenate(list(reached.values())), axis=0)  # (Q, 2)
-        keys = cell_keys(held)  # (Q,)
-        every.append(torch.as_tensor(held))
-        covered.append(
-            {
-                name: torch.as_tensor(np.isin(keys, cell_keys(one)))
-                for name, one in reached.items()
-            }
-        )
-    counts = torch.tensor([len(one) for one in every])  # (B,)
+        placed = np.concatenate(
+            [held["position"] for held in sample.values()]
+        )  # (K, 6)
+        low = np.floor((placed[:, :2] - placed[:, 3:5] / 2) / cell_m)  # (K, 2)
+        high = np.floor((placed[:, :2] + placed[:, 3:5] / 2) / cell_m)  # (K, 2)
+        # A patch reaches every cell between the two corners its span puts it in.
+        spread = [
+            np.stack(
+                np.meshgrid(
+                    np.arange(east, east_end + 1),
+                    np.arange(north, north_end + 1),
+                    indexing="ij",
+                ),
+                axis=-1,
+            ).reshape(-1, 2)
+            for (east, north), (east_end, north_end) in zip(
+                low.astype(np.int64), high.astype(np.int64), strict=True
+            )
+        ]
+        held = (
+            np.unique(np.concatenate(spread), axis=0)
+            if spread
+            else np.zeros((0, 2), np.int64)
+        )  # (Q, 2)
+        reached.append(torch.as_tensor(held))
+    counts = torch.tensor([len(one) for one in reached])  # (B,)
     slots = torch.arange(int(counts.max()))  # (Q,)
-    return Cells(
-        offset=pad_sequence(every, batch_first=True),  # (B, Q, 2)
-        covered={
-            name: pad_sequence([one[name] for one in covered], batch_first=True)
-            for name in samples[0][0]
-        },  # (B, Q)
+    cells = Cells(
+        offset=pad_sequence(reached, batch_first=True),  # (B, Q, 2)
         present=slots.unsqueeze(0) < counts.unsqueeze(1),  # (B, Q)
     )
+    return batch, cells, [identity for _, identity in samples]

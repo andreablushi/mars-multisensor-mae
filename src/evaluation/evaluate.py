@@ -7,10 +7,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from torch import Tensor
+from torch.nn import functional
 from torch.utils.data import DataLoader
 from umap import UMAP
 
 from architecture.mae import CrossSensorMAE
+from architecture.models import FeatureGrid
 from config.schema import Config
 from evaluation.metrics import (
     class_similarity,
@@ -43,6 +46,18 @@ class Evaluation:
     classes: list[str]
 
 
+def pooled(grid: FeatureGrid) -> Tensor:
+    """Return the one vector a feature's grid is read as, its occupied cells averaged.
+
+    Args:
+        grid: The grid every instrument the feature holds was read into.
+
+    Returns:
+        latent: The unit vector along the sum of its cells, zero where it holds none.
+    """
+    return functional.normalize(grid.values.sum(dim=1), dim=-1)  # (B, D)
+
+
 def evaluate_latent_space(
     model: CrossSensorMAE, loader: DataLoader, config: Config, device: torch.device
 ) -> Evaluation:
@@ -60,9 +75,10 @@ def evaluate_latent_space(
     model.eval()
     embedded, read = [], []
     with torch.no_grad():
-        for batch, _, identities in loader:
+        for batch, cells, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            embedded.append(model.embed(batch).cpu())  # (B, D)
+            grid = model.embed(batch, cells.to(device))
+            embedded.append(pooled(grid).cpu())  # (B, D)
             read += [one for one, _ in identities]
     latents = torch.cat(embedded)  # (N, D)
     # A feature holding no patch of any instrument the model reads embeds to nothing.
@@ -114,13 +130,13 @@ def evaluate_reconstruction(
     with (
         torch.no_grad()
     ):  # Disable autograd to reduce memory usage and speed up execution
-        for batch, _, _ in loader:
+        for batch, cells, _ in loader:
             # Transfer input batch tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             # Apply deterministic sensor masking pattern
             batch = random_correspondence(batch, mask_ratio, generator)
             # Generate patch reconstructions across all sensor pairings
-            reconstruction = model(batch)
+            reconstruction = model(batch, cells.to(device))
             others = max(
                 len(batch) - 1, 1
             )  # Count available cross-modal sources for averaging

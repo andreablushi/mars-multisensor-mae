@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor
-from torch.nn import functional
 
-from architecture.components.crossattention_fusion import instrument_vector
 from architecture.mae import Reconstruction
-from architecture.models import Tokens
+from architecture.models import FeatureGrid, Tokens
 from dataset.patches import normalize_patches
 
 
@@ -34,57 +32,57 @@ def reconstruction_error(
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
 
 
-def mutual_information(
-    tokens: dict[str, Tensor], present: dict[str, Tensor], temperature: float
-) -> Tensor:
-    """Return the contrastive term holding a feature's instruments to each other.
+def consistency(whole: FeatureGrid, part: FeatureGrid) -> Tensor:
+    """Return how far a grid read from some instruments stands from the grid of all.
 
     Args:
-        tokens: Each sensor's tokens, none hidden. (B, K, D)
-        present: Which of each instrument's slots hold a patch. (B, K)
-        temperature: What the similarities are divided by.
+        whole: The grid every instrument the feature holds was read into.
+        part: The grid one of them alone was read into.
 
     Returns:
-        loss: The paper's L_MIM, over every ordered pair of sensors, its positive kept.
+        loss: Half one minus their agreement, over the cells both of them reach.
     """
-    vectors = {
-        name: functional.normalize(instrument_vector(held, present[name]), dim=-1)
-        for name, held in tokens.items()
-    }  # (B, D)
-    read = {name: held.any(dim=1) for name, held in present.items()}  # (B,)
-    terms = []
-    for asked, query in vectors.items():
-        for against, key in vectors.items():
-            if against == asked:
-                continue
-            similarity = query @ key.T / temperature  # (B, B)
-            counted = read[asked] & read[against]  # (B,)
-            floor = torch.finfo(similarity.dtype).min
-            against_counted = similarity.masked_fill(
-                ~counted.unsqueeze(0), floor
-            )  # (B, B)
-            denominator = against_counted.logsumexp(dim=1)  # (B,)
-            error = denominator - similarity.diagonal()  # (B,)
-            terms.append(
-                torch.where(counted, error, 0.0).sum() / counted.sum().clamp(min=1)
-            )
-    if not terms:
-        return torch.zeros((), device=next(iter(tokens.values())).device)  # ()
-    return torch.stack(terms).mean()  # ()
+    counted = (whole.occupied & part.occupied).to(whole.values.dtype)  # (B, Q)
+    agreement = (whole.values * part.values).sum(dim=-1)  # (B, Q)
+    error = (1 - agreement) / 2  # (B, Q)
+    return (error * counted).sum() / counted.sum().clamp(min=1)  # ()
+
+
+def uniformity(grid: FeatureGrid) -> Tensor:
+    """Return how far the cells stand from spread evenly over the space they live in.
+
+    Two cells drawn from the training set at random stand orthogonal where the
+    cells are spread, so the batch is rolled to pair each cell with one of
+    another feature and their agreement is what is made small.
+
+    Args:
+        grid: The grid every instrument the feature holds was read into.
+
+    Returns:
+        loss: The mean agreement of those pairs, without regard to its sign.
+    """
+    against = grid.values.roll(1, dims=0)  # (B, Q, D)
+    paired = (grid.occupied & grid.occupied.roll(1, dims=0)).to(grid.values.dtype)
+    agreement = (grid.values * against).sum(dim=-1).abs()  # (B, Q)
+    return (agreement * paired).sum() / paired.sum().clamp(min=1)  # ()
 
 
 def csmae_loss(
-    reconstruction: Reconstruction, batch: dict[str, Tokens], temperature: float
+    reconstruction: Reconstruction,
+    batch: dict[str, Tokens],
+    consistency_weight: float,
+    uniformity_weight: float,
 ) -> dict[str, Tensor]:
     """Return every term of the objective, and their sum under "loss".
 
     Args:
-        reconstruction: What the masked pass predicted, and from what.
+        reconstruction: What the masked pass predicted, and the grids it read into.
         batch: What it was handed.
-        temperature: What the contrastive term divides its similarities by.
+        consistency_weight: What one instrument's grid agreeing with the whole counts.
+        uniformity_weight: What the cells standing apart from each other counts.
 
     Returns:
-        terms: "umr/<sensor>", "cmr/<sensor>", "mim", and "loss" summing them all.
+        terms: "umr/<sensor>", "cmr/<sensor>", "consistency", "uniformity", and "loss".
     """
     terms = {}
     total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()
@@ -113,10 +111,14 @@ def csmae_loss(
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
         total = total + umr + cmr
-    terms["mim"] = mutual_information(
-        reconstruction.tokens,
-        {name: tokens.present for name, tokens in batch.items()},
-        temperature,
+    held = [
+        consistency(reconstruction.grid, one) for one in reconstruction.grids.values()
+    ]
+    terms["consistency"] = torch.stack(held).mean() if held else total  # ()
+    terms["uniformity"] = uniformity(reconstruction.grid)  # ()
+    terms["loss"] = (
+        total
+        + consistency_weight * terms["consistency"]
+        + uniformity_weight * terms["uniformity"]
     )  # ()
-    terms["loss"] = total + terms["mim"]  # ()
     return terms

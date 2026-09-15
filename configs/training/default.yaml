@@ -20,8 +20,11 @@ patience: 25
 # random correspondence drawing each instrument's independently.
 mask_ratio: 0.5
 
-# What the contrastive term divides its similarities by.
-temperature: 0.1
+# What a grid read from one instrument agreeing with the grid of all of them
+# counts for, and what the cells of a batch standing apart from each other
+# counts for, against the reconstruction each instrument is weighed at one.
+consistency: 0.02
+uniformity: 0.05
 
 # How many processes read features beside the training.
 workers: 6

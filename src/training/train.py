@@ -78,13 +78,16 @@ def train(
     step, best_epoch = 0, -1
     for epoch in range(settings.epochs):
         model.train()  # Enable training mode
-        for batch, _, _ in training:
+        for batch, cells, _ in training:
             # Transfer input tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
+            cells = cells.to(device)
             # Apply dynamic random sensor masking
             batch = random_correspondence(batch, settings.mask_ratio, generator)
             # Compute cross-sensor MAE loss terms
-            terms = csmae_loss(model(batch), batch, settings.temperature)
+            terms = csmae_loss(
+                model(batch, cells), batch, settings.consistency, settings.uniformity
+            )
             # Backpropagation pass
             optimizer.zero_grad()
             terms["loss"].backward()

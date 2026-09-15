@@ -2,24 +2,32 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from torch import Tensor, nn
 
-from architecture.components.crossattention_fusion import feature_latent
+from architecture.components.crossattention_fusion import CrossAttentionFusion
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.models import Tokens
+from architecture.models import Cells, FeatureGrid, Tokens
 from config.schema import ModelConfig
 
 
 @dataclass(frozen=True, slots=True)
 class Reconstruction:
-    """What one masked pass hands the loss."""
+    """What one masked pass hands the loss.
 
-    predictions: dict[tuple[str, str], Tensor]  # Keyed by (sensor asked, sensor read)
-    tokens: dict[str, Tensor]  # Full unmasked representations in shared latent space
+    Attributes:
+        predictions: The predicted patches, by the sensor asked and the sensor read.
+        grid: The grid every instrument the feature holds was read into.
+        grids: The grid each instrument alone was read into, keyed as ODE names it.
+    """
+
+    predictions: dict[tuple[str, str], Tensor]
+    grid: FeatureGrid
+    grids: dict[str, FeatureGrid]
 
 
 class CrossSensorMAE(nn.Module):
@@ -52,6 +60,8 @@ class CrossSensorMAE(nn.Module):
         self.crossencoder = CrossSensorEncoder(
             config.dim, config.heads, config.crossencoder_depth
         )
+        # The one place the instruments meet, each cell read from what reaches it
+        self.fusion = CrossAttentionFusion(config.dim, config.heads, config.cell_m)
         # Sensor-specific reconstruction heads for target patch recovery
         self.decoders = nn.ModuleDict(
             {
@@ -90,14 +100,29 @@ class CrossSensorMAE(nn.Module):
             for name, tokens in batch.items()
         }
 
-    def embed(self, batch: dict[str, Tokens]) -> Tensor:
-        """Return the one vector standing for each feature of a batch."""
-        # Pool multi-sensor tokens into a single L2-normalized feature vector per scene
-        return feature_latent(
-            self.encode(batch), {name: one.present for name, one in batch.items()}
-        )  # (B, D)
+    def gridded(
+        self,
+        encoded: dict[str, Tensor],
+        batch: dict[str, Tokens],
+        counted: dict[str, Tensor],
+        cells: Cells,
+        read: Sequence[str],
+    ) -> FeatureGrid:
+        """Return the grid one set of instruments makes of each feature of a batch."""
+        return self.fusion(
+            encoded,
+            {name: one.position for name, one in batch.items()},
+            counted,
+            cells,
+            read,
+        )
 
-    def forward(self, batch: dict[str, Tokens]) -> Reconstruction:
+    def embed(self, batch: dict[str, Tokens], cells: Cells) -> FeatureGrid:
+        """Return the grid standing for each feature, over every instrument it holds."""
+        counted = {name: one.present for name, one in batch.items()}
+        return self.gridded(self.encode(batch), batch, counted, cells, list(batch))
+
+    def forward(self, batch: dict[str, Tokens], cells: Cells) -> Reconstruction:
         """Return every instrument's hidden patches, predicted from every instrument."""
         # Encode visible (unmasked) context tokens for each sensor
         encoded = {
@@ -117,5 +142,13 @@ class CrossSensorMAE(nn.Module):
                     tokens.channels,
                     hidden,
                 )  # (B, K, *P)
-        # Return cross-modal reconstruction predictions alongside unmasked tokens
-        return Reconstruction(predictions, self.encode(batch))
+        counted = {name: one.visible for name, one in batch.items()}
+        # The grid of all the instruments, and the grid each of them makes alone
+        return Reconstruction(
+            predictions,
+            self.gridded(encoded, batch, counted, cells, list(batch)),
+            {
+                name: self.gridded(encoded, batch, counted, cells, [name])
+                for name in batch
+            },
+        )

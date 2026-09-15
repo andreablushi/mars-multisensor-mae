@@ -36,13 +36,19 @@ def validate(
     with (
         torch.no_grad()
     ):  # Disable gradient calculation to save memory and speed up processing
-        for batch, _, _ in loader:
+        for batch, cells, _ in loader:
             # Transfer input batch tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
+            cells = cells.to(device)
             # Apply deterministic sensor masking
             batch = random_correspondence(batch, config.training.mask_ratio, generator)
             # Compute loss metrics on the masked batch
-            terms = csmae_loss(model(batch), batch, config.training.temperature)
+            terms = csmae_loss(
+                model(batch, cells),
+                batch,
+                config.training.consistency,
+                config.training.uniformity,
+            )
             # Sum each individual loss term for batch averaging later
             for name, value in terms.items():
                 totals[name] += float(value)
