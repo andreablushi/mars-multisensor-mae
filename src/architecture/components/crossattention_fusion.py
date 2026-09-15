@@ -12,6 +12,23 @@ from architecture.components.positional_encoding import PositionalEncoding
 from architecture.models import Cells, FeatureGrid
 
 
+def cell_positions(offset: Tensor, cell_m: float) -> Tensor:
+    """Return where each cell sits and how far it reaches, as a patch would say it.
+
+    Args:
+        offset: Which cell each slot stands for, east then north. (B, Q, 2)
+        cell_m: How far a cell runs along the ground, in metres.
+
+    Returns:
+        position: The cell centre and its span, in metres. (B, Q, 6)
+    """
+    centre = (offset + 0.5) * cell_m  # (B, Q, 2)
+    edge = centre.new_zeros(*centre.shape[:-1], 1)  # (B, Q, 1)
+    spans = centre.new_full((*centre.shape[:-1], 2), cell_m)  # (B, Q, 2)
+    # A cell stands on the ground, spans its own width, and reaches no height.
+    return torch.cat([centre, edge, spans, edge], dim=-1)  # (B, Q, 6)
+
+
 class CrossAttentionFusion(nn.Module):
     """Read each cell out of the patches reaching it, whichever instrument took them.
 
@@ -64,11 +81,8 @@ class CrossAttentionFusion(nn.Module):
         Returns:
             grid: One vector per cell, of unit length where an instrument reaches it.
         """
-        centre = (cells.offset + 0.5) * self.cell_m  # (B, Q, 2)
-        edge = centre.new_zeros(*centre.shape[:-1], 1)  # (B, Q, 1)
-        spans = centre.new_full((*centre.shape[:-1], 2), self.cell_m)  # (B, Q, 2)
-        # A cell stands on the ground, spans its own width, and reaches no height.
-        placed = torch.cat([centre, edge, spans, edge], dim=-1)  # (B, Q, 6)
+        placed = cell_positions(cells.offset, self.cell_m)  # (B, Q, 6)
+        centre = placed[..., :2]  # (B, Q, 2)
         asked = self.query + self.place(placed)  # (B, Q, D)
         held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
         where = torch.cat([position[name] for name in read], dim=1)  # (B, S, 6)

@@ -98,7 +98,9 @@ def csmae_loss(
         for read in batch:
             if read == asked:
                 continue
-            readable = batch[read].visible.any(dim=1, keepdim=True)  # (B, 1)
+            readable = reconstruction.grids[read].occupied.any(
+                dim=1, keepdim=True
+            )  # (B, 1)
             others.append(
                 reconstruction_error(
                     reconstruction.predictions[asked, read],

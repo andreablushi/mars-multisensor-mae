@@ -7,7 +7,10 @@ from dataclasses import dataclass
 
 from torch import Tensor, nn
 
-from architecture.components.crossattention_fusion import CrossAttentionFusion
+from architecture.components.crossattention_fusion import (
+    CrossAttentionFusion,
+    cell_positions,
+)
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
@@ -72,7 +75,7 @@ class CrossSensorMAE(nn.Module):
                     config.decoder_dim,
                     config.decoder_heads,
                     config.decoder_depth,
-                    strides[name],
+                    min(strides[name], config.cell_m),
                 )
                 for name, shape in shapes.items()
             }
@@ -129,26 +132,25 @@ class CrossSensorMAE(nn.Module):
             name: self.shared_tokens(name, tokens, tokens.visible)
             for name, tokens in batch.items()
         }
+        counted = {name: one.visible for name, one in batch.items()}
+        # The grid of all the instruments, and the grid each of them makes alone
+        whole = self.gridded(encoded, batch, counted, cells, list(batch))
+        grids = {
+            name: self.gridded(encoded, batch, counted, cells, [name]) for name in batch
+        }
+        placed = cell_positions(cells.offset, self.fusion.cell_m)  # (B, Q, 6)
         predictions = {}
-        # Reconstruct missing target patches across all target-source sensor pairs
+        # Every patch is predicted from the cells one instrument alone was read into,
+        # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
             hidden = tokens.present & ~tokens.visible  # (B, K)
             for read in batch:
                 predictions[asked, read] = self.decoders[asked](
-                    encoded[read],
-                    batch[read].position,
-                    batch[read].visible,
+                    grids[read].values,
+                    placed,
+                    grids[read].occupied,
                     tokens.position,
                     tokens.channels,
                     hidden,
                 )  # (B, K, *P)
-        counted = {name: one.visible for name, one in batch.items()}
-        # The grid of all the instruments, and the grid each of them makes alone
-        return Reconstruction(
-            predictions,
-            self.gridded(encoded, batch, counted, cells, list(batch)),
-            {
-                name: self.gridded(encoded, batch, counted, cells, [name])
-                for name in batch
-            },
-        )
+        return Reconstruction(predictions, whole, grids)
