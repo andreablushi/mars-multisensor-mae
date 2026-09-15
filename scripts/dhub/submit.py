@@ -8,8 +8,8 @@ from collections.abc import Sequence
 import digitalhub as dh
 
 from config.paths import REPO_ROOT
-from dh import credentials
-from dh.configs import load_platform
+from dhub import credentials
+from dhub.configs import load_platform
 
 
 def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> int:

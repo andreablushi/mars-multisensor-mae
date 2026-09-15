@@ -11,8 +11,8 @@ from botocore.exceptions import ClientError
 from config.paths import build_root
 from config.schema import DatasetConfig
 from dataset.store import DatasetBuild
-from dh import credentials
-from dh.configs import load_platform
+from dhub import credentials
+from dhub.configs import load_platform
 
 EXPIRED = frozenset(
     {"ExpiredToken", "ExpiredTokenException", "InvalidToken", "InvalidAccessKeyId"}

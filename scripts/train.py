@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 
 import torch
-from dh import submit
-from dh.configs import load_platform
-from dh.publish import model_name, publish_checkpoint
-from dh.store import published_build
+from dhub import submit
+from dhub.configs import load_platform
+from dhub.publish import model_name, publish_checkpoint
+from dhub.store import published_build
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
