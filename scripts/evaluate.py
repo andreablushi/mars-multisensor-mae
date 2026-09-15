@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 
 import torch
 from dhub import submit
@@ -45,7 +46,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         sizes,
         shapes,
         wavelengths,
-        collate,
+        partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
         config.dataset.least_classes,

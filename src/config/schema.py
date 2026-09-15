@@ -36,6 +36,7 @@ class ModelConfig:
         name: The architecture.
         instruments: The instruments whose patches become tokens, the elevation apart.
         elevation: The instrument whose values give every surface patch its height.
+        cell_m: How far a cell of a feature's grid runs along the ground, in metres.
         dim: How wide a token is in every encoder, a multiple of 12.
         heads: How many attention heads those encoders run.
         depth: How many blocks each instrument encoder stacks.
@@ -48,6 +49,7 @@ class ModelConfig:
     name: str
     instruments: list[str]
     elevation: str
+    cell_m: float
     dim: int
     heads: int
     depth: int

@@ -60,7 +60,7 @@ def evaluate_latent_space(
     model.eval()
     embedded, read = [], []
     with torch.no_grad():
-        for batch, identities in loader:
+        for batch, _, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             embedded.append(model.embed(batch).cpu())  # (B, D)
             read += [one for one, _ in identities]
@@ -114,7 +114,7 @@ def evaluate_reconstruction(
     with (
         torch.no_grad()
     ):  # Disable autograd to reduce memory usage and speed up execution
-        for batch, _ in loader:
+        for batch, _, _ in loader:
             # Transfer input batch tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             # Apply deterministic sensor masking pattern

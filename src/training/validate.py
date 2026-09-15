@@ -36,7 +36,7 @@ def validate(
     with (
         torch.no_grad()
     ):  # Disable gradient calculation to save memory and speed up processing
-        for batch, _ in loader:
+        for batch, _, _ in loader:
             # Transfer input batch tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             # Apply deterministic sensor masking

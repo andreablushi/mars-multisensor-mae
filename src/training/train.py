@@ -78,7 +78,7 @@ def train(
     step, best_epoch = 0, -1
     for epoch in range(settings.epochs):
         model.train()  # Enable training mode
-        for batch, _ in training:
+        for batch, _, _ in training:
             # Transfer input tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             # Apply dynamic random sensor masking
