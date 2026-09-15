@@ -24,6 +24,10 @@ patchsize:
 # splits: train, validation, test.
 split: [0.8, 0.1, 0.1]
 
+# How many classes a split must hold for the latent space to be measured over
+# it. Each split is seeded with the commonest classes until it holds this many.
+least_classes: 2
+
 # The share of every other instrument's patches one draw holds over ground the
 # anchor instrument's patches reach, the anchor being the one the feature holds
 # fewest patches of. What is left over is drawn from anywhere it reaches.

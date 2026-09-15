@@ -19,7 +19,7 @@ from dataset.wavelengths import band_wavelengths
 from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
 from evaluation.report import report_latent_space, report_reconstruction
 from logs.console import logger
-from logs.tracker import start_run
+from logs.tracker import start_logging
 from training.checkpoint import load_checkpoint
 
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
@@ -48,6 +48,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         collate,
         config.dataset.split,
         config.dataset.seed,
+        config.dataset.least_classes,
         config.model.elevation,
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
@@ -64,7 +65,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
     epochs = load_checkpoint(published_checkpoint(name, held), model) + 1
     log.info("evaluating %s, trained for %d epochs, on %s", name, epochs, device)
-    run = start_run(
+    run = start_logging(
         config,
         {
             "device": str(device),

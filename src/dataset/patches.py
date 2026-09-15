@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from building.common.layout import ELEVATION, GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
+from torch import Tensor
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
@@ -156,11 +157,13 @@ def read_feature_patches(
             for at in range(math.prod(patch_counts(record.shape, record.axes, size)))
         ]
         # Over the ceiling the patches are thinned evenly, so a read still spans it.
-        step = math.ceil(len(planned) / ceiling) or 1
+        count = min(len(planned), ceiling)
         held: list[Patch] = []
         opened: tuple[str, Observation] | None = None
         # The patches of one observation run together, so it is read once for all.
-        for record, at in planned[::step]:
+        for record, at in (
+            planned[len(planned) * one // count] for one in range(count)
+        ):
             if opened is None or opened[0] != record.path:
                 opened = (record.path, build.read_observation(record.path))
             patch = cut_patch(
@@ -261,6 +264,31 @@ def channel_axis(axes: Sequence[str]) -> int | None:
     """
     at = [at for at, holds in enumerate(axes) if holds != GROUND]
     return at[0] if at else None
+
+
+def normalize_patches(
+    values: Tensor, valid: Tensor
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Return each patch centred and scaled by the measured samples of its own.
+
+    Args:
+        values: The patches, as the model was handed them. (B, K, *P)
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
+
+    Returns:
+        target: The patches, each of zero mean and unit deviation. (B, K, *P)
+        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
+        mean: What each patch was centred by, to undo it. (B, K, 1...)
+        deviation: What each was scaled by, holding the same. (B, K, 1...)
+    """
+    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
+    over = tuple(range(2, values.dim()))
+    spread = (*values.shape[:2], *([1] * len(over)))
+    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
+    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
+    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
+    return (values - mean) / deviation, counted, mean, deviation
 
 
 def patch_lengths(

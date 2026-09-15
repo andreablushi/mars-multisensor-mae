@@ -9,7 +9,7 @@ import torch
 from sklearn.metrics import silhouette_samples
 from torch import Tensor
 
-from training.loss import normalised_patches
+from dataset.patches import normalize_patches
 
 
 def confidence(samples: np.ndarray) -> tuple[float, float]:
@@ -148,7 +148,7 @@ def reconstruction_metrics(
     Returns:
         metrics: The "mse", the "r2" it accounts for, and the "psnr" in decibels.
     """
-    target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
+    target, counted, *_ = normalize_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)

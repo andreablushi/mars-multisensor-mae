@@ -14,6 +14,7 @@ class DatasetConfig:
         root: Where every build sits on this machine, under a directory of its own name.
         patchsize: How far a patch runs along each cut axis, by instrument.
         split: The share of the features each split holds, in the code's order.
+        least_classes: How many classes a split it is asked for must hold.
         overlap: The share of each other sensor's patches over the anchor's ground.
         seed: The number that fixes where a feature falls.
     """
@@ -22,6 +23,7 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, int] = field(default_factory=dict)
     split: list[float] = field(default_factory=list)
+    least_classes: int = 2
     overlap: float = 0.5
     seed: int = 42
 

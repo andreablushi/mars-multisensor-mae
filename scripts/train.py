@@ -18,7 +18,7 @@ from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from dataset.wavelengths import band_wavelengths
 from logs.console import logger
-from logs.tracker import start_run
+from logs.tracker import start_logging
 from training.train import train
 
 TRAINING_HANDLER = "scripts.train:run_training"
@@ -52,6 +52,7 @@ def run_training(project=None, overrides: list[str] | None = None):
         collate,
         config.dataset.split,
         config.dataset.seed,
+        config.dataset.least_classes,
         config.model.elevation,
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
@@ -62,7 +63,7 @@ def run_training(project=None, overrides: list[str] | None = None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
     model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
-    run = start_run(
+    run = start_logging(
         config,
         {
             "device": str(device),

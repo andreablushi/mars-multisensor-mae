@@ -9,31 +9,7 @@ from torch.nn import functional
 from architecture.components.fusion import instrument_vector
 from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
-
-
-def normalised_patches(
-    values: Tensor, valid: Tensor
-) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Return each patch centred and scaled by the measured samples of its own.
-
-    Args:
-        values: The patches, as the model was handed them. (B, K, *P)
-        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
-
-    Returns:
-        target: The patches, each of zero mean and unit deviation. (B, K, *P)
-        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
-        mean: What each patch was centred by, to undo it. (B, K, 1...)
-        deviation: What each was scaled by, holding the same. (B, K, 1...)
-    """
-    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
-    over = tuple(range(2, values.dim()))
-    spread = (*values.shape[:2], *([1] * len(over)))
-    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
-    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
-    return (values - mean) / deviation, counted, mean, deviation
+from dataset.patches import normalize_patches
 
 
 def reconstruction_error(
@@ -50,7 +26,7 @@ def reconstruction_error(
     Returns:
         error: The mean squared error over the counted patches, zero where none is.
     """
-    target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
+    target, counted, *_ = normalize_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)

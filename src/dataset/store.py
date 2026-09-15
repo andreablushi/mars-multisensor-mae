@@ -253,6 +253,7 @@ class DatasetBuild:
         collate: Callable,
         shares: Sequence[float],
         seed: int,
+        least_classes: int,
         elevation: str,
         budget: int,
         overlap: float,
@@ -269,6 +270,7 @@ class DatasetBuild:
             collate: How one batch of drawn features becomes what the model is handed.
             shares: The share of the observations each split holds, in the code's order.
             seed: What fixes where a feature falls, and every draw that is not anew.
+            least_classes: How many classes a split it is asked for must hold.
             elevation: The instrument whose values give every surface patch its height.
             budget: How many patches of each instrument one draw takes at most.
             overlap: The share of each other sensor's patches over the anchor's ground.
@@ -278,6 +280,9 @@ class DatasetBuild:
 
         Returns:
             loaders: One loader per split, the training one shuffled and the rest not.
+
+        Raises:
+            ValueError: When a split it is asked for holds too few classes to measure.
         """
         by_feature = self.read_observation_metadata_by_feature()
         wanted = dict(zip(SPLITS, shares, strict=True))
@@ -285,7 +290,9 @@ class DatasetBuild:
             identity: sum(len(held) for held in rows.values())
             for identity, rows in by_feature.items()
         }
-        # A feature is one sample, so the splits are filled with whole features
+        classes: defaultdict[str, list[tuple[str, str]]] = defaultdict(list)
+        for identity in by_feature:
+            classes[identity[0]].append(identity)
         order = sorted(
             by_feature,
             key=lambda identity: (
@@ -293,15 +300,38 @@ class DatasetBuild:
                 random.Random(f"{seed}/{'/'.join(identity)}").random(),
             ),
         )
+        asked = [name for name in SPLITS if wanted[name]]
+        # Each split is seeded with the lightest features of the commonest classes, so
+        # it holds enough of them to be measured over before weight decides the rest.
+        seeded = {
+            identity: name
+            for one in sorted(classes, key=lambda one: (-len(classes[one]), one))[
+                :least_classes
+            ]
+            for name, identity in zip(
+                asked,
+                [identity for identity in reversed(order) if identity[0] == one],
+                strict=False,
+            )
+        }
+        # A feature is one sample, so the splits are filled with whole features, the
+        # heaviest first and each into the split standing furthest under its share.
         splits: dict[str, list[tuple[str, str]]] = {name: [] for name in SPLITS}
         placed = dict.fromkeys(SPLITS, 0.0)
         for identity in order:
-            name = min(
+            name = seeded.get(identity) or min(
                 SPLITS,
                 key=lambda one: placed[one] / wanted[one] if wanted[one] else math.inf,
             )
             splits[name].append(identity)
             placed[name] += counted[identity]
+        for name, held in splits.items():
+            standing = {identity[0] for identity in held}
+            if wanted[name] and len(standing) < least_classes:
+                raise ValueError(
+                    f"{name} holds {len(standing)} classes, "
+                    f"{least_classes} say the least"
+                )
         # Compute stats for the training split and extract instrument axes
         statistics = self.compute_stats(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
