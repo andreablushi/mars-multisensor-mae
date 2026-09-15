@@ -36,7 +36,9 @@ least_classes: 2
 
 # The share of every other instrument's patches one draw holds over ground the
 # anchor instrument's patches reach, the anchor being the one the feature holds
-# fewest patches of. What is left over is drawn from anywhere it reaches.
-overlap: 0.5
+# fewest patches of. What is left over is drawn from anywhere it reaches. The
+# instruments seldom reach the same ground, so a draw spends most of its budget
+# spanning the feature rather than crowding what little they share.
+overlap: 0.25
 
 seed: 42
