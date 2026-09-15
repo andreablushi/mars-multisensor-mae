@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -21,11 +21,11 @@ class DatasetConfig:
 
     build: str
     root: str
-    patchsize: dict[str, int] = field(default_factory=dict)
-    split: list[float] = field(default_factory=list)
-    least_classes: int = 2
-    overlap: float = 0.5
-    seed: int = 42
+    patchsize: dict[str, int]
+    split: list[float]
+    least_classes: int
+    overlap: float
+    seed: int
 
 
 @dataclass
@@ -37,9 +37,9 @@ class ModelConfig:
         instruments: The instruments whose patches become tokens, the elevation apart.
         elevation: The instrument whose values give every surface patch its height.
         cell_m: How far a cell of a feature's grid runs along the ground, in metres.
-        dim: How wide a token is in every encoder, a multiple of 12.
-        heads: How many attention heads those encoders run.
-        depth: How many blocks each instrument encoder stacks.
+        encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
+        encoder_heads: How many attention heads every encoder and the fusion run.
+        encoder_depth: How many blocks each instrument encoder stacks.
         crossencoder_depth: How many blocks the cross-sensor encoder stacks.
         decoder_dim: How wide a token is in the decoders, a multiple of 12.
         decoder_heads: How many attention heads the decoders run.
@@ -50,9 +50,9 @@ class ModelConfig:
     instruments: list[str]
     elevation: str
     cell_m: float
-    dim: int
-    heads: int
-    depth: int
+    encoder_dim: int
+    encoder_heads: int
+    encoder_depth: int
     crossencoder_depth: int
     decoder_dim: int
     decoder_heads: int
@@ -74,7 +74,6 @@ class TrainingConfig:
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         consistency: What a grid of one instrument agreeing with the whole counts.
         uniformity: What the cells standing apart from each other counts.
-        workers: How many processes read features beside the training.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -88,7 +87,6 @@ class TrainingConfig:
     mask_ratio: float
     consistency: float
     uniformity: float
-    workers: int
     checkpoints: str
 
 
@@ -104,7 +102,7 @@ class EvaluationConfig:
 
     split: str
     neighbours: int
-    model: str | None = None
+    model: str | None
 
 
 @dataclass

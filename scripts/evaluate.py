@@ -7,6 +7,7 @@ from functools import partial
 
 import torch
 from dhub import submit
+from dhub.configs import stage_workers
 from dhub.publish import model_name
 from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
@@ -23,6 +24,7 @@ from logs.console import logger
 from logs.tracker import start_logging
 from training.checkpoint import load_checkpoint
 
+EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 
 log = logger(__name__)
@@ -54,7 +56,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
         config.training.batch_size,
-        config.training.workers,
+        stage_workers(EVALUATION_STAGE),
     )
     # The latents are read over every patch, the reconstruction over one draw of them.
     loader = build.loaders_by_split(*read)[config.evaluation.split]
@@ -118,7 +120,7 @@ def main() -> int:
     arguments = parsed.parse_args()
     if arguments.dh:
         return submit.submitted(
-            "evaluation", EVALUATION_HANDLER, arguments.ref, arguments.overrides
+            EVALUATION_STAGE, EVALUATION_HANDLER, arguments.ref, arguments.overrides
         )
     # The platform calls the handler, a run here the function under it.
     run_evaluation.__wrapped__(overrides=arguments.overrides)

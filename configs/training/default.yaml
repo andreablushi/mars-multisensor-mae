@@ -1,33 +1,22 @@
 # How a run trains, validates and stops.
 
-# A split holds a few hundred features, so an epoch is a handful of steps and
-# every count here is read against that.
+# A split holds a few hundred features, so an epoch is a handful of steps.
 epochs: 1000
-# How many features one step reads, which also settles how many patches of each
-# instrument a read draws: the fewer the features, the more patches each, so a
-# step carries the same and reads fewer observations for it.
+# How many features one step reads, which also settles the patches each read draws.
 batch_size: 32
-# How many patches of one instrument one step carries, which the widest
-# reconstruction settles: a decoder predicts a whole patch of its instrument for
-# every instrument read, so what one step holds is this many of the widest.
+# How many patches of one instrument one step carries, set by the widest it predicts.
 patches_per_step: 512
 learning_rate: 0.00015
 weight_decay: 0.05
 warmup_epochs: 10
 patience: 25
 
-# The share of each instrument's patches hidden from its encoder, the paper's
-# random correspondence drawing each instrument's independently.
+# The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
-# What a grid read from one instrument agreeing with the grid of all of them
-# counts for, and what the cells of a batch standing apart from each other
-# counts for, against the reconstruction each instrument is weighed at one.
+# What grids agreeing and cells standing apart count, the reconstruction weighed at one.
 consistency: 0.02
 uniformity: 0.05
-
-# How many processes read features beside the training.
-workers: 6
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

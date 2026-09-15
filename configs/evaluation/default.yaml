@@ -6,6 +6,5 @@ split: test
 # How many nearest latents one retrieval reads, the paper's top ten.
 neighbours: 10
 
-# The published model to read, or nothing for the latest one this architecture
-# published.
+# The published model to read, or nothing for the latest this architecture published.
 model: null

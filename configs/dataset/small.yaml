@@ -3,42 +3,25 @@
 # The build to read, which is published as dataset-<build>.
 build: small
 
-# Where every build sits on this machine, under a directory of its own name. A
-# build brought down whole fills it, and a build read from the platform fills it
-# as it is read.
+# Where every build sits on this machine, under a directory of its own name.
 root: data/dataset
 
-# How far a patch runs along every axis of an observation, for each instrument.
-# A wavelength axis is kept whole, as the channels of the patch. The ground a
-# patch spans is the size times the measured sample: 639 m for CTX, 1947 m for
-# CRISM and 3712 m for SHARAD, as near one footprint as a 93 fold spread in
-# sample size allows.
+# How far a patch runs along each cut axis, a wavelength axis kept whole as channels.
 patchsize:
-  # A scan at about 5 m a pixel. A patch is one token, so it runs no further
-  # than a decoder can predict from the one vector it is read out of.
+  # A scan at about 5 m a pixel, spanning 639 m, and one patch is one token.
   CTX: 128
-  # A survey at about 200 m a pixel, its bands the channels of a patch. It runs
-  # 59 samples across track, so four patches fit across it and eleven samples
-  # are left uncut.
+  # A survey at about 200 m a pixel, its bands the channels, four across track.
   CRISM: 12
-  # A radargram walks one line, and its other axis is depth rather than ground,
-  # so this is both how far a patch reaches along track and how many delay bins
-  # it carries as its channels.
+  # A radargram along one line, its other axis depth, so this is its delay bins too.
   SHARAD: 8
 
-# The shares the features are split into, in the order the code names the
-# splits: train, validation, test.
+# The shares the features are split into, in the code's order: train, validation, test.
 split: [0.8, 0.1, 0.1]
 
-# How many classes a split must hold for the latent space to be measured over
-# it. Each split is seeded with the commonest classes until it holds this many.
+# How many classes a split must hold, seeded with the commonest ones until it does.
 least_classes: 2
 
-# The share of every other instrument's patches one draw holds over ground the
-# anchor instrument's patches reach, the anchor being the one the feature holds
-# fewest patches of. What is left over is drawn from anywhere it reaches. The
-# instruments seldom reach the same ground, so a draw spends most of its budget
-# spanning the feature rather than crowding what little they share.
+# The share of a draw taken over the anchor's ground, the rest from anywhere it reaches.
 overlap: 0.25
 
 seed: 42

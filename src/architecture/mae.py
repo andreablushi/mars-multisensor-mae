@@ -51,9 +51,9 @@ class CrossSensorMAE(nn.Module):
                 name: Encoder(
                     shape,
                     axes[name],
-                    config.dim,
-                    config.heads,
-                    config.depth,
+                    config.encoder_dim,
+                    config.encoder_heads,
+                    config.encoder_depth,
                     strides[name],
                 )
                 for name, shape in shapes.items()
@@ -61,17 +61,19 @@ class CrossSensorMAE(nn.Module):
         )
         # Shared backbone projecting all sensor tokens into a common space
         self.crossencoder = CrossSensorEncoder(
-            config.dim, config.heads, config.crossencoder_depth
+            config.encoder_dim, config.encoder_heads, config.crossencoder_depth
         )
         # The one place the instruments meet, each cell read from what reaches it
-        self.fusion = CrossAttentionFusion(config.dim, config.heads, config.cell_m)
+        self.fusion = CrossAttentionFusion(
+            config.encoder_dim, config.encoder_heads, config.cell_m
+        )
         # Sensor-specific reconstruction heads for target patch recovery
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
                     shape,
                     axes[name],
-                    config.dim,
+                    config.encoder_dim,
                     config.decoder_dim,
                     config.decoder_heads,
                     config.decoder_depth,
@@ -80,7 +82,7 @@ class CrossSensorMAE(nn.Module):
                 for name, shape in shapes.items()
             }
         )
-        self.dim = config.dim
+        self.dim = config.encoder_dim
 
     def shared_tokens(self, name: str, tokens: Tokens, visible: Tensor) -> Tensor:
         """Return one instrument's patches in the space every instrument shares."""

@@ -64,7 +64,7 @@ def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> i
             {"name": "PYTHONPATH", "value": f"{root}:{root}/src:{root}/scripts"},
             *credentials.minting_envs(),
         ],
-        parameters={"overrides": [*overrides, f"training.workers={int(asked['cpu'])}"]},
+        parameters={"overrides": list(overrides)},
         wait=False,
     )
     print(run.key)

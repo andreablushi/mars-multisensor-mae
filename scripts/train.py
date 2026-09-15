@@ -7,7 +7,7 @@ from functools import partial
 
 import torch
 from dhub import submit
-from dhub.configs import load_platform
+from dhub.configs import load_platform, stage_workers
 from dhub.publish import model_name, publish_checkpoint
 from dhub.store import published_build
 from digitalhub_runtime_python import handler
@@ -22,6 +22,7 @@ from logs.console import logger
 from logs.tracker import start_logging
 from training.train import train
 
+TRAINING_STAGE = "training"
 TRAINING_HANDLER = "scripts.train:run_training"
 
 _MODEL = load_platform().publishes["model"]
@@ -58,7 +59,7 @@ def run_training(project=None, overrides: list[str] | None = None):
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
         config.training.batch_size,
-        config.training.workers,
+        stage_workers(TRAINING_STAGE),
     )
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,7 +105,7 @@ def main() -> int:
     arguments = parsed.parse_args()
     if arguments.dh:
         return submit.submitted(
-            "training", TRAINING_HANDLER, arguments.ref, arguments.overrides
+            TRAINING_STAGE, TRAINING_HANDLER, arguments.ref, arguments.overrides
         )
     # The platform calls the handler, a run here the function under it.
     run_training.__wrapped__(overrides=arguments.overrides)
