@@ -7,16 +7,14 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from torch import Tensor
-from torch.nn import functional
 from torch.utils.data import DataLoader
 from umap import UMAP
 
 from architecture.mae import CrossSensorMAE
-from architecture.models import FeatureGrid
-from config.schema import Config
 from evaluation.metrics import (
     class_similarity,
+    feature_similarity,
+    grid_metrics,
     reconstruction_metrics,
     retrieval_metrics,
     silhouette_metrics,
@@ -32,9 +30,9 @@ class Evaluation:
     Attributes:
         metrics: Every measured number, keyed as it is logged.
         intervals: Half the 95% interval around each mean, zero for a count.
-        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
+        similarity: The mean matched similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
-        placed: Where each measured latent sits on the plane. (N, 2)
+        placed: Where each measured feature sits on the plane. (N, 2)
         classes: The class of each of them, in that same order.
     """
 
@@ -46,27 +44,24 @@ class Evaluation:
     classes: list[str]
 
 
-def pooled(grid: FeatureGrid) -> Tensor:
-    """Return the one vector a feature's grid is read as, its occupied cells averaged.
-
-    Args:
-        grid: The grid every instrument the feature holds was read into.
-
-    Returns:
-        latent: The unit vector along the sum of its cells, zero where it holds none.
-    """
-    return functional.normalize(grid.values.sum(dim=1), dim=-1)  # (B, D)
-
-
 def evaluate_latent_space(
-    model: CrossSensorMAE, loader: DataLoader, config: Config, device: torch.device
+    model: CrossSensorMAE,
+    loader: DataLoader,
+    neighbours: int,
+    seed: int,
+    device: torch.device,
 ) -> Evaluation:
     """Return what the model's latent space makes of one split's classes.
+
+    A feature is read as the whole grid it was embedded into rather than as one
+    vector, so a pair of them is compared over their cells, each matched to the
+    closest of the other.
 
     Args:
         model: The model, loaded from a checkpoint and on the device.
         loader: The split to read, in batches, each feature read whole.
-        config: How many neighbours a retrieval reads, and the layout seed.
+        neighbours: How many nearest features one retrieval reads.
+        seed: What fixes the layout on the plane.
         device: Where the model runs.
 
     Returns:
@@ -78,19 +73,23 @@ def evaluate_latent_space(
         for batch, cells, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             grid = model.embed(batch, cells.to(device))
-            embedded.append(pooled(grid).cpu())  # (B, D)
-            read += [one for one, _ in identities]
-    latents = torch.cat(embedded)  # (N, D)
-    # A feature holding no patch of any instrument the model reads embeds to nothing.
-    kept = latents.norm(dim=-1) > 0  # (N,)
-    classes = [one for one, was in zip(read, kept.tolist(), strict=True) if was]
-    latents = latents[kept]  # (N, D)
-    similarity, names = class_similarity(latents, classes)  # (C, C)
+            for at, (one, _) in enumerate(identities):
+                embedded.append(grid.values[at][grid.occupied[at]])  # (Q, D)
+                read.append(one)
+    # A feature holding no patch of any instrument the model reads reaches no cell.
+    kept = [(one, held) for one, held in zip(read, embedded, strict=True) if len(held)]
+    classes = [one for one, _ in kept]
+    cells = [held for _, held in kept]
+    matched = feature_similarity(cells)  # (N, N)
+    distance = (1 - matched).clamp(min=0).numpy()  # (N, N)
+    np.fill_diagonal(distance, 0)
+    similarity, names = class_similarity(matched, classes)  # (C, C)
     # Evaluate retrieval, silhouette and similarity of the representations
     measured = (
-        retrieval_metrics(latents, classes, config.evaluation.neighbours)
-        | silhouette_metrics(latents, classes)
+        retrieval_metrics(matched, classes, neighbours)
+        | silhouette_metrics(distance, classes)
         | similarity_metrics(similarity)
+        | grid_metrics(cells)
     )
     # Package the metrics, their confidence bounds, and the 2D UMAP layout
     return Evaluation(
@@ -103,10 +102,10 @@ def evaluate_latent_space(
         intervals={name: half for name, (_, half) in measured.items()},
         similarity=similarity,
         names=names,
-        # Map normalized latent vectors into 2D space using cosine distance UMAP
+        # Map the features into 2D space from the distances already measured
         placed=UMAP(
-            n_components=2, metric="cosine", random_state=config.dataset.seed
-        ).fit_transform(latents.numpy()),  # (N, 2)
+            n_components=2, metric="precomputed", random_state=seed
+        ).fit_transform(distance),  # (N, 2)
         classes=classes,
     )
 
@@ -144,8 +143,10 @@ def evaluate_reconstruction(
                 # Identify valid patches that were masked out
                 hidden = tokens.present & ~tokens.visible  # (B, K)
                 for read in batch:
-                    # Check the input sensor has visible context tokens
-                    readable = batch[read].visible.any(dim=1, keepdim=True)  # (B, 1)
+                    # Check the grid the decoder reads holds a cell, as the loss does
+                    readable = reconstruction.grids[read].occupied.any(
+                        dim=1, keepdim=True
+                    )  # (B, 1)
                     own = read == asked
                     # Evaluate reconstruction accuracy on target hidden patches
                     measured = reconstruction_metrics(

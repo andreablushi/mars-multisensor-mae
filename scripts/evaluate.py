@@ -76,7 +76,16 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
             "patch_ceiling": ceiling,
         },
     )
-    report_latent_space(run, evaluate_latent_space(model, whole, config, device))
+    report_latent_space(
+        run,
+        evaluate_latent_space(
+            model,
+            whole,
+            config.evaluation.neighbours,
+            config.dataset.seed,
+            device,
+        ),
+    )
     report_reconstruction(
         run,
         evaluate_reconstruction(
