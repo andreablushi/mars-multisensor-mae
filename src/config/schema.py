@@ -14,6 +14,7 @@ class DatasetConfig:
         root: Where every build sits on this machine, under a directory of its own name.
         patchsize: How far a patch runs along each cut axis, by instrument.
         split: The share of the features each split holds, in the code's order.
+        least_classes: How many classes a split it is asked for must hold.
         overlap: The share of each other sensor's patches over the anchor's ground.
         seed: The number that fixes where a feature falls.
     """
@@ -22,6 +23,7 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, int] = field(default_factory=dict)
     split: list[float] = field(default_factory=list)
+    least_classes: int = 2
     overlap: float = 0.5
     seed: int = 42
 
@@ -34,6 +36,7 @@ class ModelConfig:
         name: The architecture.
         instruments: The instruments whose patches become tokens, the elevation apart.
         elevation: The instrument whose values give every surface patch its height.
+        cell_m: How far a cell of a feature's grid runs along the ground, in metres.
         dim: How wide a token is in every encoder, a multiple of 12.
         heads: How many attention heads those encoders run.
         depth: How many blocks each instrument encoder stacks.
@@ -46,6 +49,7 @@ class ModelConfig:
     name: str
     instruments: list[str]
     elevation: str
+    cell_m: float
     dim: int
     heads: int
     depth: int
@@ -68,7 +72,8 @@ class TrainingConfig:
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         patience: How many epochs without a lower validation loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        temperature: What the contrastive term divides its similarities by.
+        consistency: What a grid of one instrument agreeing with the whole counts.
+        uniformity: What the cells standing apart from each other counts.
         workers: How many processes read features beside the training.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
@@ -81,7 +86,8 @@ class TrainingConfig:
     warmup_epochs: int
     patience: int
     mask_ratio: float
-    temperature: float
+    consistency: float
+    uniformity: float
     workers: int
     checkpoints: str
 
@@ -93,13 +99,11 @@ class EvaluationConfig:
     Attributes:
         split: The split the latents are read from, as the code names the splits.
         neighbours: How many nearest latents one retrieval reads.
-        mosaic: How many patches a mosaic block runs along each cut axis.
         model: The published model to read, or None for the latest of this one.
     """
 
     split: str
     neighbours: int
-    mosaic: int
     model: str | None = None
 
 

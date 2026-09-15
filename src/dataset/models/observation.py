@@ -42,11 +42,11 @@ class Observation:
     described: dict
 
     @property
-    def ground(self) -> tuple[int, ...]:
+    def ground_axes(self) -> tuple[int, ...]:
         """Return which axes of the values are placed on the ground.
 
         Returns:
-            ground: Their positions in the array's own order.
+            ground_axes: Their positions in the array's own order.
         """
         return tuple(at for at, holds in enumerate(self.axes) if holds == GROUND)
 

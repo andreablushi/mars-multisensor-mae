@@ -9,7 +9,7 @@ import torch
 from sklearn.metrics import silhouette_samples
 from torch import Tensor
 
-from training.loss import normalised_patches
+from dataset.patches import normalize_patches
 
 
 def confidence(samples: np.ndarray) -> tuple[float, float]:
@@ -28,29 +28,79 @@ def confidence(samples: np.ndarray) -> tuple[float, float]:
     return float(held.mean()), float(1.96 * held.std(ddof=1) / np.sqrt(held.size))
 
 
-def retrieval_metrics(
-    latents: Tensor, classes: Sequence[str], neighbours: int
-) -> dict[str, float]:
-    """Return how much of what each latent retrieves shares its own class.
+def feature_similarity(cells: Sequence[Tensor]) -> Tensor:
+    """Return how alike each pair of features is, every cell matched to its closest.
+
+    A feature holds as many cells as the ground its instruments reach, so a pair
+    is read by matching every cell of each to the closest of the other and
+    averaging the two directions, which counts every cell once however many
+    either of them holds.
 
     Args:
-        latents: One vector per feature, of unit length. (N, D)
+        cells: The occupied cells of each feature, of unit length. (Q, D) each.
+
+    Returns:
+        similarity: The matched similarity of every ordered pair. (N, N)
+    """
+    similarity = torch.ones(len(cells), len(cells))  # (N, N)
+    for row, one in enumerate(cells):
+        for column, other in enumerate(cells[:row]):
+            matched = one @ other.T  # (Q, Q')
+            both = (matched.amax(dim=1).mean() + matched.amax(dim=0).mean()) / 2  # ()
+            similarity[row, column] = similarity[column, row] = float(both)
+    return similarity
+
+
+def grid_metrics(cells: Sequence[Tensor]) -> dict[str, tuple[float, float]]:
+    """Return how far a feature's own cells stand apart, and how many it holds.
+
+    The cells of one feature sum to a vector whose square length is what every
+    ordered pair of them agrees on added up, so what two distinct cells agree on
+    is read off without ever holding the pairs.
+
+    Args:
+        cells: The occupied cells of each feature, of unit length. (Q, D) each.
+
+    Returns:
+        metrics: The "spread" of a feature's own cells, and how many "cells" it holds.
+    """
+    apart = []
+    for one in cells:
+        if len(one) < 2:
+            continue
+        agreement = float(one.sum(dim=0).square().sum()) - len(one)  # ()
+        apart.append(1 - agreement / (len(one) ** 2 - len(one)))
+    return {
+        "spread": confidence(np.asarray(apart)),
+        # A count is logged rather than drawn, so it carries no interval.
+        "cells": (float(np.mean([len(one) for one in cells])) if cells else 0.0, 0.0),
+    }
+
+
+def retrieval_metrics(
+    similarity: Tensor, classes: Sequence[str], neighbours: int
+) -> dict[str, tuple[float, float]]:
+    """Return how much of what each feature retrieves shares its own class.
+
+    Args:
+        similarity: How alike every ordered pair of features is. (N, N)
         classes: The class of each of them, in that same order.
-        neighbours: How many nearest latents one query reads, or all of them.
+        neighbours: How many nearest features one query reads, or all of them.
 
     Returns:
         metrics: The precision, recall, F1 and "map", each a mean and a half width.
     """
     names = sorted(set(classes))
     labels = torch.tensor([names.index(one) for one in classes])  # (N,)
-    similarity = latents @ latents.T  # (N, N)
-    similarity.fill_diagonal_(float("-inf"))
+    ranked = similarity.masked_fill(
+        torch.eye(len(classes), dtype=torch.bool), float("-inf")
+    )  # (N, N)
     read = min(neighbours, len(classes) - 1)
-    found = labels[similarity.topk(read, dim=1).indices]  # (N, k)
-    relevant = (found == labels.unsqueeze(1)).to(latents.dtype)  # (N, k)
+    found = labels[ranked.topk(read, dim=1).indices]  # (N, k)
+    relevant = (found == labels.unsqueeze(1)).to(similarity.dtype)  # (N, k)
     held = torch.bincount(labels)[labels] - 1  # (N,)
     counted = held > 0  # (N,)
-    ranks = torch.arange(1, read + 1, dtype=latents.dtype)  # (k,)
+    ranks = torch.arange(1, read + 1, dtype=similarity.dtype)  # (k,)
     precision = relevant.mean(dim=1)  # (N,)
     recall = relevant.sum(dim=1) / held.clamp(min=1)  # (N,)
     f1 = 2 * precision * recall / (precision + recall).clamp(min=1e-12)  # (N,)
@@ -66,37 +116,37 @@ def retrieval_metrics(
 
 
 def class_similarity(
-    latents: Tensor, classes: Sequence[str]
+    similarity: Tensor, classes: Sequence[str]
 ) -> tuple[np.ndarray, list[str]]:
-    """Return how alike the latents of each pair of classes are.
+    """Return how alike the features of each pair of classes are.
 
     Args:
-        latents: One vector per feature, of unit length. (N, D)
+        similarity: How alike every ordered pair of features is. (N, N)
         classes: The class of each of them, in that same order.
 
     Returns:
-        similarity: The mean cosine of every ordered pair of classes. (C, C)
+        classwise: The mean matched similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
     """
     names = sorted(set(classes))
     held = np.asarray(classes)
-    measured = (latents @ latents.T).numpy()  # (N, N)
-    similarity = np.full((len(names), len(names)), np.nan)  # (C, C)
+    measured = similarity.numpy()  # (N, N)
+    classwise = np.full((len(names), len(names)), np.nan)  # (C, C)
     for row, one in enumerate(names):
         for column, other in enumerate(names):
             block = measured[np.ix_(held == one, held == other)]
             if row == column:
                 block = block[~np.eye(len(block), dtype=bool)]
             if block.size:
-                similarity[row, column] = block.mean()
-    return similarity, names
+                classwise[row, column] = block.mean()
+    return classwise, names
 
 
-def similarity_metrics(similarity: np.ndarray) -> dict[str, float]:
+def similarity_metrics(similarity: np.ndarray) -> dict[str, tuple[float, float]]:
     """Return what those similarities come to, within a class and between two.
 
     Args:
-        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
+        similarity: The mean matched similarity of every ordered pair of classes. (C, C)
 
     Returns:
         metrics: "within", "between" and "separation", each a mean and a half width.
@@ -116,18 +166,20 @@ def similarity_metrics(similarity: np.ndarray) -> dict[str, float]:
     }
 
 
-def silhouette_metrics(latents: Tensor, classes: Sequence[str]) -> dict[str, float]:
+def silhouette_metrics(
+    distance: np.ndarray, classes: Sequence[str]
+) -> dict[str, tuple[float, float]]:
     """Return how well each class stands apart from the rest, as a silhouette reads it.
 
     Args:
-        latents: One vector per feature, of unit length. (N, D)
+        distance: How far every ordered pair of features stands, nothing on its own.
         classes: The class of each of them, in that same order.
 
     Returns:
         metrics: "silhouette" and "silhouette/<class>", each a mean and a half width.
     """
     held = np.asarray(classes)
-    samples = silhouette_samples(latents.numpy(), held, metric="cosine")  # (N,)
+    samples = silhouette_samples(distance, held, metric="precomputed")  # (N,)
     metrics = {"silhouette": confidence(samples)}
     for one in sorted(set(classes)):
         metrics[f"silhouette/{one}"] = confidence(samples[held == one])
@@ -148,7 +200,7 @@ def reconstruction_metrics(
     Returns:
         metrics: The "mse", the "r2" it accounts for, and the "psnr" in decibels.
     """
-    target, counted, *_ = normalised_patches(values, valid)  # (B, K, *P)
+    target, counted, *_ = normalize_patches(values, valid)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)

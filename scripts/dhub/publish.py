@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from config.schema import ModelConfig
-from dh import credentials
-from dh.configs import load_platform
+from dhub import credentials
+from dhub.configs import load_platform
 
 KIND = "model"
 

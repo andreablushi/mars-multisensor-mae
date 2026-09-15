@@ -6,9 +6,6 @@ split: test
 # How many nearest latents one retrieval reads, the paper's top ten.
 neighbours: 10
 
-# How many patches the block a mosaic is drawn over runs along each cut axis.
-mosaic: 4
-
 # The published model to read, or nothing for the latest one this architecture
 # published.
 model: null

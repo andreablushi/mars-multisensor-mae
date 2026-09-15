@@ -6,7 +6,7 @@ epochs: 1000
 # How many features one step reads, which also settles how many patches of each
 # instrument a read draws: the fewer the features, the more patches each, so a
 # step carries the same and reads fewer observations for it.
-batch_size: 16
+batch_size: 32
 # How many patches of one instrument one step carries, which the widest
 # reconstruction settles: a decoder predicts a whole patch of its instrument for
 # every instrument read, so what one step holds is this many of the widest.
@@ -20,8 +20,11 @@ patience: 25
 # random correspondence drawing each instrument's independently.
 mask_ratio: 0.5
 
-# What the contrastive term divides its similarities by.
-temperature: 0.1
+# What a grid read from one instrument agreeing with the grid of all of them
+# counts for, and what the cells of a batch standing apart from each other
+# counts for, against the reconstruction each instrument is weighed at one.
+consistency: 0.02
+uniformity: 0.05
 
 # How many processes read features beside the training.
 workers: 6

@@ -20,7 +20,6 @@ class Patch:
         axes: What each axis of the values holds, in that same order.
         channels: What each channel measures, in its own unit. (C)
         origin: Where the patch starts along each axis of the observation.
-        ground_sample_m: How much ground one sample spans along each ground axis.
         beside: What the instrument stores beside its values, cut to the patch.
         north_m: How far north of the feature centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
@@ -39,7 +38,6 @@ class Patch:
     axes: tuple[str, ...]
     channels: np.ndarray
     origin: tuple[int, ...]
-    ground_sample_m: tuple[float, ...]
     beside: dict[str, np.ndarray]
     north_m: float
     east_m: float
@@ -49,12 +47,3 @@ class Patch:
     height_span_m: float
     t_start: datetime | None
     t_end: datetime | None
-
-    @property
-    def measured_share(self) -> float:
-        """Return how much of the patch carries a measurement.
-
-        Returns:
-            share: The measured fraction of the samples the mask holds, 0 to 1.
-        """
-        return float(self.valid.mean()) if self.valid.size else 0.0

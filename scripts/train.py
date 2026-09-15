@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 
 import torch
-from dh import submit
-from dh.configs import load_platform
-from dh.publish import model_name, publish_checkpoint
-from dh.store import published_build
+from dhub import submit
+from dhub.configs import load_platform
+from dhub.publish import model_name, publish_checkpoint
+from dhub.store import published_build
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import collate
+from architecture.models import collate
 from config.load import load_config
 from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from dataset.wavelengths import band_wavelengths
 from logs.console import logger
-from logs.tracker import start_run
+from logs.tracker import start_logging
 from training.train import train
 
 TRAINING_HANDLER = "scripts.train:run_training"
@@ -49,9 +50,10 @@ def run_training(project=None, overrides: list[str] | None = None):
         sizes,
         shapes,
         wavelengths,
-        collate,
+        partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
+        config.dataset.least_classes,
         config.model.elevation,
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
@@ -62,7 +64,7 @@ def run_training(project=None, overrides: list[str] | None = None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
     model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
-    run = start_run(
+    run = start_logging(
         config,
         {
             "device": str(device),

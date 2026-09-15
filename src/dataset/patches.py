@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from building.common.layout import ELEVATION, GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
+from torch import Tensor
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
@@ -39,7 +40,7 @@ def patch_sizes(
     return {name: patchsize[name] for name in instruments}
 
 
-def read_feature_patches(
+def draw_feature_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, int],
@@ -62,31 +63,34 @@ def read_feature_patches(
         draw: What picks each observation and the patches taken from it.
 
     Returns:
-        read: At most `budget` patches of one observation of each sensor, none empty.
+        drawn: At most `budget` patches of one observation of each sensor, none empty.
     """
+    # Initialize storage for records, loaded data, and patch bounding boxes
     records, observations, boxes = {}, {}, {}
     for name, size in sizes.items():
         held = rows.get(name, ())
         whole = [math.prod(patch_counts(one.shape, one.axes, size)) for one in held]
         if not sum(whole):
             continue
-        # One observation alone, since reading it is what reading any patch of it
-        # costs, weighted so every patch of the feature is as likely as any other.
+        # Pick one observation randomly, weighted by its total possible patches
         (picked,) = draw.choices(range(len(held)), weights=whole)
         records[name] = held[picked]
         observations[name] = build.read_observation(records[name].path)
-        boxes[name] = patch_boxes(observations[name], size)
-    read: dict[str, list[Patch]] = {name: [] for name in sizes}
+        boxes[name] = patch_coordinates(observations[name], size)
+    drawn: dict[str, list[Patch]] = {name: [] for name in sizes}
     if not records:
-        return read
-    # The scarcest instrument anchors, being the one every other can always meet.
+        return drawn
+    # Identify the anchor instrument (fewest total patches)
     anchor = min(boxes, key=lambda name: len(boxes[name][0]))
     covered: tuple[np.ndarray, np.ndarray] | None = None
+    # Process the anchor first, then the remaining instruments
     for name in (anchor, *(one for one in records if one != anchor)):
         low, high = boxes[name]
         if covered is None:
+            # Anchor case: randomly sample up to the budget limit
             chosen = draw.sample(range(len(low)), min(budget, len(low)))
         else:
+            # Other instruments: find patches that overlap with the anchor's area
             against_low, against_high = covered
             reaching = (
                 (
@@ -98,12 +102,14 @@ def read_feature_patches(
             )  # (T,)
             near = np.flatnonzero(reaching).tolist()
             wanted = min(round(overlap * budget), len(near), budget)
+            # Sample overlapping patches, then fill remaining budget with spares
             chosen = draw.sample(near, wanted)
             taken = set(chosen)
             spare = np.flatnonzero(~reaching).tolist() + [
                 one for one in near if one not in taken
             ]
             chosen += draw.sample(spare, min(budget - wanted, len(spare)))
+        # Cut out the valid patches and store them
         cut = (
             cut_patch(
                 observations[name],
@@ -115,9 +121,57 @@ def read_feature_patches(
             )
             for index in chosen
         )
-        read[name] = [patch for patch in cut if patch.valid.any()]
+        drawn[name] = [patch for patch in cut if patch.valid.any()]
+        # Save anchor coverage bounds on the first iteration
         if covered is None:
             covered = (low[chosen], high[chosen])
+    return drawn
+
+
+def read_feature_patches(
+    rows: Mapping[str, Sequence[ObservationMetadata]],
+    build: DatasetBuild,
+    sizes: Mapping[str, int],
+    wavelengths: Mapping[str, Sequence[float]],
+    heights: np.ndarray,
+    ceiling: int,
+) -> dict[str, list[Patch]]:
+    """Return every patch of every observation of one feature, bounded in count.
+
+    Args:
+        rows: The feature's index rows of each instrument, keyed as ODE names it.
+        build: The published build the observations are read from.
+        sizes: How far a patch of each instrument runs along an axis it is cut on.
+        wavelengths: What each band of each spectral sensor is centred on, in nm.
+        heights: Where the ground stands over the feature. (N, 3)
+        ceiling: How many patches of each instrument one read hands back at most.
+
+    Returns:
+        read: The patches of each instrument, none empty, keyed as ODE names it.
+    """
+    read: dict[str, list[Patch]] = {}
+    for name, size in sizes.items():
+        planned = [
+            (record, at)
+            for record in rows.get(name, ())
+            for at in range(math.prod(patch_counts(record.shape, record.axes, size)))
+        ]
+        # Over the ceiling the patches are thinned evenly, so a read still spans it.
+        count = min(len(planned), ceiling)
+        held: list[Patch] = []
+        opened: tuple[str, Observation] | None = None
+        # The patches of one observation run together, so it is read once for all.
+        for record, at in (
+            planned[len(planned) * one // count] for one in range(count)
+        ):
+            if opened is None or opened[0] != record.path:
+                opened = (record.path, build.read_observation(record.path))
+            patch = cut_patch(
+                opened[1], record, at, size, heights, wavelengths.get(name, ())
+            )
+            if patch.valid.any():
+                held.append(patch)
+        read[name] = held
     return read
 
 
@@ -153,7 +207,7 @@ def cut_patch(
         slice(start, start + length)
         for start, length in zip(origin, lengths, strict=True)
     )
-    taken = tuple(window[at] for at in observation.ground)
+    taken = tuple(window[at] for at in observation.ground_axes)
     north, east = observation.ground_metres(taken)
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
     ground_shape = tuple(
@@ -187,7 +241,6 @@ def cut_patch(
         axes=axes,
         channels=channels,
         origin=origin,
-        ground_sample_m=record.ground_sample_m,
         beside=beside,
         north_m=north_m,
         east_m=east_m,
@@ -198,111 +251,6 @@ def cut_patch(
         t_start=record.t_start,
         t_end=record.t_end,
     )
-
-
-def patch_arrays(
-    patches: Sequence[Patch],
-    shape: Sequence[int],
-    axes: Sequence[str],
-    statistics: Mapping[str, float],
-) -> dict[str, np.ndarray]:
-    """Return one instrument's drawn patches as the arrays a model is handed.
-
-    Args:
-        patches: The patches, all of one instrument.
-        shape: The shape of one patch of it as the model reads it.
-        axes: What each axis of its values holds.
-        statistics: What its values run to over the training split.
-
-    Returns:
-        arrays: The patches under "values", "valid", "channels" and "position".
-    """
-    valid_shape = tuple(
-        held if holds in (GROUND, WAVELENGTH) else 1
-        for held, holds in zip(shape, axes, strict=True)
-    )
-    at = channel_axis(axes)
-    channels = shape[at] if at is not None else 1
-    scaled = [
-        np.where(
-            one.valid,
-            (one.values.astype(np.float32) - statistics["mean"])
-            / np.maximum(statistics["deviation"], 1e-6),
-            0.0,
-        )
-        for one in patches
-    ]
-    return {
-        "values": stacked(scaled, tuple(shape), np.float32),
-        "valid": stacked([one.valid for one in patches], valid_shape, bool),
-        "channels": stacked([one.channels for one in patches], (channels,), np.float32),
-        "position": stacked(
-            [
-                np.array(
-                    [
-                        one.east_m,
-                        one.north_m,
-                        one.height_m,
-                        one.east_span_m,
-                        one.north_span_m,
-                        one.height_span_m,
-                    ],
-                    np.float32,
-                )
-                for one in patches
-            ],
-            (6,),
-            np.float32,
-        ),
-    }
-
-
-def stacked(
-    arrays: Sequence[np.ndarray], shape: tuple[int, ...], dtype: np.dtype | type
-) -> np.ndarray:
-    """Return same-shaped arrays as one array, empty where none were given.
-
-    Args:
-        arrays: The arrays, every one of that shape.
-        shape: Their shape, which an empty list cannot say.
-        dtype: What they hold, which an empty list cannot say either.
-
-    Returns:
-        stacked: The arrays along a new first axis. (K, *shape)
-    """
-    if not arrays:
-        return np.zeros((0, *shape), dtype)
-    return np.stack(list(arrays))
-
-
-def every_patch_plan(
-    rows: Mapping[str, Sequence[ObservationMetadata]],
-    sizes: Mapping[str, int],
-    chunk: int,
-) -> list[dict[str, list[tuple[ObservationMetadata, int]]]]:
-    """Return every patch of every observation of one feature, cut into chunks.
-
-    Args:
-        rows: The feature's index rows of each instrument, keyed as ODE names it.
-        sizes: How far a patch of each instrument runs along an axis it is cut on.
-        chunk: How many patches of one instrument a chunk holds at most.
-
-    Returns:
-        planned: One entry per chunk, naming the observation and patch to cut.
-    """
-    held = {
-        name: [
-            (record, at)
-            for record in rows.get(name, ())
-            for at in range(math.prod(patch_counts(record.shape, record.axes, size)))
-        ]
-        for name, size in sizes.items()
-    }
-    count = max((math.ceil(len(one) / chunk) for one in held.values()), default=0)
-    return [
-        {name: one[at * chunk : (at + 1) * chunk] for name, one in held.items()}
-        for at in range(count)
-    ]
 
 
 def channel_axis(axes: Sequence[str]) -> int | None:
@@ -316,6 +264,31 @@ def channel_axis(axes: Sequence[str]) -> int | None:
     """
     at = [at for at, holds in enumerate(axes) if holds != GROUND]
     return at[0] if at else None
+
+
+def normalize_patches(
+    values: Tensor, valid: Tensor
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Return each patch centred and scaled by the measured samples of its own.
+
+    Args:
+        values: The patches, as the model was handed them. (B, K, *P)
+        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
+
+    Returns:
+        target: The patches, each of zero mean and unit deviation. (B, K, *P)
+        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
+        mean: What each patch was centred by, to undo it. (B, K, 1...)
+        deviation: What each was scaled by, holding the same. (B, K, 1...)
+    """
+    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
+    over = tuple(range(2, values.dim()))
+    spread = (*values.shape[:2], *([1] * len(over)))
+    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
+    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
+    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
+    return (values - mean) / deviation, counted, mean, deviation
 
 
 def patch_lengths(
@@ -359,15 +332,10 @@ def patch_counts(
     )
 
 
-def patch_boxes(
+def patch_coordinates(
     observation: Observation, patchsize: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the ground each patch of one observation reaches, by its own index.
-
-    The positions are read at the ends of each patch alone rather than at every
-    sample of it, which a whole scan holds more of than the scan itself. The
-    projection runs smoothly over one patch, so its corners are where it
-    reaches furthest.
 
     Args:
         observation: The observation, read whole.
@@ -380,8 +348,8 @@ def patch_boxes(
     shape, axes = observation.values.shape, observation.axes
     counts = patch_counts(shape, axes, patchsize)
     lengths = patch_lengths(shape, axes, patchsize)
-    blocks = tuple(counts[at] for at in observation.ground)
-    spans = tuple(lengths[at] for at in observation.ground)
+    blocks = tuple(counts[at] for at in observation.ground_axes)
+    spans = tuple(lengths[at] for at in observation.ground_axes)
     edges = [
         np.stack(
             [np.arange(count) * span, (np.arange(count) + 1) * span - 1], axis=1
@@ -398,7 +366,7 @@ def patch_boxes(
     low = np.stack([one.min(over) for one in corners], axis=-1)  # (*blocks, 2)
     high = np.stack([one.max(over) for one in corners], axis=-1)  # (*blocks, 2)
     at = np.indices(counts).reshape(len(counts), -1)  # (A, T)
-    held = tuple(at[one] for one in observation.ground)
+    held = tuple(at[one] for one in observation.ground_axes)
     return low[held], high[held]  # (T, 2)
 
 

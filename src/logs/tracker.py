@@ -44,7 +44,7 @@ def sectioned(split: str, term: str) -> str:
     return f"{split}_{named}" + (f"/{instrument}" if instrument else "")
 
 
-def start_run(config: Config, facts: Mapping[str, object]) -> Run:
+def start_logging(config: Config, facts: Mapping[str, object]) -> Run:
     """Return the tracked run every metric of one training is logged to.
 
     Args:

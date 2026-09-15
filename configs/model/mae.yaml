@@ -8,6 +8,11 @@ name: mae
 instruments: [CTX, CRISM, SHARAD]
 elevation: MOLA
 
+# How far a cell of a feature's grid runs along the ground. A patch reaches
+# every cell its span covers, so the finest instrument settles one cell and a
+# coarser one spreads over the several it spans.
+cell_m: 639.0
+
 # The instrument encoders and the cross-sensor encoder.
 dim: 384
 heads: 6

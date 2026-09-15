@@ -8,8 +8,8 @@ from collections.abc import Sequence
 import digitalhub as dh
 
 from config.paths import REPO_ROOT
-from dh import credentials
-from dh.configs import load_platform
+from dhub import credentials
+from dhub.configs import load_platform
 
 
 def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> int:
@@ -39,7 +39,9 @@ def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> i
     )
 
     # Build the image first, since the job cannot install anything itself.
-    built = function.run(action="build", wait=True)
+    built = function.run(
+        action="build", profile=platform.resources["build"]["profile"], wait=True
+    )
     if built.status.state != "COMPLETED":
         print(f"the image did not build: {built.status.state}")
         return 1

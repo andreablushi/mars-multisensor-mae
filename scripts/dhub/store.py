@@ -11,12 +11,8 @@ from botocore.exceptions import ClientError
 from config.paths import build_root
 from config.schema import DatasetConfig
 from dataset.store import DatasetBuild
-from dh import credentials
-from dh.configs import load_platform
-
-EXPIRED = frozenset(
-    {"ExpiredToken", "ExpiredTokenException", "InvalidToken", "InvalidAccessKeyId"}
-)
+from dhub import credentials
+from dhub.configs import load_platform
 
 
 def published_build(dataset: DatasetConfig) -> DatasetBuild:
@@ -42,13 +38,14 @@ def published_build(dataset: DatasetConfig) -> DatasetBuild:
         key = prefix + path
         try:
             fetched = client.get_object(Bucket=bucket, Key=key)
-        except ClientError as refused:
-            if refused.response["Error"]["Code"] not in EXPIRED:
-                raise
-            # The credentials the platform hands out run out mid run.
+        except ClientError:
+            # The store's credentials lapse mid run, and are minted again off the PAT.
             credentials.refresh()
             client = dh.get_s3_client()
-            fetched = client.get_object(Bucket=bucket, Key=key)
+            try:
+                fetched = client.get_object(Bucket=bucket, Key=key)
+            except ClientError as refused:
+                raise RuntimeError(f"{key}: {refused}") from None
         return fetched["Body"].read()
 
     return DatasetBuild(root=build_root(dataset), fetch=fetch)

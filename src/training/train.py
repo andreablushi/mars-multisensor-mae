@@ -50,53 +50,69 @@ def train(
         best: The checkpoint with the lowest validation loss.
     """
     settings = config.training
+    # Configure AdamW optimizer with custom hyperparameters
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=settings.learning_rate,
         weight_decay=settings.weight_decay,
         betas=(0.9, 0.95),
     )
+    # Compute total steps and warmup duration
     steps = len(training) * settings.epochs
     warmup = len(training) * settings.warmup_epochs
 
-    def schedule(step: int) -> float:
-        """Return the share of the peak learning rate one step runs at."""
+    # Schedule function: linear warmup followed by cosine decay
+    def lambda_lr_schedule(step: int) -> float:
         if step < warmup:
-            return step / max(warmup, 1)
+            return step / max(warmup, 1)  # Warmup phase
         progress = (step - warmup) / max(steps - warmup, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))
+        return 0.5 * (1 + math.cos(math.pi * progress))  # Cosine decay phase
 
-    scheduler = LambdaLR(optimizer, schedule)
+    scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     stopping = EarlyStopping(settings.patience)
-    generator = torch.Generator(device=device).manual_seed(config.dataset.seed)
+    generator = torch.Generator(device=device).manual_seed(
+        config.dataset.seed
+    )  # Deterministic seed generator
     best = REPO_ROOT / settings.checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
     step, best_epoch = 0, -1
     for epoch in range(settings.epochs):
-        model.train()
-        for batch, _ in training:
+        model.train()  # Enable training mode
+        for batch, cells, _ in training:
+            # Transfer input tensors to execution device
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
+            cells = cells.to(device)
+            # Apply dynamic random sensor masking
             batch = random_correspondence(batch, settings.mask_ratio, generator)
-            terms = csmae_loss(model(batch), batch, settings.temperature)
+            # Compute cross-sensor MAE loss terms
+            terms = csmae_loss(
+                model(batch, cells), batch, settings.consistency, settings.uniformity
+            )
+            # Backpropagation pass
             optimizer.zero_grad()
             terms["loss"].backward()
-            # One patch a sounder wrote badly must not carry the whole run off.
-            clip_grad_norm_(model.parameters(), 1.0)
+            clip_grad_norm_(
+                model.parameters(), 1.0
+            )  # Stabilize training against exploding gradients
             optimizer.step()
             scheduler.step()
             step += 1
-            log_step(run, step, terms)
+            log_step(run, step, terms)  # Log step-level metrics to experiment tracker
+        # Run validation pass after each epoch
         metrics = validate(model, validation, config, device)
         log_epoch(run, step, epoch, metrics)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
+        # Track early stopping and persist best model weights
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, epoch)
             best_epoch = epoch
+        # Check early stopping patience trigger
         if stopping.stopped:
             log.info(
                 "no lower validation loss for %d epochs, stopping", settings.patience
             )
             break
+    # Record final run summary metadata
     log_summary(
         run,
         {
