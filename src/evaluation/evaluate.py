@@ -78,7 +78,7 @@ def evaluate_latent_space(
                     summed[identity, name] = summed[identity, name] + totals[at]
                     held[identity, name] = held[identity, name] + counts[at]
             order.update(dict.fromkeys(identities))
-    # One vector per instrument per feature, averaged over every chunk it was read in.
+    # One vector per instrument per feature, averaged over every patch it was read as.
     read = list(order)
     averaged = {
         name: torch.stack(

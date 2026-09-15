@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import random
 import shutil
@@ -167,7 +168,7 @@ class DatasetBuild:
             features: The features to pool over, or None for every one.
 
         Returns:
-            statistics: Per sensor, how many measurements, their mean and deviation.
+            statistics: Per sensor, the mean and deviation of its measurements.
         """
         standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
         spreads: dict[str, list[int]] = {}
@@ -204,7 +205,6 @@ class DatasetBuild:
             # A band nothing ever measured leaves a patch of it where it stands.
             spread = spreads[instrument] if counts.shape else ()
             statistics[instrument] = {
-                "count": counts,
                 "mean": np.where(counts > 0, mean, 0.0)
                 .reshape(spread)
                 .astype(np.float32),
@@ -258,7 +258,7 @@ class DatasetBuild:
         overlap: float,
         batch_size: int,
         workers: int,
-        chunk: int | None = None,
+        ceiling: int | None = None,
     ) -> dict[str, DataLoader]:
         """Return every split of the build in batches, whole features at a time.
 
@@ -267,31 +267,45 @@ class DatasetBuild:
             shapes: The shape of one patch of each instrument as the model reads it.
             wavelengths: What each band of each spectral sensor is centred on, in nm.
             collate: How one batch of drawn features becomes what the model is handed.
-            shares: The share of the features each split holds, in the code's order.
+            shares: The share of the observations each split holds, in the code's order.
             seed: What fixes where a feature falls, and every draw that is not anew.
             elevation: The instrument whose values give every surface patch its height.
-            budget: How many patches of each instrument one read draws at most.
+            budget: How many patches of each instrument one draw takes at most.
             overlap: The share of each other sensor's patches over the anchor's ground.
             batch_size: How many features one step reads.
             workers: How many processes read features beside the training.
-            chunk: How many patches one read hands back, or None to draw per feature.
+            ceiling: How many patches one whole read hands back, or None to draw.
 
         Returns:
             loaders: One loader per split, the training one shuffled and the rest not.
         """
         by_feature = self.read_observation_metadata_by_feature()
-        total = sum(shares)
+        wanted = dict(zip(SPLITS, shares, strict=True))
+        counted = {
+            identity: sum(len(held) for held in rows.values())
+            for identity, rows in by_feature.items()
+        }
+        # A feature is one sample, so the splits are filled with whole features
+        order = sorted(
+            by_feature,
+            key=lambda identity: (
+                -counted[identity],
+                random.Random(f"{seed}/{'/'.join(identity)}").random(),
+            ),
+        )
         splits: dict[str, list[tuple[str, str]]] = {name: [] for name in SPLITS}
-        for identity in by_feature:
-            drawn = random.Random(f"{seed}/{'/'.join(identity)}").random() * total
-            running = 0.0
-            for name, share in zip(SPLITS, shares, strict=True):
-                running += share
-                if drawn < running:
-                    break
+        placed = dict.fromkeys(SPLITS, 0.0)
+        for identity in order:
+            name = min(
+                SPLITS,
+                key=lambda one: placed[one] / wanted[one] if wanted[one] else math.inf,
+            )
             splits[name].append(identity)
+            placed[name] += counted[identity]
+        # Compute stats for the training split and extract instrument axes
         statistics = self.compute_stats(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
+        # Build and return a DataLoader for each data split
         return {
             name: DataLoader(
                 DatasetSplit(
@@ -306,10 +320,10 @@ class DatasetBuild:
                     budget,
                     overlap,
                     None if name == TRAINING_SPLIT else seed,
-                    chunk,
+                    ceiling,
                 ),
                 batch_size=batch_size,
-                shuffle=name == TRAINING_SPLIT,
+                shuffle=name == TRAINING_SPLIT,  # Shuffle only for training
                 num_workers=workers,
                 persistent_workers=workers > 0,
                 collate_fn=collate,

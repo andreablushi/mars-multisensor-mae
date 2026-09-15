@@ -93,13 +93,11 @@ class EvaluationConfig:
     Attributes:
         split: The split the latents are read from, as the code names the splits.
         neighbours: How many nearest latents one retrieval reads.
-        mosaic: How many patches a mosaic block runs along each cut axis.
         model: The published model to read, or None for the latest of this one.
     """
 
     split: str
     neighbours: int
-    mosaic: int
     model: str | None = None
 
 
