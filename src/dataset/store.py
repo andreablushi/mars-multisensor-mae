@@ -32,10 +32,8 @@ from torch.utils.data import DataLoader
 from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
 
-# What is left free on the disk a run is given, under which nothing more is kept.
 DISK_RESERVE_BYTES = 8 * 1024**3
 
-# The splits a build is read in, which the config gives a share of the features each.
 TRAINING_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
 TEST_SPLIT = "test"
@@ -57,12 +55,7 @@ class DatasetBuild:
     records: list[ObservationMetadata] | None = None
 
     def read_object(self, path: str) -> bytes:
-        """Return what one object of the build holds, off disk or from the store.
-
-        A build runs to some hundred gigabytes and the disk a run is given holds
-        a fraction of it, but a run reads the same few thousand objects of it
-        once an epoch. What is fetched is kept while there is room, so an epoch
-        after the first reads off disk instead of over the network.
+        """Return what one object of the build holds, off disk or fetched and kept.
 
         Args:
             path: Where it sits, relative to the build root, as the index names it.
@@ -159,7 +152,7 @@ class DatasetBuild:
             )
         return heights
 
-    def compute_stats(
+    def read_statistics_by_instrument(
         self, features: Collection[tuple[str, str]] | None = None
     ) -> dict[str, dict[str, np.ndarray]]:
         """Return what each instrument's values run to, without reading one observation.
@@ -173,17 +166,16 @@ class DatasetBuild:
         standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
         spreads: dict[str, list[int]] = {}
         for one in self.read_observation_metadata():
+            if features is not None and one.feature not in features:
+                continue
             # A spectral instrument is pooled a band at a time, every other whole.
-            banded = WAVELENGTH in one.axes
             held = (
                 (one.band_valid_count, one.band_mean, one.band_std)
-                if banded
+                if WAVELENGTH in one.axes
                 else (one.valid_count, one.value_mean, one.value_std)
             )
             # An observation measuring nothing leaves them unset, a sounder nan.
-            if (features is not None and one.feature not in features) or any(
-                each is None for each in held
-            ):
+            if any(each is None for each in held):
                 continue
             moments = tuple(np.asarray(each, dtype=np.float64) for each in held)
             if not moments[0].sum() or not np.isfinite(moments[1:]).all():
@@ -333,7 +325,7 @@ class DatasetBuild:
                     f"{least_classes} say the least"
                 )
         # Compute stats for the training split and extract instrument axes
-        statistics = self.compute_stats(set(splits[TRAINING_SPLIT]))
+        statistics = self.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
         # Build and return a DataLoader for each data split
         return {

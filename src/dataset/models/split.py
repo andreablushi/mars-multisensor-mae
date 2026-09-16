@@ -227,4 +227,4 @@ def stacked(
     """
     if not arrays:
         return np.zeros((0, *shape), dtype)
-    return np.stack(list(arrays))
+    return np.stack(arrays)

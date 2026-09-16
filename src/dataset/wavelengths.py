@@ -7,9 +7,6 @@ from collections.abc import Mapping, Sequence
 from building.common.layout import WAVELENGTH
 from building.configs import crism
 
-# The centre wavelength of every band of each spectral instrument, in nanometres.
-# A build reads every observation onto its instrument's own grid, so a band holds
-# the same wavelength whichever observation a patch was cut from.
 NANOMETRES = {crism.LAYOUT.instrument: crism.WAVELENGTHS_NM}
 
 

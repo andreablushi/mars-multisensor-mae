@@ -220,12 +220,19 @@ def cut_patch(
         band_shape = tuple(-1 if holds == WAVELENGTH else 1 for holds in axes)
         measured = np.asarray(record.band_valid_count) > 0
         valid = valid & measured.reshape(band_shape)
-    beside = _beside(observation, window)
+    by_dim = dict(zip(observation.dims[observation.measurement], window, strict=True))
+    beside = {
+        name: held[
+            tuple(by_dim.get(one, slice(None)) for one in observation.dims[name])
+        ].copy()
+        for name, held in observation.beside.items()
+    }
     if ELEVATION in axes:
         # A sounder reads one delay at one height, which tells its channels apart.
-        channels = np.asarray(beside[HEIGHTS], np.float32)
-        height_m = float(np.mean(beside[HEIGHTS]))
-        height_span_m = float(np.ptp(beside[HEIGHTS]))
+        elevations = beside[HEIGHTS]
+        channels = np.asarray(elevations, np.float32)
+        height_m = float(np.mean(elevations))
+        height_span_m = float(np.ptp(elevations))
     else:
         channels = np.asarray(wavelengths or [0.0], np.float32)
         height_span_m = 0.0
@@ -262,8 +269,7 @@ def channel_axis(axes: Sequence[str]) -> int | None:
     Returns:
         at: The one axis that is not ground, or None where a patch is ground alone.
     """
-    at = [at for at, holds in enumerate(axes) if holds != GROUND]
-    return at[0] if at else None
+    return next((at for at, holds in enumerate(axes) if holds != GROUND), None)
 
 
 def normalize_patches(
@@ -392,24 +398,3 @@ def read_patch_layout(
         },
         {name: size * ground[name] for name, size in sizes.items()},
     )
-
-
-def _beside(
-    observation: Observation, window: tuple[slice, ...]
-) -> dict[str, np.ndarray]:
-    """Return what the instrument stores beside its values, cut to one patch.
-
-    Args:
-        observation: The observation it was cut from.
-        window: What the patch keeps of each axis of the values.
-
-    Returns:
-        beside: Each of those arrays, cut along every axis it shares with values.
-    """
-    taken = dict(zip(observation.dims[observation.measurement], window, strict=True))
-    return {
-        name: held[
-            tuple(taken.get(one, slice(None)) for one in observation.dims[name])
-        ].copy()
-        for name, held in observation.beside.items()
-    }
