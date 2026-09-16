@@ -20,14 +20,14 @@ from dataset.patches import patch_sizes, read_patch_layout
 from dataset.wavelengths import band_wavelengths
 from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
 from evaluation.report import report_latent_space, report_reconstruction
-from logs.console import logger
+from logs.console import rich_logger
 from logs.tracker import start_logging
 from training.checkpoint import load_checkpoint
 
 EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 
-log = logger(__name__)
+log = rich_logger(__name__)
 
 
 @handler()
@@ -63,7 +63,19 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     ceiling = config.training.patches_per_step
     whole = build.loaders_by_split(*read, ceiling)[config.evaluation.split]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
+    model = CrossSensorMAE(
+        shapes,
+        axes,
+        strides,
+        config.model.encoder_dim,
+        config.model.encoder_heads,
+        config.model.encoder_depth,
+        config.model.crossencoder_depth,
+        config.model.decoder_dim,
+        config.model.decoder_heads,
+        config.model.decoder_depth,
+        config.model.cell_m,
+    ).to(device)
     name = config.evaluation.model or model_name(config.model)
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
     epochs = load_checkpoint(published_checkpoint(name, held), model) + 1

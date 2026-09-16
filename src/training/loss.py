@@ -32,7 +32,7 @@ def reconstruction_error(
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
 
 
-def consistency(whole: FeatureGrid, part: FeatureGrid) -> Tensor:
+def consistency_loss(whole: FeatureGrid, part: FeatureGrid) -> Tensor:
     """Return how far a grid read from some instruments stands from the grid of all.
 
     Args:
@@ -48,7 +48,7 @@ def consistency(whole: FeatureGrid, part: FeatureGrid) -> Tensor:
     return (error * counted).sum() / counted.sum().clamp(min=1)  # ()
 
 
-def uniformity(grid: FeatureGrid) -> Tensor:
+def uniformity_loss(grid: FeatureGrid) -> Tensor:
     """Return how far the cells stand from spread evenly over the space they live in.
 
     Two cells drawn from the training set at random stand orthogonal where the
@@ -114,10 +114,11 @@ def csmae_loss(
         terms[f"cmr/{asked}"] = cmr
         total = total + umr + cmr
     held = [
-        consistency(reconstruction.grid, one) for one in reconstruction.grids.values()
+        consistency_loss(reconstruction.grid, one)
+        for one in reconstruction.grids.values()
     ]
     terms["consistency"] = torch.stack(held).mean() if held else total  # ()
-    terms["uniformity"] = uniformity(reconstruction.grid)  # ()
+    terms["uniformity"] = uniformity_loss(reconstruction.grid)  # ()
     terms["loss"] = (
         total
         + consistency_weight * terms["consistency"]

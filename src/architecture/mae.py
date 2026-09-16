@@ -15,7 +15,6 @@ from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
 from architecture.models import Cells, FeatureGrid, Tokens
-from config.schema import ModelConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,9 +40,30 @@ class CrossSensorMAE(nn.Module):
         shapes: dict[str, tuple[int, ...]],
         axes: dict[str, tuple[str, ...]],
         strides: dict[str, float],
-        config: ModelConfig,
+        encoder_dim: int,
+        encoder_heads: int,
+        encoder_depth: int,
+        crossencoder_depth: int,
+        decoder_dim: int,
+        decoder_heads: int,
+        decoder_depth: int,
+        cell_m: float,
     ) -> None:
-        """Build every part for the instruments the model reads."""
+        """Build every part for the instruments the model reads.
+
+        Args:
+            shapes: The shape of one patch of each instrument, keyed as ODE names it.
+            axes: What each axis of those patches holds, keyed the same way.
+            strides: How far apart two neighbouring patch centres sit, in metres.
+            encoder_dim: How wide a token is everywhere but the decoders.
+            encoder_heads: How many attention heads every encoder and the fusion run.
+            encoder_depth: How many blocks each instrument encoder stacks.
+            crossencoder_depth: How many blocks the cross-sensor encoder stacks.
+            decoder_dim: How wide a token is in the decoders.
+            decoder_heads: How many attention heads the decoders run.
+            decoder_depth: How many blocks each decoder stacks.
+            cell_m: How far a cell of a feature's grid runs along the ground, in metres.
+        """
         super().__init__()
         # Sensor-specific input projection stems and positional/modality encoders
         self.encoders = nn.ModuleDict(
@@ -51,9 +71,9 @@ class CrossSensorMAE(nn.Module):
                 name: Encoder(
                     shape,
                     axes[name],
-                    config.encoder_dim,
-                    config.encoder_heads,
-                    config.encoder_depth,
+                    encoder_dim,
+                    encoder_heads,
+                    encoder_depth,
                     strides[name],
                 )
                 for name, shape in shapes.items()
@@ -61,49 +81,57 @@ class CrossSensorMAE(nn.Module):
         )
         # Shared backbone projecting all sensor tokens into a common space
         self.crossencoder = CrossSensorEncoder(
-            config.encoder_dim, config.encoder_heads, config.crossencoder_depth
+            encoder_dim, encoder_heads, crossencoder_depth
         )
         # The one place the instruments meet, each cell read from what reaches it
-        self.fusion = CrossAttentionFusion(
-            config.encoder_dim, config.encoder_heads, config.cell_m
-        )
+        self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
         # Sensor-specific reconstruction heads for target patch recovery
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
                     shape,
                     axes[name],
-                    config.encoder_dim,
-                    config.decoder_dim,
-                    config.decoder_heads,
-                    config.decoder_depth,
-                    min(strides[name], config.cell_m),
+                    encoder_dim,
+                    decoder_dim,
+                    decoder_heads,
+                    decoder_depth,
+                    min(strides[name], cell_m),
                 )
                 for name, shape in shapes.items()
             }
         )
-        self.dim = config.encoder_dim
+        self.dim = encoder_dim
 
-    def shared_tokens(self, name: str, tokens: Tokens, visible: Tensor) -> Tensor:
-        """Return one instrument's patches in the space every instrument shares."""
-        # Guard against empty/absent sensor token inputs
-        if tokens.values.shape[1] == 0:
-            return tokens.values.new_zeros(
-                tokens.values.shape[0], 0, self.dim
-            )  # (B, 0, D)
-        # Process through sensor-specific stem then map to shared latent space
-        encoded = self.encoders[name](
-            tokens.values, tokens.channels, tokens.valid, tokens.position, visible
-        )  # (B, K, D)
-        return self.crossencoder(encoded, visible)  # (B, K, D)
+    def shared_tokens(
+        self, batch: dict[str, Tokens], counted: dict[str, Tensor]
+    ) -> dict[str, Tensor]:
+        """Return each instrument's patches in the space every instrument shares.
 
-    def encode(self, batch: dict[str, Tokens]) -> dict[str, Tensor]:
-        """Return every present patch of every instrument as a token, none hidden."""
-        # Extract fully unmasked representations across all present batch sensors
-        return {
-            name: self.shared_tokens(name, tokens, tokens.present)
-            for name, tokens in batch.items()
-        }
+        Args:
+            batch: Each instrument's patches over the batch.
+            counted: Which of its patches the encoders may read. (B, K)
+
+        Returns:
+            encoded: Each instrument's tokens, meaningful where counted. (B, K, D)
+        """
+        encoded = {}
+        for name, tokens in batch.items():
+            # Guard against empty/absent sensor token inputs
+            if tokens.values.shape[1] == 0:
+                encoded[name] = tokens.values.new_zeros(
+                    tokens.values.shape[0], 0, self.dim
+                )  # (B, 0, D)
+                continue
+            # Process through sensor-specific stem then map to shared latent space
+            stem = self.encoders[name](
+                tokens.values,
+                tokens.channels,
+                tokens.valid,
+                tokens.position,
+                counted[name],
+            )  # (B, K, D)
+            encoded[name] = self.crossencoder(stem, counted[name])  # (B, K, D)
+        return encoded
 
     def gridded(
         self,
@@ -113,7 +141,18 @@ class CrossSensorMAE(nn.Module):
         cells: Cells,
         read: Sequence[str],
     ) -> FeatureGrid:
-        """Return the grid one set of instruments makes of each feature of a batch."""
+        """Return the grid one set of instruments makes of each feature of a batch.
+
+        Args:
+            encoded: Each instrument's shared tokens. (B, K, D)
+            batch: Each instrument's patches over the batch.
+            counted: Which of its tokens count: visible while training, else present.
+            cells: The cells the batch's patches reach.
+            read: Which instruments the grid is built from.
+
+        Returns:
+            grid: One vector per cell, of unit length where an instrument reaches it.
+        """
         return self.fusion(
             encoded,
             {name: one.position for name, one in batch.items()},
@@ -123,18 +162,33 @@ class CrossSensorMAE(nn.Module):
         )
 
     def embed(self, batch: dict[str, Tokens], cells: Cells) -> FeatureGrid:
-        """Return the grid standing for each feature, over every instrument it holds."""
+        """Return the grid standing for each feature, over every instrument it holds.
+
+        Args:
+            batch: Each instrument's patches over the batch.
+            cells: The cells the batch's patches reach.
+
+        Returns:
+            grid: One vector per cell, over every present patch, none hidden.
+        """
+        # Extract fully unmasked representations across all present batch sensors
         counted = {name: one.present for name, one in batch.items()}
-        return self.gridded(self.encode(batch), batch, counted, cells, list(batch))
+        encoded = self.shared_tokens(batch, counted)
+        return self.gridded(encoded, batch, counted, cells, list(batch))
 
     def forward(self, batch: dict[str, Tokens], cells: Cells) -> Reconstruction:
-        """Return every instrument's hidden patches, predicted from every instrument."""
+        """Return every instrument's hidden patches, predicted from every instrument.
+
+        Args:
+            batch: Each instrument's patches over the batch, some of them hidden.
+            cells: The cells the batch's patches reach.
+
+        Returns:
+            reconstruction: The predictions and the grids they were read from.
+        """
         # Encode visible (unmasked) context tokens for each sensor
-        encoded = {
-            name: self.shared_tokens(name, tokens, tokens.visible)
-            for name, tokens in batch.items()
-        }
         counted = {name: one.visible for name, one in batch.items()}
+        encoded = self.shared_tokens(batch, counted)
         # The grid of all the instruments, and the grid each of them makes alone
         whole = self.gridded(encoded, batch, counted, cells, list(batch))
         grids = {

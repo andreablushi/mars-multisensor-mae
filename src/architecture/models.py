@@ -31,7 +31,14 @@ class Tokens:
     present: Tensor
 
     def to(self, device: torch.device) -> Tokens:
-        """Return the same tokens held on one device."""
+        """Return the same tokens held on one device.
+
+        Args:
+            device: The device to hold them on.
+
+        Returns:
+            tokens: Every tensor moved there.
+        """
         # Transfer all underlying data and mask tensors to target execution device
         return Tokens(
             self.values.to(device),
@@ -61,7 +68,14 @@ class Cells:
     present: Tensor
 
     def to(self, device: torch.device) -> Cells:
-        """Return the same cells held on one device."""
+        """Return the same cells held on one device.
+
+        Args:
+            device: The device to hold them on.
+
+        Returns:
+            cells: Every tensor moved there.
+        """
         return Cells(self.offset.to(device), self.present.to(device))
 
 
@@ -134,12 +148,12 @@ def collate(
                 low.astype(np.int64), high.astype(np.int64), strict=True
             )
         ]
-        held = (
+        offsets = (
             np.unique(np.concatenate(spread), axis=0)
             if spread
             else np.zeros((0, 2), np.int64)
         )  # (Q, 2)
-        reached.append(torch.as_tensor(held))
+        reached.append(torch.as_tensor(offsets))
     counts = torch.tensor([len(one) for one in reached])  # (B,)
     slots = torch.arange(int(counts.max()))  # (Q,)
     cells = Cells(

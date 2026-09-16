@@ -17,7 +17,7 @@ def class_similarity_figure(similarity: np.ndarray, names: Sequence[str]) -> Fig
     """Return how alike each pair of classes is, drawn as a heatmap.
 
     Args:
-        similarity: The mean cosine similarity of every ordered pair of classes. (C, C)
+        similarity: The mean matched similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
 
     Returns:

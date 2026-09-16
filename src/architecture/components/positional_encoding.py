@@ -7,10 +7,8 @@ import math
 import torch
 from torch import Tensor, nn
 
-# How high above the areoid the ground runs, which no instrument settles.
 HEIGHT_M = (10.0, 30_000.0)
 
-# The widest a feature runs, which is what the longest ground period reads.
 GROUND_LONGEST_M = 1_000_000.0
 
 COORDINATES = 6

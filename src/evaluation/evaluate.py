@@ -20,7 +20,7 @@ from evaluation.metrics import (
     silhouette_metrics,
     similarity_metrics,
 )
-from training.masking import random_correspondence
+from training.masking import masked_reconstruction
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +52,6 @@ def evaluate_latent_space(
     device: torch.device,
 ) -> Evaluation:
     """Return what the model's latent space makes of one split's classes.
-
-    A feature is read as the whole grid it was embedded into rather than as one
-    vector, so a pair of them is compared over their cells, each matched to the
-    closest of the other.
 
     Args:
         model: The model, loaded from a checkpoint and on the device.
@@ -117,28 +113,33 @@ def evaluate_reconstruction(
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
-    """Return how well the model rebuilds the patches it was never shown."""
+    """Return how well the model rebuilds the patches it was never shown.
+
+    Args:
+        model: The model, loaded from a checkpoint and on the device.
+        loader: The split to read, in batches.
+        mask_ratio: How much of each instrument is hidden.
+        seed: What fixes the masks.
+        device: Where the model runs.
+
+    Returns:
+        metrics: Every "umr/<sensor>/<name>" and "cmr/<sensor>/<name>", batch averaged.
+    """
     model.eval()  # Switch model to evaluation mode
-    generator = torch.Generator(device=device).manual_seed(
-        seed
-    )  # Seed generator for reproducible masking
-    totals: defaultdict[str, float] = defaultdict(
-        float
-    )  # Accumulate metric totals across batches
+    # Seed generator for reproducible masking
+    generator = torch.Generator(device=device).manual_seed(seed)
+    # Accumulate metric totals across batches
+    totals: defaultdict[str, float] = defaultdict(float)
     batches = 0
-    with (
-        torch.no_grad()
-    ):  # Disable autograd to reduce memory usage and speed up execution
+    # Disable autograd to reduce memory usage and speed up execution
+    with torch.no_grad():
         for batch, cells, _ in loader:
-            # Transfer input batch tensors to execution device
-            batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            # Apply deterministic sensor masking pattern
-            batch = random_correspondence(batch, mask_ratio, generator)
             # Generate patch reconstructions across all sensor pairings
-            reconstruction = model(batch, cells.to(device))
-            others = max(
-                len(batch) - 1, 1
-            )  # Count available cross-modal sources for averaging
+            batch, reconstruction = masked_reconstruction(
+                model, batch, cells, mask_ratio, generator, device
+            )
+            # Count available cross-modal sources for averaging
+            others = max(len(batch) - 1, 1)
             for asked, tokens in batch.items():
                 # Identify valid patches that were masked out
                 hidden = tokens.present & ~tokens.visible  # (B, K)

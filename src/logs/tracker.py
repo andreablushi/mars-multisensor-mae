@@ -16,34 +16,6 @@ from config.paths import REPO_ROOT
 from config.schema import Config
 
 
-def run_name() -> str:
-    """Return what one run is tracked under, the branch it runs and when it started.
-
-    Returns:
-        name: The branch, or the short commit, and when the run started.
-    """
-    head = REPO_ROOT / ".git"
-    if head.is_file():
-        head = Path(head.read_text().partition("gitdir:")[2].strip())
-    held = (head / "HEAD").read_text().strip() if (head / "HEAD").exists() else ""
-    branch = held.rpartition("/")[2] if held.startswith("ref:") else held[:7]
-    return f"{branch or 'detached'}-{datetime.now():%Y%m%d-%H%M%S}"
-
-
-def sectioned(split: str, term: str) -> str:
-    """Return one loss term's key, its own name giving the section it is panelled in.
-
-    Args:
-        split: Which split it was measured over.
-        term: The term, as the loss names it.
-
-    Returns:
-        key: The term under "<split>_<term>", so each panels on its own.
-    """
-    named, _, instrument = term.partition("/")
-    return f"{split}_{named}" + (f"/{instrument}" if instrument else "")
-
-
 def start_logging(config: Config, facts: Mapping[str, object]) -> Run:
     """Return the tracked run every metric of one training is logged to.
 
@@ -52,10 +24,19 @@ def start_logging(config: Config, facts: Mapping[str, object]) -> Run:
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named for its branch and start, its place read from the .env.
+        run: The run, named for its branch or short commit and its start, its place
+            read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
-    run = wandb.init(config=asdict(config), name=run_name())
+    head = REPO_ROOT / ".git"
+    if head.is_file():
+        head = Path(head.read_text().partition("gitdir:")[2].strip())
+    held = (head / "HEAD").read_text().strip() if (head / "HEAD").exists() else ""
+    branch = held.rpartition("/")[2] if held.startswith("ref:") else held[:7]
+    run = wandb.init(
+        config=asdict(config),
+        name=f"{branch or 'detached'}-{datetime.now():%Y%m%d-%H%M%S}",
+    )
     run.config.update(dict(facts))
     return run
 
@@ -69,7 +50,7 @@ def log_step(run: Run, step: int, terms: Mapping[str, Tensor]) -> None:
         terms: Every loss term, keyed as the loss names them.
     """
     run.log(
-        {sectioned("train", name): value.item() for name, value in terms.items()},
+        {f"train_{name}": value.item() for name, value in terms.items()},
         step=step,
     )
 
@@ -83,7 +64,7 @@ def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> 
         epoch: Which pass over the training split it was.
         metrics: Every loss term over the validation split, keyed as they name them.
     """
-    logged = {sectioned("validation", name): value for name, value in metrics.items()}
+    logged = {f"validation_{name}": value for name, value in metrics.items()}
     run.log(logged | {"epoch": epoch}, step=step)
 
 

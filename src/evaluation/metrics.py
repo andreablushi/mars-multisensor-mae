@@ -31,11 +31,6 @@ def confidence(samples: np.ndarray) -> tuple[float, float]:
 def feature_similarity(cells: Sequence[Tensor]) -> Tensor:
     """Return how alike each pair of features is, every cell matched to its closest.
 
-    A feature holds as many cells as the ground its instruments reach, so a pair
-    is read by matching every cell of each to the closest of the other and
-    averaging the two directions, which counts every cell once however many
-    either of them holds.
-
     Args:
         cells: The occupied cells of each feature, of unit length. (Q, D) each.
 
@@ -53,10 +48,6 @@ def feature_similarity(cells: Sequence[Tensor]) -> Tensor:
 
 def grid_metrics(cells: Sequence[Tensor]) -> dict[str, tuple[float, float]]:
     """Return how far a feature's own cells stand apart, and how many it holds.
-
-    The cells of one feature sum to a vector whose square length is what every
-    ordered pair of them agrees on added up, so what two distinct cells agree on
-    is read off without ever holding the pairs.
 
     Args:
         cells: The occupied cells of each feature, of unit length. (Q, D) each.

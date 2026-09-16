@@ -14,25 +14,33 @@ from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from config.paths import REPO_ROOT
-from config.schema import Config
-from logs.console import logger
+from logs.console import rich_logger
 from logs.tracker import log_epoch, log_step, log_summary
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
 from training.loss import csmae_loss
-from training.masking import random_correspondence
-from training.validate import validate
+from training.masking import masked_reconstruction
+from training.validate import validation_terms
 
 BEST_CHECKPOINT = "best.pt"
 
-log = logger(__name__)
+log = rich_logger(__name__)
 
 
 def train(
     model: CrossSensorMAE,
     training: DataLoader,
     validation: DataLoader,
-    config: Config,
+    epochs: int,
+    learning_rate: float,
+    weight_decay: float,
+    warmup_epochs: int,
+    patience: int,
+    mask_ratio: float,
+    consistency: float,
+    uniformity: float,
+    checkpoints: str,
+    seed: int,
     device: torch.device,
     run: Run,
 ) -> Path:
@@ -42,24 +50,32 @@ def train(
         model: The model, already on the device.
         training: The training split, in batches.
         validation: The validation split, in batches.
-        config: How to train, validate and stop.
+        epochs: How many passes over the training features, at most.
+        learning_rate: The peak learning rate, reached after the warmup.
+        weight_decay: The AdamW weight decay.
+        warmup_epochs: How many epochs the rate climbs before the cosine decay.
+        patience: How many epochs without a lower validation loss before it stops.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        consistency: What a grid of one instrument agreeing with the whole counts.
+        uniformity: What the cells standing apart from each other counts.
+        checkpoints: Where checkpoints are written, relative to the repository.
+        seed: What fixes the masks.
         device: Where the model runs.
         run: The tracked run every metric is logged to.
 
     Returns:
         best: The checkpoint with the lowest validation loss.
     """
-    settings = config.training
     # Configure AdamW optimizer with custom hyperparameters
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=settings.learning_rate,
-        weight_decay=settings.weight_decay,
+        lr=learning_rate,
+        weight_decay=weight_decay,
         betas=(0.9, 0.95),
     )
     # Compute total steps and warmup duration
-    steps = len(training) * settings.epochs
-    warmup = len(training) * settings.warmup_epochs
+    steps = len(training) * epochs
+    warmup = len(training) * warmup_epochs
 
     # Schedule function: linear warmup followed by cosine decay
     def lambda_lr_schedule(step: int) -> float:
@@ -69,37 +85,33 @@ def train(
         return 0.5 * (1 + math.cos(math.pi * progress))  # Cosine decay phase
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
-    stopping = EarlyStopping(settings.patience)
-    generator = torch.Generator(device=device).manual_seed(
-        config.dataset.seed
-    )  # Deterministic seed generator
-    best = REPO_ROOT / settings.checkpoints / BEST_CHECKPOINT
+    stopping = EarlyStopping(patience)
+    # Deterministic seed generator
+    generator = torch.Generator(device=device).manual_seed(seed)
+    best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
     step, best_epoch = 0, -1
-    for epoch in range(settings.epochs):
+    for epoch in range(epochs):
         model.train()  # Enable training mode
         for batch, cells, _ in training:
-            # Transfer input tensors to execution device
-            batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            cells = cells.to(device)
-            # Apply dynamic random sensor masking
-            batch = random_correspondence(batch, settings.mask_ratio, generator)
-            # Compute cross-sensor MAE loss terms
-            terms = csmae_loss(
-                model(batch, cells), batch, settings.consistency, settings.uniformity
+            batch, reconstruction = masked_reconstruction(
+                model, batch, cells, mask_ratio, generator, device
             )
+            # Compute cross-sensor MAE loss terms
+            terms = csmae_loss(reconstruction, batch, consistency, uniformity)
             # Backpropagation pass
             optimizer.zero_grad()
             terms["loss"].backward()
-            clip_grad_norm_(
-                model.parameters(), 1.0
-            )  # Stabilize training against exploding gradients
+            # Stabilize training against exploding gradients
+            clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
             step += 1
             log_step(run, step, terms)  # Log step-level metrics to experiment tracker
         # Run validation pass after each epoch
-        metrics = validate(model, validation, config, device)
+        metrics = validation_terms(
+            model, validation, mask_ratio, consistency, uniformity, seed, device
+        )
         log_epoch(run, step, epoch, metrics)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
         # Track early stopping and persist best model weights
@@ -108,9 +120,7 @@ def train(
             best_epoch = epoch
         # Check early stopping patience trigger
         if stopping.stopped:
-            log.info(
-                "no lower validation loss for %d epochs, stopping", settings.patience
-            )
+            log.info("no lower validation loss for %d epochs, stopping", patience)
             break
     # Record final run summary metadata
     log_summary(
