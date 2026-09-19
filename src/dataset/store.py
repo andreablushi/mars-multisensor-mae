@@ -174,10 +174,16 @@ class DatasetBuild:
             # An observation measuring nothing leaves them unset, a sounder nan.
             if any(each is None for each in held):
                 continue
-            moments = tuple(np.asarray(each, dtype=np.float64) for each in held)
-            if not moments[0].sum() or not np.isfinite(moments[1:]).all():
+            counts, mean, deviation = (
+                np.asarray(each, dtype=np.float64) for each in held
+            )
+            # A band the observation never measured holds no mean and says so with
+            # nan, which its count already tells apart and which would pool to nan.
+            mean = np.where(counts > 0, mean, 0.0)
+            deviation = np.where(counts > 0, deviation, 0.0)
+            if not counts.sum() or not np.isfinite([mean, deviation]).all():
                 continue
-            standing[one.instrument].append(moments)
+            standing[one.instrument].append((counts, mean, deviation))
             spreads[one.instrument] = [
                 -1 if holds == WAVELENGTH else 1 for holds in one.axes
             ]
