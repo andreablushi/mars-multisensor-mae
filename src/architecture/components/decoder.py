@@ -7,7 +7,6 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.modality_encoding import ModalityEncoding
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 from dataset.patches import channel_axis
@@ -24,7 +23,7 @@ class Decoder(nn.Module):
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding.
         blocks: The transformer.
-        modality: What the instrument is and what each channel of it measures.
+        channel: What each channel of this instrument is, one vector each. (C, D')
         predict: From a channel's token to its ground samples, shared by all.
     """
 
@@ -54,7 +53,11 @@ class Decoder(nn.Module):
         self.at = channel_axis(axes)
         # Isolate spatial dimensions excluding the channel axis
         self.ground = tuple(size for at, size in enumerate(shape) if at != self.at)
-        self.modality = ModalityEncoding(axes, dim)
+        # One vector per channel, since every crop is laid out on the one fixed grid
+        self.channel = nn.Parameter(
+            torch.zeros(shape[self.at] if self.at is not None else 1, dim)
+        )  # (C, D')
+        nn.init.normal_(self.channel, std=0.02)
         # Project the cross-sensor encoder width up to the decoder width
         self.expand = nn.Linear(shared, dim)
         # Initialize learnable mask token used as a placeholder for hidden patches
@@ -73,7 +76,6 @@ class Decoder(nn.Module):
         context_position: Tensor,
         context_visible: Tensor,
         position: Tensor,
-        channels: Tensor,
         hidden: Tensor,
     ) -> Tensor:
         """Return the predicted values of the hidden patches.
@@ -83,7 +85,6 @@ class Decoder(nn.Module):
             context_position: Where each sits and reaches, in metres. (B, C, 6)
             context_visible: Which of them the encoder read. (B, C)
             position: Where each patch asked for sits and reaches, in metres. (B, K, 6)
-            channels: What each channel of each of those patches measures. (B, K, C)
             hidden: Which of them to predict. (B, K)
 
         Returns:
@@ -101,10 +102,8 @@ class Decoder(nn.Module):
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
         # Run combined sequence through Transformer blocks
         decoded = self.blocks(sequence, attended)  # (B, C + K, D')
-        # Slice reconstructed query tokens and add sensor modality/channel metadata
-        held = decoded[:, read.shape[1] :].unsqueeze(2) + self.modality(
-            channels
-        )  # (B, K, C, D')
+        # Slice reconstructed query tokens and spread each into its own channels
+        held = decoded[:, read.shape[1] :].unsqueeze(2) + self.channel  # (B, K, C, D')
         # Write the tokens out as samples and unflatten to the patch shape
         spread = self.predict(held).unflatten(-1, self.ground)  # (B, K, C, *ground)
         # Move the channel axis back where the patch holds it

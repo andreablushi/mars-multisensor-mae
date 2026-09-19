@@ -17,7 +17,6 @@ from architecture.models import collate
 from config.load import load_config
 from config.paths import REPO_ROOT
 from dataset.patches import patch_sizes, read_patch_layout
-from dataset.wavelengths import band_wavelengths
 from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
 from evaluation.report import report_latent_space, report_reconstruction
 from logs.console import rich_logger
@@ -43,11 +42,9 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
     axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
-    wavelengths = band_wavelengths(shapes, axes)
     loader = build.loaders_by_split(
         sizes,
         shapes,
-        wavelengths,
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,

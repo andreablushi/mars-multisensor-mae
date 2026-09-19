@@ -43,7 +43,6 @@ def read_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
-    wavelengths: Mapping[str, Sequence[float]],
     heights: np.ndarray,
 ) -> dict[str, list[Patch]]:
     """Return every patch of every observation one tile holds, by instrument.
@@ -52,7 +51,6 @@ def read_tile_patches(
         rows: The tile's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along each axis it is cut on.
-        wavelengths: What each band of each spectral sensor is centred on, in nm.
         heights: Where the ground stands over the tile. (N, 3)
 
     Returns:
@@ -67,9 +65,7 @@ def read_tile_patches(
                 continue
             observation = build.read_observation(record.path)
             for at in range(math.prod(counts)):
-                patch = cut_patch(
-                    observation, record, at, size, heights, wavelengths.get(name, ())
-                )
+                patch = cut_patch(observation, record, at, size, heights)
                 if patch.valid.any():
                     held.append(patch)
         read[name] = held
@@ -82,7 +78,6 @@ def cut_patch(
     index: int,
     patchsize: Mapping[str, int],
     heights: np.ndarray,
-    wavelengths: Sequence[float],
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -92,7 +87,6 @@ def cut_patch(
         index: Which patch, counting whole ones as the axes run, the last fastest.
         patchsize: How far a patch of this instrument runs along each axis it is cut on.
         heights: Where the ground stands over the tile. (N, 3)
-        wavelengths: What each band is centred on, in nm, empty for every other.
 
     Returns:
         patch: The patch, copied, with what it measured and where it reaches.
@@ -124,13 +118,11 @@ def cut_patch(
         for name, held in observation.beside.items()
     }
     if DELAY in axes:
-        # A sounder reads one delay at one height, which tells its channels apart.
+        # A sounder reads one delay at one height, which tells its rows apart.
         elevations = beside[HEIGHTS]
-        channels = np.asarray(elevations, np.float32)
         height_m = float(np.mean(elevations))
         height_span_m = float(np.ptp(elevations))
     else:
-        channels = np.asarray(wavelengths or [0.0], np.float32)
         height_span_m = 0.0
         nearest = np.argmin(
             (heights[:, 0] - north_m) ** 2 + (heights[:, 1] - east_m) ** 2
@@ -142,7 +134,6 @@ def cut_patch(
         values=observation.values[window].copy(),
         valid=valid,
         axes=axes,
-        channels=channels,
         origin=origin,
         beside=beside,
         north_m=north_m,

@@ -18,7 +18,6 @@ class Patch:
         values: The patch's own values, in the observation's axis order.
         valid: Whether each sample is a measurement, broadcasting over the values.
         axes: What each axis of the values holds, in that same order.
-        channels: What each channel measures, in its own unit. (C)
         origin: Where the patch starts along each axis of the observation.
         beside: What the instrument stores beside its values, cut to the patch.
         north_m: How far north of the tile centre the patch centre sits, in metres.
@@ -36,7 +35,6 @@ class Patch:
     values: np.ndarray
     valid: np.ndarray
     axes: tuple[str, ...]
-    channels: np.ndarray
     origin: tuple[int, ...]
     beside: dict[str, np.ndarray]
     north_m: float

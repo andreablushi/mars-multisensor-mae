@@ -11,7 +11,7 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import channel_axis, read_tile_patches
+from dataset.patches import read_tile_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -28,7 +28,6 @@ class DatasetSplit(Dataset):
         statistics: What each sensor's values run to over the training split.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        wavelengths: What each band of each spectral sensor is centred on, in nm.
         elevation: The instrument whose values give every surface patch its height.
     """
 
@@ -40,7 +39,6 @@ class DatasetSplit(Dataset):
         statistics: Mapping[str, dict[str, np.ndarray]],
         sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
-        wavelengths: Mapping[str, tuple[float, ...]],
         elevation: str,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
@@ -52,7 +50,6 @@ class DatasetSplit(Dataset):
             statistics: What each sensor's values run to over the training split.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
-            wavelengths: What each band of each spectral sensor is centred on, in nm.
             elevation: The instrument whose values give every surface patch its height.
 
         Raises:
@@ -65,7 +62,6 @@ class DatasetSplit(Dataset):
         self.statistics = statistics
         self.sizes = sizes
         self.shapes = shapes
-        self.wavelengths = wavelengths
         self.elevation = elevation
         for name in sizes:
             if name not in statistics:
@@ -86,7 +82,7 @@ class DatasetSplit(Dataset):
             index: Which read of the split.
 
         Returns:
-            sample: Each sensor's patches: values, valid, channels and position.
+            sample: Each sensor's patches: values, valid and position.
             identity: The tile the read belongs to.
 
         Raises:
@@ -98,9 +94,7 @@ class DatasetSplit(Dataset):
         if not held:
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
         heights = self.build.read_heights(held)
-        read = read_tile_patches(
-            rows, self.build, self.sizes, self.wavelengths, heights
-        )
+        read = read_tile_patches(rows, self.build, self.sizes, heights)
         sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
@@ -125,14 +119,12 @@ def patch_arrays(
         statistics: What its values run to over the training split.
 
     Returns:
-        arrays: The patches under "values", "valid", "channels" and "position".
+        arrays: The patches under "values", "valid" and "position".
     """
     valid_shape = tuple(
         held if holds in (GROUND, WAVELENGTH) else 1
         for held, holds in zip(shape, axes, strict=True)
     )
-    at = channel_axis(axes)
-    channels = shape[at] if at is not None else 1
     scaled = [
         np.where(
             one.valid,
@@ -145,7 +137,6 @@ def patch_arrays(
     return {
         "values": stacked(scaled, tuple(shape), np.float32),
         "valid": stacked([one.valid for one in patches], valid_shape, bool),
-        "channels": stacked([one.channels for one in patches], (channels,), np.float32),
         "position": stacked(
             [
                 np.array(

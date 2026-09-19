@@ -18,7 +18,6 @@ class Tokens:
         values: The normalised patches, zero where padded. (B, K, *P)
         valid: Whether each sample is a measurement. (B, K, *P')
         position: The patch centre and its span, in metres. (B, K, 6)
-        channels: What each channel of each patch measures, in its own unit. (B, K, C)
         visible: Whether a slot holds a patch its encoder may read. (B, K)
         present: Whether each slot holds a patch rather than padding. (B, K)
     """
@@ -26,7 +25,6 @@ class Tokens:
     values: Tensor
     valid: Tensor
     position: Tensor
-    channels: Tensor
     visible: Tensor
     present: Tensor
 
@@ -44,7 +42,6 @@ class Tokens:
             self.values.to(device),
             self.valid.to(device),
             self.position.to(device),
-            self.channels.to(device),
             self.visible.to(device),
             self.present.to(device),
         )

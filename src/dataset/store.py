@@ -240,7 +240,6 @@ class DatasetBuild:
         self,
         sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
-        wavelengths: Mapping[str, tuple[float, ...]],
         collate: Callable,
         shares: Sequence[float],
         seed: int,
@@ -253,7 +252,6 @@ class DatasetBuild:
         Args:
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
-            wavelengths: What each band of each spectral sensor is centred on, in nm.
             collate: How one batch of read tiles becomes what the model is handed.
             shares: The share of the observations each split holds, in the code's order.
             seed: What fixes which split a tile falls in.
@@ -299,7 +297,6 @@ class DatasetBuild:
                     statistics,
                     sizes,
                     shapes,
-                    wavelengths,
                     elevation,
                 ),
                 batch_size=batch_size,

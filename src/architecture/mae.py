@@ -125,7 +125,6 @@ class CrossSensorMAE(nn.Module):
             # Process through sensor-specific stem then map to shared latent space
             stem = self.encoders[name](
                 tokens.values,
-                tokens.channels,
                 tokens.valid,
                 tokens.position,
                 counted[name],
@@ -206,7 +205,6 @@ class CrossSensorMAE(nn.Module):
                     placed,
                     grids[read].occupied,
                     tokens.position,
-                    tokens.channels,
                     hidden,
                 )  # (B, K, *P)
         return Reconstruction(predictions, whole, grids)

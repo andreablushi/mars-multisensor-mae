@@ -17,7 +17,6 @@ from architecture.models import collate
 from config.load import load_config
 from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
-from dataset.wavelengths import band_wavelengths
 from logs.console import rich_logger
 from logs.tracker import start_logging
 from training.train import train
@@ -46,11 +45,9 @@ def run_training(project=None, overrides: list[str] | None = None):
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
     axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
-    wavelengths = band_wavelengths(shapes, axes)
     loaders = build.loaders_by_split(
         sizes,
         shapes,
-        wavelengths,
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
@@ -81,7 +78,6 @@ def run_training(project=None, overrides: list[str] | None = None):
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
             "strides": strides,
-            "wavelengths_nm": wavelengths,
             "tiles": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),
