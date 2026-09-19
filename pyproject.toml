@@ -13,6 +13,7 @@ dependencies = [
     "mars-multisensor-dataset @ https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/main.tar.gz",
     "numpy>=2.5.2",
     "pyarrow>=25.0.1",
+    "python-dotenv>=1.0",
     "pyyaml>=6.0.3",
     "rich>=14.0.0",
     "scikit-learn>=1.7",
