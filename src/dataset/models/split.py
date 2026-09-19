@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -12,7 +11,7 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import channel_axis, draw_tile_patches, read_tile_patches
+from dataset.patches import channel_axis, read_tile_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -23,19 +22,14 @@ class DatasetSplit(Dataset):
 
     Attributes:
         build: The build the tiles are read from.
-        tiles: The index rows of each sensor of each tile, keyed by identity.
+        tiles: The index rows of each sensor of each tile, keyed by tile.
         identities: The tiles, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
         statistics: What each sensor's values run to over the training split.
-        sizes: How far a patch of each sensor runs along an axis it is cut on.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
         wavelengths: What each band of each spectral sensor is centred on, in nm.
         elevation: The instrument whose values give every surface patch its height.
-        budget: How many patches of each instrument one draw takes at most.
-        overlap: The share of each other sensor's patches over the anchor's ground.
-        seed: What fixes every read's draw, or None to draw anew each time.
-        ceiling: How many patches one whole read hands back, or None to draw.
-        kept: What each seeded draw held, since it hands back the same every read.
     """
 
     def __init__(
@@ -44,30 +38,22 @@ class DatasetSplit(Dataset):
         tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
         axes: Mapping[str, tuple[str, ...]],
         statistics: Mapping[str, dict[str, np.ndarray]],
-        sizes: Mapping[str, int],
+        sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
         wavelengths: Mapping[str, tuple[float, ...]],
         elevation: str,
-        budget: int,
-        overlap: float,
-        seed: int | None,
-        ceiling: int | None = None,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
         Args:
             build: The build the tiles are read from.
-            tiles: The index rows of each sensor of each tile, keyed by identity.
+            tiles: The index rows of each sensor of each tile, keyed by tile.
             axes: What each axis of each instrument's values holds.
             statistics: What each sensor's values run to over the training split.
-            sizes: How far a patch of each sensor runs along an axis it is cut on.
+            sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
             wavelengths: What each band of each spectral sensor is centred on, in nm.
             elevation: The instrument whose values give every surface patch its height.
-            budget: How many patches of each instrument one draw takes at most.
-            overlap: The share of each other sensor's patches over the anchor's ground.
-            seed: What fixes every read's draw, or None to draw anew each time.
-            ceiling: How many patches one whole read hands back, or None to draw.
 
         Raises:
             ValueError: When a sensor the model reads has no statistics to scale by.
@@ -81,11 +67,6 @@ class DatasetSplit(Dataset):
         self.shapes = shapes
         self.wavelengths = wavelengths
         self.elevation = elevation
-        self.budget = budget
-        self.overlap = overlap
-        self.seed = seed
-        self.ceiling = ceiling
-        self.kept: dict[str, dict[str, dict[str, np.ndarray]]] = {}
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -106,50 +87,26 @@ class DatasetSplit(Dataset):
 
         Returns:
             sample: Each sensor's patches: values, valid, channels and position.
-            identity: The tile the read belongs to, its class and its name.
+            identity: The tile the read belongs to.
 
         Raises:
             ValueError: When the tile has no elevation to stand on.
         """
         identity = self.identities[index]
-        if identity in self.kept:
-            return self.kept[identity], identity
         rows = self.tiles[identity]
         held = rows.get(self.elevation)
         if not held:
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
         heights = self.build.read_heights(held)
-        if self.ceiling is None:
-            draw = random.Random(
-                None if self.seed is None else f"{self.seed}/{identity}"
-            )
-            read = draw_tile_patches(
-                rows,
-                self.build,
-                self.sizes,
-                self.wavelengths,
-                heights,
-                self.budget,
-                self.overlap,
-                draw,
-            )
-        else:
-            read = read_tile_patches(
-                rows,
-                self.build,
-                self.sizes,
-                self.wavelengths,
-                heights,
-                self.ceiling,
-            )
+        read = read_tile_patches(
+            rows, self.build, self.sizes, self.wavelengths, heights
+        )
         sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
             )
             for name, drawn in read.items()
         }
-        if self.seed is not None and self.ceiling is None:
-            self.kept[identity] = sample
         return sample, identity
 
 

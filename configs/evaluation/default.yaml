@@ -1,7 +1,7 @@
 # How a trained model's latent space is measured against the feature classes.
 
-# The split the latents are read from: train, validation or test.
-split: test
+# The split the latents are read from: train or validation.
+split: validation
 
 # How many nearest latents one retrieval reads, the paper's top ten.
 neighbours: 10

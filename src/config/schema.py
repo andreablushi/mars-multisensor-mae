@@ -12,17 +12,16 @@ class DatasetConfig:
     Attributes:
         build: The build to read, which is published as dataset-<build>.
         root: Where every build sits on this machine, under a directory of its own name.
-        patchsize: How far a patch runs along each cut axis, by instrument.
+        patchsize: How far a patch runs along an axis holding each thing, by
+            instrument, an axis it omits taken whole.
         split: The share of the tiles each split holds, in the code's order.
-        overlap: The share of each other sensor's patches over the anchor's ground.
-        seed: The number that fixes where a tile falls.
+        seed: The number that fixes which split a tile falls in.
     """
 
     build: str
     root: str
-    patchsize: dict[str, int]
+    patchsize: dict[str, dict[str, int]]
     split: list[float]
-    overlap: float
     seed: int
 
 
@@ -63,8 +62,7 @@ class TrainingConfig:
 
     Attributes:
         epochs: How many passes over the training tiles, at most.
-        batch_size: How many tiles one step reads, which settles patches per read.
-        patches_per_step: How many patches one step carries, set by the widest.
+        batch_size: How many tiles one step reads.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
@@ -77,7 +75,6 @@ class TrainingConfig:
 
     epochs: int
     batch_size: int
-    patches_per_step: int
     learning_rate: float
     weight_decay: float
     warmup_epochs: int

@@ -2,10 +2,8 @@
 
 # A split holds a few hundred features, so an epoch is a handful of steps.
 epochs: 1000
-# How many features one step reads, which also settles the patches each read draws.
+# How many tiles one step reads.
 batch_size: 32
-# How many patches of one instrument one step carries, set by the widest it predicts.
-patches_per_step: 512
 learning_rate: 0.00015
 weight_decay: 0.05
 warmup_epochs: 10

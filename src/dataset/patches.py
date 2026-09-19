@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import math
-import random
 from collections.abc import Mapping, Sequence
-from itertools import chain
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import DELAY, GROUND, WAVELENGTH
+from building.common.layout import DELAY, GROUND
 from building.metadata.observation import ObservationMetadata
 from torch import Tensor
 
@@ -23,16 +21,17 @@ HEIGHTS = "elevation"
 
 
 def patch_sizes(
-    instruments: Sequence[str], patchsize: Mapping[str, int]
-) -> dict[str, int]:
-    """Return how far a patch of each instrument runs along an axis it is cut on.
+    instruments: Sequence[str], patchsize: Mapping[str, Mapping[str, int]]
+) -> dict[str, Mapping[str, int]]:
+    """Return how far a patch of each instrument runs along each axis it is cut on.
 
     Args:
         instruments: The instruments the model reads, as ODE names them.
-        patchsize: How far a patch runs, by instrument, keyed as ODE names it.
+        patchsize: How far a patch runs along an axis holding each thing, by
+            instrument, keyed as ODE names it.
 
     Returns:
-        sizes: One length per instrument, keyed as ODE names it.
+        sizes: One length per thing an axis holds, per instrument.
 
     Raises:
         KeyError: When an instrument the model reads has no length written for it.
@@ -40,137 +39,39 @@ def patch_sizes(
     return {name: patchsize[name] for name in instruments}
 
 
-def draw_tile_patches(
-    rows: Mapping[str, Sequence[ObservationMetadata]],
-    build: DatasetBuild,
-    sizes: Mapping[str, int],
-    wavelengths: Mapping[str, Sequence[float]],
-    heights: np.ndarray,
-    budget: int,
-    overlap: float,
-    draw: random.Random,
-) -> dict[str, list[Patch]]:
-    """Return a bounded draw of every instrument's patches over one tile.
-
-    Args:
-        rows: The tile's index rows of each instrument, keyed as ODE names it.
-        build: The published build the observations are read from.
-        sizes: How far a patch of each instrument runs along an axis it is cut on.
-        wavelengths: What each band of each spectral sensor is centred on, in nm.
-        heights: Where the ground stands over the tile. (N, 3)
-        budget: How many patches of each instrument the draw runs to at most.
-        overlap: The share of each other sensor's patches over the anchor's ground.
-        draw: What picks each observation and the patches taken from it.
-
-    Returns:
-        drawn: At most `budget` patches of one observation of each sensor, none empty.
-    """
-    # Initialize storage for records, loaded data, and patch bounding boxes
-    records, observations, boxes = {}, {}, {}
-    for name, size in sizes.items():
-        held = rows.get(name, ())
-        whole = [math.prod(patch_counts(one.shape, one.axes, size)) for one in held]
-        if not sum(whole):
-            continue
-        # Pick one observation randomly, weighted by its total possible patches
-        (picked,) = draw.choices(range(len(held)), weights=whole)
-        records[name] = held[picked]
-        observations[name] = build.read_observation(records[name].path)
-        boxes[name] = patch_coordinates(observations[name], size)
-    drawn: dict[str, list[Patch]] = {name: [] for name in sizes}
-    if not records:
-        return drawn
-    # Identify the anchor instrument (fewest total patches)
-    anchor = min(boxes, key=lambda name: len(boxes[name][0]))
-    covered: tuple[np.ndarray, np.ndarray] | None = None
-    # Process the anchor first, then the remaining instruments
-    for name in (anchor, *(one for one in records if one != anchor)):
-        low, high = boxes[name]
-        if covered is None:
-            # Anchor case: randomly sample up to the budget limit
-            chosen = draw.sample(range(len(low)), min(budget, len(low)))
-        else:
-            # Other instruments: find patches that overlap with the anchor's area
-            against_low, against_high = covered
-            reaching = (
-                (
-                    (low[:, None] <= against_high[None])
-                    & (high[:, None] >= against_low[None])
-                )
-                .all(axis=2)
-                .any(axis=1)
-            )  # (T,)
-            near = np.flatnonzero(reaching).tolist()
-            wanted = min(round(overlap * budget), len(near), budget)
-            # Sample overlapping patches, then fill remaining budget with spares
-            chosen = draw.sample(near, wanted)
-            taken = set(chosen)
-            spare = np.flatnonzero(~reaching).tolist() + [
-                one for one in near if one not in taken
-            ]
-            chosen += draw.sample(spare, min(budget - wanted, len(spare)))
-        # Cut out the valid patches and store them
-        cut = (
-            cut_patch(
-                observations[name],
-                records[name],
-                index,
-                sizes[name],
-                heights,
-                wavelengths.get(name, ()),
-            )
-            for index in chosen
-        )
-        drawn[name] = [patch for patch in cut if patch.valid.any()]
-        # Save anchor coverage bounds on the first iteration
-        if covered is None:
-            covered = (low[chosen], high[chosen])
-    return drawn
-
-
 def read_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
-    sizes: Mapping[str, int],
+    sizes: Mapping[str, Mapping[str, int]],
     wavelengths: Mapping[str, Sequence[float]],
     heights: np.ndarray,
-    ceiling: int,
 ) -> dict[str, list[Patch]]:
-    """Return every patch of every observation of one tile, bounded in count.
+    """Return every patch of every observation one tile holds, by instrument.
 
     Args:
         rows: The tile's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
-        sizes: How far a patch of each instrument runs along an axis it is cut on.
+        sizes: How far a patch of each instrument runs along each axis it is cut on.
         wavelengths: What each band of each spectral sensor is centred on, in nm.
         heights: Where the ground stands over the tile. (N, 3)
-        ceiling: How many patches of each instrument one read hands back at most.
 
     Returns:
         read: The patches of each instrument, none empty, keyed as ODE names it.
     """
     read: dict[str, list[Patch]] = {}
     for name, size in sizes.items():
-        planned = [
-            (record, at)
-            for record in rows.get(name, ())
-            for at in range(math.prod(patch_counts(record.shape, record.axes, size)))
-        ]
-        # Over the ceiling the patches are thinned evenly, so a read still spans it.
-        count = min(len(planned), ceiling)
         held: list[Patch] = []
-        opened: tuple[str, Observation] | None = None
-        # The patches of one observation run together, so it is read once for all.
-        for record, at in (
-            planned[len(planned) * one // count] for one in range(count)
-        ):
-            if opened is None or opened[0] != record.path:
-                opened = (record.path, build.read_observation(record.path))
-            patch = cut_patch(
-                opened[1], record, at, size, heights, wavelengths.get(name, ())
-            )
-            if patch.valid.any():
-                held.append(patch)
+        for record in rows.get(name, ()):
+            counts = patch_counts(record.shape, record.axes, size)
+            if not math.prod(counts):
+                continue
+            observation = build.read_observation(record.path)
+            for at in range(math.prod(counts)):
+                patch = cut_patch(
+                    observation, record, at, size, heights, wavelengths.get(name, ())
+                )
+                if patch.valid.any():
+                    held.append(patch)
         read[name] = held
     return read
 
@@ -179,7 +80,7 @@ def cut_patch(
     observation: Observation,
     record: ObservationMetadata,
     index: int,
-    patchsize: int,
+    patchsize: Mapping[str, int],
     heights: np.ndarray,
     wavelengths: Sequence[float],
 ) -> Patch:
@@ -189,7 +90,7 @@ def cut_patch(
         observation: The observation, read whole.
         record: Its index row, which carries what a patch says about the whole.
         index: Which patch, counting whole ones as the axes run, the last fastest.
-        patchsize: How far a patch of this instrument runs along an axis it is cut on.
+        patchsize: How far a patch of this instrument runs along each axis it is cut on.
         heights: Where the ground stands over the tile. (N, 3)
         wavelengths: What each band is centred on, in nm, empty for every other.
 
@@ -215,11 +116,6 @@ def cut_patch(
         for length, holds in zip(lengths, axes, strict=True)
     )
     valid = observation.measured[taken].reshape(ground_shape).copy()
-    if WAVELENGTH in axes and record.band_valid_count is not None:
-        # A band the observation never measured was filled, so it measures nothing.
-        band_shape = tuple(-1 if holds == WAVELENGTH else 1 for holds in axes)
-        measured = np.asarray(record.band_valid_count) > 0
-        valid = valid & measured.reshape(band_shape)
     by_dim = dict(zip(observation.dims[observation.measurement], window, strict=True))
     beside = {
         name: held[
@@ -298,34 +194,32 @@ def normalize_patches(
 
 
 def patch_lengths(
-    shape: Sequence[int], axes: Sequence[str], patchsize: int
+    shape: Sequence[int], axes: Sequence[str], patchsize: Mapping[str, int]
 ) -> tuple[int, ...]:
     """Return how far one patch runs along each axis of an observation.
 
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        patchsize: How far a patch of this instrument runs along.
+        patchsize: How far a patch runs along an axis holding each thing.
 
     Returns:
-        lengths: One length per axis, in the axes' own order.
+        lengths: One length per axis, an axis the patchsize omits taken whole.
     """
     return tuple(
-        # The wavelength axis is not cut, so a patch runs the whole way along it.
-        size if holds == WAVELENGTH else patchsize
-        for size, holds in zip(shape, axes, strict=True)
+        patchsize.get(holds, size) for size, holds in zip(shape, axes, strict=True)
     )
 
 
 def patch_counts(
-    shape: Sequence[int], axes: Sequence[str], patchsize: int
+    shape: Sequence[int], axes: Sequence[str], patchsize: Mapping[str, int]
 ) -> tuple[int, ...]:
     """Return how many patches fit along each axis of an observation.
 
     Args:
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
-        patchsize: How far a patch of this instrument runs along.
+        patchsize: How far a patch runs along an axis holding each thing.
 
     Returns:
         counts: How many whole patches each axis holds.
@@ -338,52 +232,14 @@ def patch_counts(
     )
 
 
-def patch_coordinates(
-    observation: Observation, patchsize: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return the ground each patch of one observation reaches, by its own index.
-
-    Args:
-        observation: The observation, read whole.
-        patchsize: How far a patch of this instrument runs along an axis it is cut on.
-
-    Returns:
-        low: The least east and north each whole patch reaches, in metres. (T, 2)
-        high: The greatest each reaches, holding the same. (T, 2)
-    """
-    shape, axes = observation.values.shape, observation.axes
-    counts = patch_counts(shape, axes, patchsize)
-    lengths = patch_lengths(shape, axes, patchsize)
-    blocks = tuple(counts[at] for at in observation.ground_axes)
-    spans = tuple(lengths[at] for at in observation.ground_axes)
-    edges = [
-        np.stack(
-            [np.arange(count) * span, (np.arange(count) + 1) * span - 1], axis=1
-        ).ravel()
-        for count, span in zip(blocks, spans, strict=True)
-    ]
-    # A separable position holds one ground axis each and is crossed when it is read.
-    taken = tuple(edges) if observation.described["separable"] else np.ix_(*edges)
-    folded = tuple(chain.from_iterable((count, 2) for count in blocks))
-    over = tuple(range(1, 2 * len(blocks), 2))
-    corners = [
-        one.reshape(folded) for one in reversed(observation.distance_centre_m(taken))
-    ]  # east then north
-    low = np.stack([one.min(over) for one in corners], axis=-1)  # (*blocks, 2)
-    high = np.stack([one.max(over) for one in corners], axis=-1)  # (*blocks, 2)
-    at = np.indices(counts).reshape(len(counts), -1)  # (A, T)
-    held = tuple(at[one] for one in observation.ground_axes)
-    return low[held], high[held]  # (T, 2)
-
-
 def read_patch_layout(
-    build: DatasetBuild, sizes: Mapping[str, int]
+    build: DatasetBuild, sizes: Mapping[str, Mapping[str, int]]
 ) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
     """Return the shape of one patch of each instrument, and how far two sit apart.
 
     Args:
         build: The published build the instruments are read from.
-        sizes: How far a patch of each sensor runs along an axis it is cut on.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
 
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
@@ -396,5 +252,5 @@ def read_patch_layout(
             name: patch_lengths(rows[name].shape, rows[name].axes, size)
             for name, size in sizes.items()
         },
-        {name: size * ground[name] for name, size in sizes.items()},
+        {name: size[GROUND] * ground[name] for name, size in sizes.items()},
     )

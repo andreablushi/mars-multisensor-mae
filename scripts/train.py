@@ -55,8 +55,6 @@ def run_training(project=None, overrides: list[str] | None = None):
         config.dataset.split,
         config.dataset.seed,
         config.model.elevation,
-        max(config.training.patches_per_step // config.training.batch_size, 1),
-        config.dataset.overlap,
         config.training.batch_size,
         stage_workers(TRAINING_STAGE),
     )

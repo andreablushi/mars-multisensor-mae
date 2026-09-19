@@ -36,8 +36,7 @@ DISK_RESERVE_BYTES = 8 * 1024**3
 
 TRAINING_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
-TEST_SPLIT = "test"
-SPLITS = (TRAINING_SPLIT, VALIDATION_SPLIT, TEST_SPLIT)
+SPLITS = (TRAINING_SPLIT, VALIDATION_SPLIT)
 
 
 @dataclass(slots=True)
@@ -239,37 +238,31 @@ class DatasetBuild:
 
     def loaders_by_split(
         self,
-        sizes: Mapping[str, int],
+        sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
         wavelengths: Mapping[str, tuple[float, ...]],
         collate: Callable,
         shares: Sequence[float],
         seed: int,
         elevation: str,
-        budget: int,
-        overlap: float,
         batch_size: int,
         workers: int,
-        ceiling: int | None = None,
     ) -> dict[str, DataLoader]:
         """Return every split of the build in batches, whole tiles at a time.
 
         Args:
-            sizes: How far a patch of each sensor runs along a cut axis, and which ones.
+            sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
             wavelengths: What each band of each spectral sensor is centred on, in nm.
-            collate: How one batch of drawn tiles becomes what the model is handed.
+            collate: How one batch of read tiles becomes what the model is handed.
             shares: The share of the observations each split holds, in the code's order.
-            seed: What fixes where a tile falls, and every draw that is not anew.
+            seed: What fixes which split a tile falls in.
             elevation: The instrument whose values give every surface patch its height.
-            budget: How many patches of each instrument one draw takes at most.
-            overlap: The share of each other sensor's patches over the anchor's ground.
             batch_size: How many tiles one step reads.
             workers: How many processes read tiles beside the training.
-            ceiling: How many patches one whole read hands back, or None to draw.
 
         Returns:
-            loaders: One loader per split, the training one shuffled and the rest not.
+            loaders: One loader per split, the training one shuffled and the other not.
         """
         by_tile = self.read_observation_metadata_by_tile()
         wanted = dict(zip(SPLITS, shares, strict=True))
@@ -295,10 +288,8 @@ class DatasetBuild:
             )
             splits[name].append(tile)
             placed[name] += counted[tile]
-        # Compute stats for the training split and extract instrument axes
         statistics = self.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
-        # Build and return a DataLoader for each data split
         return {
             name: DataLoader(
                 DatasetSplit(
@@ -310,10 +301,6 @@ class DatasetBuild:
                     shapes,
                     wavelengths,
                     elevation,
-                    budget,
-                    overlap,
-                    None if name == TRAINING_SPLIT else seed,
-                    ceiling,
                 ),
                 batch_size=batch_size,
                 shuffle=name == TRAINING_SPLIT,  # Shuffle only for training

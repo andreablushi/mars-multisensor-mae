@@ -6,8 +6,8 @@ name: mae
 instruments: [CTX, CRISM, SHARAD]
 elevation: MOLA
 
-# How far a cell of a feature's grid runs, which the finest instrument settles.
-cell_m: 639.0
+# How far a cell of a tile's grid runs, which the finest instrument's patch settles.
+cell_m: 2560.0
 
 # The instrument encoders, the cross-sensor encoder and the fusion, all one width.
 encoder_dim: 384
