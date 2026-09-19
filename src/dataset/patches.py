@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import DELAY, GROUND
+from building.configs import sharad
 from building.metadata.observation import ObservationMetadata
+from shared.maths import physics
 from torch import Tensor
 
 from dataset.models.observation import Observation
@@ -17,7 +19,20 @@ from dataset.models.patch import Patch
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
-HEIGHTS = "elevation"
+METRES_PER_ROW = physics.SPEED_OF_LIGHT_M_S * sharad.DELAY_INTERVAL_S / 2.0
+
+
+def delay_height_m(rows: np.ndarray) -> np.ndarray:
+    """Return how high above the areoid each delay row of a radargram stands.
+
+    Args:
+        rows: The rows, counted from the top of the window as the radargram is.
+
+    Returns:
+        height_m: The metres above the areoid each of them sounds, the row the
+            areoid itself lands on standing at nothing.
+    """
+    return (sharad.AREOID_ROW - np.asarray(rows, np.float64)) * METRES_PER_ROW
 
 
 def patch_sizes(
@@ -118,10 +133,11 @@ def cut_patch(
         for name, held in observation.beside.items()
     }
     if DELAY in axes:
-        # A sounder reads one delay at one height, which tells its rows apart.
-        elevations = beside[HEIGHTS]
-        height_m = float(np.mean(elevations))
-        height_span_m = float(np.ptp(elevations))
+        # A sounder reads its height off the delay, the same frame the heights are in.
+        at = axes.index(DELAY)
+        stood = delay_height_m(np.arange(origin[at], origin[at] + lengths[at]))
+        height_m = float(stood.mean())
+        height_span_m = float(np.ptp(stood))
     else:
         height_span_m = 0.0
         nearest = np.argmin(

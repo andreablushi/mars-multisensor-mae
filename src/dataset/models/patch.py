@@ -22,10 +22,12 @@ class Patch:
         beside: What the instrument stores beside its values, cut to the patch.
         north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
-        height_m: How high above the areoid the patch centre stands, in metres.
+        height_m: How high above the areoid the patch centre stands, in metres,
+            read off the delay for a sounder and off the elevation for the rest.
         north_span_m: How far the patch reaches northward, in metres.
         east_span_m: How far it reaches eastward, in metres.
-        height_span_m: How far it reaches in height, in metres.
+        height_span_m: How far it reaches in height, in metres, which is nothing
+            for a patch lying on the ground.
         t_start: When the observation started, or None where none is published.
         t_end: When it ended, or None for the same reason.
     """
