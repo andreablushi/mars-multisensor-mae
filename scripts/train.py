@@ -94,8 +94,6 @@ def run_training(project=None, overrides: list[str] | None = None):
         config.training.warmup_epochs,
         config.training.patience,
         config.training.mask_ratio,
-        config.training.consistency,
-        config.training.uniformity,
         config.training.checkpoints,
         config.dataset.seed,
         device,

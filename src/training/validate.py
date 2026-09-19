@@ -16,8 +16,6 @@ def validation_terms(
     model: CrossSensorMAE,
     loader: DataLoader,
     mask_ratio: float,
-    consistency: float,
-    uniformity: float,
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
@@ -27,8 +25,6 @@ def validation_terms(
         model: The model, which is switched to evaluation.
         loader: The split, in batches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        consistency: What a grid of one instrument agreeing with the whole counts.
-        uniformity: What the cells standing apart from each other counts.
         seed: What fixes the masks.
         device: Where the model runs.
 
@@ -47,7 +43,7 @@ def validation_terms(
                 model, batch, cells, mask_ratio, generator, device
             )
             # Compute loss metrics on the masked batch
-            terms = csmae_loss(reconstruction, batch, consistency, uniformity)
+            terms = csmae_loss(reconstruction, batch)
             # Sum each individual loss term for batch averaging later
             for name, value in terms.items():
                 totals[name] += float(value)

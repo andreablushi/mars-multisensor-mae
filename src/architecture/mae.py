@@ -23,12 +23,10 @@ class Reconstruction:
 
     Attributes:
         predictions: The predicted patches, by the sensor asked and the sensor read.
-        grid: The grid every instrument the tile holds was read into.
         grids: The grid each instrument alone was read into, keyed as ODE names it.
     """
 
     predictions: dict[tuple[str, str], Tensor]
-    grid: TileGrid
     grids: dict[str, TileGrid]
 
 
@@ -188,8 +186,7 @@ class CrossSensorMAE(nn.Module):
         # Encode visible (unmasked) context tokens for each sensor
         counted = {name: one.visible for name, one in batch.items()}
         encoded = self.shared_tokens(batch, counted)
-        # The grid of all the instruments, and the grid each of them makes alone
-        whole = self.gridded(encoded, batch, counted, cells, list(batch))
+        # The grid each instrument makes alone, which is all a decoder ever reads
         grids = {
             name: self.gridded(encoded, batch, counted, cells, [name]) for name in batch
         }
@@ -207,4 +204,4 @@ class CrossSensorMAE(nn.Module):
                     tokens.position,
                     hidden,
                 )  # (B, K, *P)
-        return Reconstruction(predictions, whole, grids)
+        return Reconstruction(predictions, grids)

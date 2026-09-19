@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 from architecture.mae import Reconstruction
-from architecture.models import TileGrid, Tokens
+from architecture.models import Tokens
 from dataset.patches import normalize_patches
 
 
@@ -32,57 +32,17 @@ def reconstruction_error(
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
 
 
-def consistency_loss(whole: TileGrid, part: TileGrid) -> Tensor:
-    """Return how far a grid read from some instruments stands from the grid of all.
-
-    Args:
-        whole: The grid every instrument the tile holds was read into.
-        part: The grid one of them alone was read into.
-
-    Returns:
-        loss: Half one minus their agreement, over the cells both of them reach.
-    """
-    counted = (whole.occupied & part.occupied).to(whole.values.dtype)  # (B, Q)
-    agreement = (whole.values * part.values).sum(dim=-1)  # (B, Q)
-    error = (1 - agreement) / 2  # (B, Q)
-    return (error * counted).sum() / counted.sum().clamp(min=1)  # ()
-
-
-def uniformity_loss(grid: TileGrid) -> Tensor:
-    """Return how far the cells stand from spread evenly over the space they live in.
-
-    Two cells drawn from the training set at random stand orthogonal where the
-    cells are spread, so the batch is rolled to pair each cell with one of
-    another tile and their agreement is what is made small.
-
-    Args:
-        grid: The grid every instrument the tile holds was read into.
-
-    Returns:
-        loss: The mean agreement of those pairs, without regard to its sign.
-    """
-    against = grid.values.roll(1, dims=0)  # (B, Q, D)
-    paired = (grid.occupied & grid.occupied.roll(1, dims=0)).to(grid.values.dtype)
-    agreement = (grid.values * against).sum(dim=-1).abs()  # (B, Q)
-    return (agreement * paired).sum() / paired.sum().clamp(min=1)  # ()
-
-
 def csmae_loss(
-    reconstruction: Reconstruction,
-    batch: dict[str, Tokens],
-    consistency_weight: float,
-    uniformity_weight: float,
+    reconstruction: Reconstruction, batch: dict[str, Tokens]
 ) -> dict[str, Tensor]:
     """Return every term of the objective, and their sum under "loss".
 
     Args:
         reconstruction: What the masked pass predicted, and the grids it read into.
         batch: What it was handed.
-        consistency_weight: What one instrument's grid agreeing with the whole counts.
-        uniformity_weight: What the cells standing apart from each other counts.
 
     Returns:
-        terms: "umr/<sensor>", "cmr/<sensor>", "consistency", "uniformity", and "loss".
+        terms: "umr/<sensor>", "cmr/<sensor>", and "loss".
     """
     terms = {}
     total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()
@@ -113,15 +73,5 @@ def csmae_loss(
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
         total = total + umr + cmr
-    held = [
-        consistency_loss(reconstruction.grid, one)
-        for one in reconstruction.grids.values()
-    ]
-    terms["consistency"] = torch.stack(held).mean() if held else total  # ()
-    terms["uniformity"] = uniformity_loss(reconstruction.grid)  # ()
-    terms["loss"] = (
-        total
-        + consistency_weight * terms["consistency"]
-        + uniformity_weight * terms["uniformity"]
-    )  # ()
+    terms["loss"] = total  # ()
     return terms

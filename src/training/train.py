@@ -37,8 +37,6 @@ def train(
     warmup_epochs: int,
     patience: int,
     mask_ratio: float,
-    consistency: float,
-    uniformity: float,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -56,8 +54,6 @@ def train(
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         patience: How many epochs without a lower validation loss before it stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        consistency: What a grid of one instrument agreeing with the whole counts.
-        uniformity: What the cells standing apart from each other counts.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -98,7 +94,7 @@ def train(
                 model, batch, cells, mask_ratio, generator, device
             )
             # Compute cross-sensor MAE loss terms
-            terms = csmae_loss(reconstruction, batch, consistency, uniformity)
+            terms = csmae_loss(reconstruction, batch)
             # Backpropagation pass
             optimizer.zero_grad()
             terms["loss"].backward()
@@ -109,9 +105,7 @@ def train(
             step += 1
             log_step(run, step, terms)  # Log step-level metrics to experiment tracker
         # Run validation pass after each epoch
-        metrics = validation_terms(
-            model, validation, mask_ratio, consistency, uniformity, seed, device
-        )
+        metrics = validation_terms(model, validation, mask_ratio, seed, device)
         log_epoch(run, step, epoch, metrics)
         log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
         # Track early stopping and persist best model weights

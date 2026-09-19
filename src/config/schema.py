@@ -68,8 +68,6 @@ class TrainingConfig:
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         patience: How many epochs without a lower validation loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        consistency: What a grid of one instrument agreeing with the whole counts.
-        uniformity: What the cells standing apart from each other counts.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -80,8 +78,6 @@ class TrainingConfig:
     warmup_epochs: int
     patience: int
     mask_ratio: float
-    consistency: float
-    uniformity: float
     checkpoints: str
 
 

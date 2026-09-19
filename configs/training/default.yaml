@@ -12,9 +12,5 @@ patience: 25
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
-# What grids agreeing and cells standing apart count, the reconstruction weighed at one.
-consistency: 0.02
-uniformity: 0.05
-
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints
