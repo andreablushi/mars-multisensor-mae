@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import DELAY, GROUND
+from building.common.layout import DELAY, GROUND, WAVELENGTH
 from building.configs import sharad
 from building.metadata.observation import ObservationMetadata
 from shared.maths import physics
@@ -125,6 +125,11 @@ def cut_patch(
         for length, holds in zip(lengths, axes, strict=True)
     )
     valid = observation.measured[taken].reshape(ground_shape).copy()
+    if record.band_valid_count is not None:
+        # A band the observation never measured was filled, so it measures nothing.
+        band_shape = tuple(-1 if holds == WAVELENGTH else 1 for holds in axes)
+        measured = np.asarray(record.band_valid_count) > 0
+        valid = valid & measured.reshape(band_shape)
     by_dim = dict(zip(observation.dims[observation.measurement], window, strict=True))
     beside = {
         name: held[
