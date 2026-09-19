@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import torch
+from building.configs import sharad
 from torch import Tensor, nn
 from torch.nn import functional
 
@@ -25,8 +26,9 @@ def cell_positions(offset: Tensor, cell_m: float) -> Tensor:
     centre = (offset + 0.5) * cell_m  # (B, Q, 2)
     edge = centre.new_zeros(*centre.shape[:-1], 1)  # (B, Q, 1)
     spans = centre.new_full((*centre.shape[:-1], 2), cell_m)  # (B, Q, 2)
-    # A cell stands on the ground, spans its own width, and reaches no height.
-    return torch.cat([centre, edge, spans, edge], dim=-1)  # (B, Q, 6)
+    # A cell stands on the datum, spans its own width, and reaches no delay.
+    datum = centre.new_full((*centre.shape[:-1], 1), float(sharad.AREOID_ROW))
+    return torch.cat([centre, datum, spans, edge], dim=-1)  # (B, Q, 6)
 
 
 class CrossAttentionFusion(nn.Module):

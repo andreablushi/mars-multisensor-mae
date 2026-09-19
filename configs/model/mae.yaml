@@ -2,9 +2,10 @@
 
 name: mae
 
-# The instruments read as tokens, MOLA instead giving every surface patch its height.
+# The instruments read as tokens, MOLA instead giving every surface patch the
+# radargram row its echo lands on, so every patch is placed in delay alone.
 instruments: [CTX, CRISM, SHARAD]
-elevation: MOLA
+delay: MOLA
 
 # How far a cell of a tile's grid runs, which the finest instrument's patch settles.
 cell_m: 2560.0

@@ -47,7 +47,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
-        config.model.elevation,
+        config.model.delay,
         config.training.batch_size,
         stage_workers(EVALUATION_STAGE),
     )[config.evaluation.split]

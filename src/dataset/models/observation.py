@@ -25,6 +25,7 @@ class Observation:
         measured: Whether each ground sample measures the tile, over ground alone.
         north: How far each sample sits north of the tile centre, as written.
         east: How far it sits eastward, holding the same.
+        beside: What else the instrument stores, of what the read asked for.
         described: What the build wrote beside the arrays, which places them.
     """
 
@@ -37,6 +38,7 @@ class Observation:
     measured: np.ndarray
     north: np.ndarray
     east: np.ndarray
+    beside: dict[str, np.ndarray]
     described: dict
 
     @property

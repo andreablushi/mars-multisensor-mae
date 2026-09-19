@@ -8,30 +8,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import DELAY, GROUND, WAVELENGTH
-from building.configs import sharad
 from building.metadata.observation import ObservationMetadata
-from shared.maths import physics
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
-
-METRES_PER_ROW = physics.SPEED_OF_LIGHT_M_S * sharad.DELAY_INTERVAL_S / 2.0
-
-
-def delay_height_m(rows: np.ndarray) -> np.ndarray:
-    """Return how high above the areoid each delay row of a radargram stands.
-
-    Args:
-        rows: The rows, counted from the top of the window as the radargram is.
-
-    Returns:
-        height_m: The metres above the areoid each of them sounds, the row the
-            areoid itself lands on standing at nothing.
-    """
-    return (sharad.AREOID_ROW - np.asarray(rows, np.float64)) * METRES_PER_ROW
 
 
 def patch_sizes(
@@ -57,7 +40,7 @@ def read_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
-    heights: np.ndarray,
+    delays: np.ndarray,
 ) -> dict[str, list[Patch]]:
     """Return every patch of every observation one tile holds, by instrument.
 
@@ -65,7 +48,7 @@ def read_tile_patches(
         rows: The tile's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along each axis it is cut on.
-        heights: Where the ground stands over the tile. (N, 3)
+        delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
         read: The patches of each instrument, none empty, keyed as ODE names it.
@@ -80,7 +63,7 @@ def read_tile_patches(
                 continue
             observation = build.read_observation(record.path)
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, record, at, lengths, counts, heights)
+                patch = cut_patch(observation, record, at, lengths, counts, delays)
                 if patch.valid.any():
                     held.append(patch)
         read[name] = held
@@ -93,7 +76,7 @@ def cut_patch(
     index: int,
     lengths: tuple[int, ...],
     counts: tuple[int, ...],
-    heights: np.ndarray,
+    delays: np.ndarray,
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -103,7 +86,7 @@ def cut_patch(
         index: Which patch, counting whole ones as the axes run, the last fastest.
         lengths: How far one patch of it runs along each axis.
         counts: How many whole patches each of those axes holds.
-        heights: Where the ground stands over the tile. (N, 3)
+        delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
         patch: The patch, copied, with what it measured and where it reaches.
@@ -131,17 +114,18 @@ def cut_patch(
         measured = np.asarray(record.band_valid_count) > 0
         valid = valid & measured.reshape(band_shape)
     if DELAY in axes:
-        # A sounder reads its height off the delay, the same frame the heights are in.
+        # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(DELAY)
-        stood = delay_height_m(np.arange(origin[at], origin[at] + lengths[at]))
-        height_m = float(stood.mean())
-        height_span_m = float(np.ptp(stood))
+        rows = np.arange(origin[at], origin[at] + lengths[at])
+        delay = float(rows.mean())
+        delay_span = float(np.ptp(rows))
     else:
-        height_span_m = 0.0
+        # A patch on the ground sounds at one row, the one its surface echo lands on.
+        delay_span = 0.0
         nearest = np.argmin(
-            (heights[:, 0] - north_m) ** 2 + (heights[:, 1] - east_m) ** 2
+            (delays[:, 0] - north_m) ** 2 + (delays[:, 1] - east_m) ** 2
         )
-        height_m = float(heights[nearest, 2])
+        delay = float(delays[nearest, 2])
     return Patch(
         instrument=observation.instrument,
         identifier=observation.identifier,
@@ -151,10 +135,10 @@ def cut_patch(
         origin=origin,
         north_m=north_m,
         east_m=east_m,
-        height_m=height_m,
+        delay=delay,
         north_span_m=float(np.ptp(north)),
         east_span_m=float(np.ptp(east)),
-        height_span_m=height_span_m,
+        delay_span=delay_span,
         t_start=record.t_start,
         t_end=record.t_end,
     )

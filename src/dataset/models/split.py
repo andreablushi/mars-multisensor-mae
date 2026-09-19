@@ -28,7 +28,7 @@ class DatasetSplit(Dataset):
         statistics: What each sensor's values run to over the training split.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        elevation: The instrument whose values give every surface patch its height.
+        delay: The instrument whose rows give every surface patch its delay.
     """
 
     def __init__(
@@ -39,7 +39,7 @@ class DatasetSplit(Dataset):
         statistics: Mapping[str, dict[str, np.ndarray]],
         sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
-        elevation: str,
+        delay: str,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
@@ -50,7 +50,7 @@ class DatasetSplit(Dataset):
             statistics: What each sensor's values run to over the training split.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
-            elevation: The instrument whose values give every surface patch its height.
+            delay: The instrument whose rows give every surface patch its delay.
 
         Raises:
             ValueError: When a sensor the model reads has no statistics to scale by.
@@ -62,7 +62,7 @@ class DatasetSplit(Dataset):
         self.statistics = statistics
         self.sizes = sizes
         self.shapes = shapes
-        self.elevation = elevation
+        self.delay = delay
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -86,15 +86,15 @@ class DatasetSplit(Dataset):
             identity: The tile the read belongs to.
 
         Raises:
-            ValueError: When the tile has no elevation to stand on.
+            ValueError: When the tile has no delay to stand on.
         """
         identity = self.identities[index]
         rows = self.tiles[identity]
-        held = rows.get(self.elevation)
+        held = rows.get(self.delay)
         if not held:
-            raise ValueError(f"{identity} has no {self.elevation} to stand on")
-        heights = self.build.read_heights(held)
-        read = read_tile_patches(rows, self.build, self.sizes, heights)
+            raise ValueError(f"{identity} has no {self.delay} to stand on")
+        delays = self.build.read_delays(held)
+        read = read_tile_patches(rows, self.build, self.sizes, delays)
         sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
@@ -143,10 +143,10 @@ def patch_arrays(
                     [
                         one.east_m,
                         one.north_m,
-                        one.height_m,
+                        one.delay,
                         one.east_span_m,
                         one.north_span_m,
-                        one.height_span_m,
+                        one.delay_span,
                     ],
                     np.float32,
                 )

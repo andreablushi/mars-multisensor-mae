@@ -31,8 +31,8 @@ class ModelConfig:
 
     Attributes:
         name: The architecture.
-        instruments: The instruments whose patches become tokens, the elevation apart.
-        elevation: The instrument whose values give every surface patch its height.
+        instruments: The instruments whose patches become tokens, the delay one apart.
+        delay: The instrument whose rows give every surface patch its delay.
         cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
         encoder_heads: How many attention heads every encoder and the fusion run.
@@ -45,7 +45,7 @@ class ModelConfig:
 
     name: str
     instruments: list[str]
-    elevation: str
+    delay: str
     cell_m: float
     encoder_dim: int
     encoder_heads: int

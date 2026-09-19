@@ -51,7 +51,7 @@ def run_training(project=None, overrides: list[str] | None = None):
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
-        config.model.elevation,
+        config.model.delay,
         config.training.batch_size,
         stage_workers(TRAINING_STAGE),
     )

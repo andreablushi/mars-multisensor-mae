@@ -32,6 +32,9 @@ from dataset.models.split import DatasetSplit
 
 DISK_RESERVE_BYTES = 8 * 1024**3
 
+# What MOLA stores beside its heights: the radargram row each of them sounds at.
+DELAY_PLANE = "delay"
+
 TRAINING_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
 SPLITS = (TRAINING_SPLIT, VALIDATION_SPLIT)
@@ -119,35 +122,33 @@ class DatasetBuild:
             standing[one.instrument].append(min(one.sample_spacing_m))
         return {name: float(np.median(held)) for name, held in standing.items()}
 
-    def read_heights(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
-        """Return every height the elevation instrument measured over one tile.
+    def read_delays(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
+        """Return the row every sample of the delay instrument sounds at, over a tile.
 
         Args:
-            observations: The tile's index rows of the elevation instrument.
+            observations: The tile's index rows of the instrument carrying the delay.
 
         Returns:
-            heights: One row per sample: north, east and height, in metres. (N, 3)
+            delays: One row per sample: north, east and the delay row. (N, 3)
 
         Raises:
             ValueError: When none of them measured anything.
         """
         placed = []
         for record in observations:
-            observation = self.read_observation(record.path)
+            observation = self.read_observation(record.path, (DELAY_PLANE,))
             measured = observation.measured
             north, east = observation.distance_centre_m()
+            rows = observation.beside[DELAY_PLANE]
             placed.append(
-                np.stack(
-                    [north[measured], east[measured], observation.values[measured]],
-                    axis=1,
-                )
+                np.stack([north[measured], east[measured], rows[measured]], axis=1)
             )  # (n, 3)
-        heights = np.concatenate(placed).astype(np.float64)  # (N, 3)
-        if not heights.size:
+        delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
+        if not delays.size:
             raise ValueError(
                 f"nothing measured over {[one.identity for one in observations]}"
             )
-        return heights
+        return delays
 
     def read_statistics_by_instrument(
         self, tiles: Collection[str] | None = None
@@ -209,11 +210,12 @@ class DatasetBuild:
             }
         return statistics
 
-    def read_observation(self, path: str) -> Observation:
+    def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.
 
         Args:
             path: Where that object sits, as the index names it.
+            beside: What else the instrument stores to read, none of it by default.
 
         Returns:
             observation: The observation, its arrays as the build wrote them.
@@ -221,10 +223,10 @@ class DatasetBuild:
         with np.load(io.BytesIO(self.read_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
-            # Only these are read, so what is stored beside them stays packed.
+            # Only these are read, so what is not asked for stays packed.
             arrays = {
                 name: held[name]
-                for name in (described["measurement"], MEASURED, NORTH, EAST)
+                for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         return Observation(
             instrument=described["instrument"],
@@ -236,6 +238,7 @@ class DatasetBuild:
             measured=arrays[MEASURED],
             north=arrays[NORTH],
             east=arrays[EAST],
+            beside={name: arrays[name] for name in beside},
             described=described,
         )
 
@@ -246,7 +249,7 @@ class DatasetBuild:
         collate: Callable,
         shares: Sequence[float],
         seed: int,
-        elevation: str,
+        delay: str,
         batch_size: int,
         workers: int,
     ) -> dict[str, DataLoader]:
@@ -258,7 +261,7 @@ class DatasetBuild:
             collate: How one batch of read tiles becomes what the model is handed.
             shares: The share of the observations each split holds, in the code's order.
             seed: What fixes which split a tile falls in.
-            elevation: The instrument whose values give every surface patch its height.
+            delay: The instrument whose rows give every surface patch its delay.
             batch_size: How many tiles one step reads.
             workers: How many processes read tiles beside the training.
 
@@ -300,7 +303,7 @@ class DatasetBuild:
                     statistics,
                     sizes,
                     shapes,
-                    elevation,
+                    delay,
                 ),
                 batch_size=batch_size,
                 shuffle=name == TRAINING_SPLIT,  # Shuffle only for training
