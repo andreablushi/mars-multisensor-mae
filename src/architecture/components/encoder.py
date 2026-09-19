@@ -4,29 +4,11 @@ from __future__ import annotations
 
 import math
 
-import torch
 from torch import Tensor, nn
 
+from architecture.components.channels import by_channel, channel_axis, channel_vectors
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
-from dataset.patches import channel_axis
-
-
-def by_channel(held: Tensor, at: int | None) -> Tensor:
-    """Return one batch of patches as the ground samples of each of their channels.
-
-    Args:
-        held: One batch of patches, or of their validity. (B, K, *P)
-        at: Which axis the channels run along, or None where a patch holds one.
-
-    Returns:
-        samples: The ground samples of each channel. (B, K, C, G)
-    """
-    if at is None:
-        # Reshape single-channel patch to (B, K, 1, G) with single channel dimension
-        return held.flatten(2).unsqueeze(2)  # (B, K, 1, G)
-    # Move the channel axis forward and flatten the ground samples
-    return held.movedim(2 + at, 2).flatten(3)  # (B, K, C, G)
 
 
 class Encoder(nn.Module):
@@ -67,10 +49,7 @@ class Encoder(nn.Module):
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
         # One vector per channel, since every crop is laid out on the one fixed grid
-        self.channel = nn.Parameter(
-            torch.zeros(shape[self.at] if self.at is not None else 1, dim)
-        )  # (C, D)
-        nn.init.normal_(self.channel, std=0.02)
+        self.channel = channel_vectors(shape, self.at, dim)  # (C, D)
         # Module for continuous geospatial (metric coordinate) positional embeddings
         self.place = PositionalEncoding(dim, stride)
         # Transformer encoder stack for intra-sensor self-attention

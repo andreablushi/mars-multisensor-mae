@@ -19,7 +19,6 @@ class Patch:
         valid: Whether each sample is a measurement, broadcasting over the values.
         axes: What each axis of the values holds, in that same order.
         origin: Where the patch starts along each axis of the observation.
-        beside: What the instrument stores beside its values, cut to the patch.
         north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
         height_m: How high above the areoid the patch centre stands, in metres,
@@ -38,7 +37,6 @@ class Patch:
     valid: np.ndarray
     axes: tuple[str, ...]
     origin: tuple[int, ...]
-    beside: dict[str, np.ndarray]
     north_m: float
     east_m: float
     height_m: float

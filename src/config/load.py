@@ -15,7 +15,7 @@ def load_config(overrides: Sequence[str] = ()) -> Config:
     """Return what one run is settled from, composed and read under the schema.
 
     Args:
-        overrides: What to compose it with, as hydra spells them: `dataset=full`.
+        overrides: What to compose it with, as hydra spells them: `dataset=training`.
 
     Returns:
         config: The run's choices, every key checked against the schema.

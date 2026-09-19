@@ -20,11 +20,9 @@ from building.common.layout import WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import (
     EAST,
-    INSIDE,
     MEASURED,
     META,
     NORTH,
-    VALID,
 )
 from shared.disk import parquet
 from torch.utils.data import DataLoader
@@ -214,25 +212,24 @@ class DatasetBuild:
         Returns:
             observation: The observation, its arrays as the build wrote them.
         """
-        # What INSIDE and VALID hold is what MEASURED holds, and reading one of
-        # them costs as much as reading the values, so they are left unread.
-        skipped = (META, INSIDE, VALID)
         with np.load(io.BytesIO(self.read_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
-            arrays = {name: held[name] for name in held.files if name not in skipped}
+            # Only these are read, so what is stored beside them stays packed.
+            arrays = {
+                name: held[name]
+                for name in (described["measurement"], MEASURED, NORTH, EAST)
+            }
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
             measurement=described["measurement"],
-            values=arrays.pop(described["measurement"]),
+            values=arrays[described["measurement"]],
             axes=tuple(described["axes"]),
             dims={name: tuple(held) for name, held in described["dims"].items()},
-            measured=arrays.pop(MEASURED),
-            north=arrays.pop(NORTH),
-            east=arrays.pop(EAST),
-            # What the pops left is what the instrument stores beside its values.
-            beside=arrays,
+            measured=arrays[MEASURED],
+            north=arrays[NORTH],
+            east=arrays[EAST],
             described=described,
         )
 

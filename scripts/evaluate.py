@@ -30,7 +30,7 @@ log = rich_logger(__name__)
 
 @handler()
 def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
-    """Measure what one published model's latent space made of the tile classes.
+    """Measure what one published model's latent space made of a split of tiles.
 
     Args:
         project: The DigitalHub project the model was published in, unused here.
@@ -78,12 +78,8 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
             "tiles": len(loader.dataset),
         },
     )
-    run.log(
-        {
-            f"latent/{name}": value
-            for name, value in evaluate_latent_space(model, loader, device).items()
-        }
-    )
+    grids = evaluate_latent_space(model, loader, device)
+    run.log({"latent/tiles": len(grids)})
     run.finish()
 
 

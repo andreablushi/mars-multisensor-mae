@@ -11,7 +11,6 @@ from building.common.layout import DELAY, GROUND, WAVELENGTH
 from building.configs import sharad
 from building.metadata.observation import ObservationMetadata
 from shared.maths import physics
-from torch import Tensor
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
@@ -75,12 +74,13 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
+            lengths = patch_lengths(record.shape, record.axes, size)
             counts = patch_counts(record.shape, record.axes, size)
             if not math.prod(counts):
                 continue
             observation = build.read_observation(record.path)
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, record, at, size, heights)
+                patch = cut_patch(observation, record, at, lengths, counts, heights)
                 if patch.valid.any():
                     held.append(patch)
         read[name] = held
@@ -91,7 +91,8 @@ def cut_patch(
     observation: Observation,
     record: ObservationMetadata,
     index: int,
-    patchsize: Mapping[str, int],
+    lengths: tuple[int, ...],
+    counts: tuple[int, ...],
     heights: np.ndarray,
 ) -> Patch:
     """Return one whole patch of one observation.
@@ -100,15 +101,14 @@ def cut_patch(
         observation: The observation, read whole.
         record: Its index row, which carries what a patch says about the whole.
         index: Which patch, counting whole ones as the axes run, the last fastest.
-        patchsize: How far a patch of this instrument runs along each axis it is cut on.
+        lengths: How far one patch of it runs along each axis.
+        counts: How many whole patches each of those axes holds.
         heights: Where the ground stands over the tile. (N, 3)
 
     Returns:
         patch: The patch, copied, with what it measured and where it reaches.
     """
-    shape, axes = observation.values.shape, observation.axes
-    lengths = patch_lengths(shape, axes, patchsize)
-    counts = patch_counts(shape, axes, patchsize)
+    axes = observation.axes
     origin = tuple(
         int(at) * length
         for at, length in zip(np.unravel_index(index, counts), lengths, strict=True)
@@ -130,13 +130,6 @@ def cut_patch(
         band_shape = tuple(-1 if holds == WAVELENGTH else 1 for holds in axes)
         measured = np.asarray(record.band_valid_count) > 0
         valid = valid & measured.reshape(band_shape)
-    by_dim = dict(zip(observation.dims[observation.measurement], window, strict=True))
-    beside = {
-        name: held[
-            tuple(by_dim.get(one, slice(None)) for one in observation.dims[name])
-        ].copy()
-        for name, held in observation.beside.items()
-    }
     if DELAY in axes:
         # A sounder reads its height off the delay, the same frame the heights are in.
         at = axes.index(DELAY)
@@ -156,7 +149,6 @@ def cut_patch(
         valid=valid,
         axes=axes,
         origin=origin,
-        beside=beside,
         north_m=north_m,
         east_m=east_m,
         height_m=height_m,
@@ -166,43 +158,6 @@ def cut_patch(
         t_start=record.t_start,
         t_end=record.t_end,
     )
-
-
-def channel_axis(axes: Sequence[str]) -> int | None:
-    """Return which axis of a patch its channels run along.
-
-    Args:
-        axes: What each axis of the instrument's values holds.
-
-    Returns:
-        at: The one axis that is not ground, or None where a patch is ground alone.
-    """
-    return next((at for at, holds in enumerate(axes) if holds != GROUND), None)
-
-
-def normalize_patches(
-    values: Tensor, valid: Tensor
-) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Return each patch centred and scaled by the measured samples of its own.
-
-    Args:
-        values: The patches, as the model was handed them. (B, K, *P)
-        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
-
-    Returns:
-        target: The patches, each of zero mean and unit deviation. (B, K, *P)
-        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
-        mean: What each patch was centred by, to undo it. (B, K, 1...)
-        deviation: What each was scaled by, holding the same. (B, K, 1...)
-    """
-    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
-    over = tuple(range(2, values.dim()))
-    spread = (*values.shape[:2], *([1] * len(over)))
-    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
-    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
-    return (values - mean) / deviation, counted, mean, deviation
 
 
 def patch_lengths(

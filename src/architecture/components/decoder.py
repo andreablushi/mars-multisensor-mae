@@ -7,9 +7,9 @@ import math
 import torch
 from torch import Tensor, nn
 
+from architecture.components.channels import channel_axis, channel_vectors
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
-from dataset.patches import channel_axis
 
 
 class Decoder(nn.Module):
@@ -54,10 +54,7 @@ class Decoder(nn.Module):
         # Isolate spatial dimensions excluding the channel axis
         self.ground = tuple(size for at, size in enumerate(shape) if at != self.at)
         # One vector per channel, since every crop is laid out on the one fixed grid
-        self.channel = nn.Parameter(
-            torch.zeros(shape[self.at] if self.at is not None else 1, dim)
-        )  # (C, D')
-        nn.init.normal_(self.channel, std=0.02)
+        self.channel = channel_vectors(shape, self.at, dim)  # (C, D')
         # Project the cross-sensor encoder width up to the decoder width
         self.expand = nn.Linear(shared, dim)
         # Initialize learnable mask token used as a placeholder for hidden patches
