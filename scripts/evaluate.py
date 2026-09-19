@@ -67,14 +67,14 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     ).to(device)
     name = config.evaluation.model or model_name(config.model)
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
-    epochs = load_checkpoint(published_checkpoint(name, held), model) + 1
-    log.info("evaluating %s, trained for %d epochs, on %s", name, epochs, device)
+    steps = load_checkpoint(published_checkpoint(name, held), model)
+    log.info("evaluating %s, trained for %d steps, on %s", name, steps, device)
     run = start_logging(
         config,
         {
             "device": str(device),
             "checkpoint": name,
-            "epochs_trained": epochs,
+            "steps_trained": steps,
             "tiles": len(loader.dataset),
         },
     )

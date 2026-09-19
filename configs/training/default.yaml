@@ -1,12 +1,16 @@
 # How a run trains, validates and stops.
 
-# A split holds a few hundred features, so an epoch is a handful of steps.
-epochs: 1000
-# How many tiles one step reads.
-batch_size: 32
+# A run is counted in steps, so how long a split happens to be settles nothing.
+max_steps: 100000
+# How many tiles one step reads, each carrying every patch of its own.
+batch_size: 4
 learning_rate: 0.00015
 weight_decay: 0.05
-warmup_epochs: 10
+warmup_steps: 2000
+
+# How often the validation split is read, and how many of those may fail to beat
+# the best before the run stops.
+validate_every: 1000
 patience: 25
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.

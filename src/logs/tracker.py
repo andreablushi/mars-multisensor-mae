@@ -55,17 +55,15 @@ def log_step(run: Run, step: int, terms: Mapping[str, Tensor]) -> None:
     )
 
 
-def log_epoch(run: Run, step: int, epoch: int, metrics: Mapping[str, float]) -> None:
-    """Log one epoch's validation.
+def log_validation(run: Run, step: int, metrics: Mapping[str, float]) -> None:
+    """Log one validation.
 
     Args:
         run: The tracked run.
-        step: Which step of the whole run the epoch ended on.
-        epoch: Which pass over the training split it was.
+        step: Which step of the whole run it was measured after.
         metrics: Every loss term over the validation split, keyed as they name them.
     """
-    logged = {f"validation_{name}": value for name, value in metrics.items()}
-    run.log(logged | {"epoch": epoch}, step=step)
+    run.log({f"validation_{name}": value for name, value in metrics.items()}, step=step)
 
 
 def log_summary(run: Run, summary: Mapping[str, object]) -> None:
