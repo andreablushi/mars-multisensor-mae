@@ -40,8 +40,8 @@ dev = [
     "wandb-workspaces>=0.4.11",
 ]
 digitalhub = [
-    "digitalhub>=0.15,<0.16",
-    "digitalhub-runtime-python>=0.15,<0.16",
+    "digitalhub>=0.15.11,<0.16",
+    "digitalhub-runtime-python>=0.15.2,<0.16",
 ]
 
 [tool.ruff]
