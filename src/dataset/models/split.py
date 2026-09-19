@@ -1,4 +1,4 @@
-"""One split of the dataset, each feature read as the patches of each instrument."""
+"""One split of the dataset, each tile read as the patches of each instrument."""
 
 from __future__ import annotations
 
@@ -12,19 +12,19 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import channel_axis, draw_feature_patches, read_feature_patches
+from dataset.patches import channel_axis, draw_tile_patches, read_tile_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
 
 class DatasetSplit(Dataset):
-    """Every feature of one split, each read as the patches of each instrument.
+    """Every tile of one split, each read as the patches of each instrument.
 
     Attributes:
-        build: The build the features are read from.
-        features: The index rows of each sensor of each feature, keyed by identity.
-        identities: The features, in the order the split holds them.
+        build: The build the tiles are read from.
+        tiles: The index rows of each sensor of each tile, keyed by identity.
+        identities: The tiles, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
         statistics: What each sensor's values run to over the training split.
         sizes: How far a patch of each sensor runs along an axis it is cut on.
@@ -41,7 +41,7 @@ class DatasetSplit(Dataset):
     def __init__(
         self,
         build: DatasetBuild,
-        features: Mapping[tuple[str, str], dict[str, list[ObservationMetadata]]],
+        tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
         axes: Mapping[str, tuple[str, ...]],
         statistics: Mapping[str, dict[str, np.ndarray]],
         sizes: Mapping[str, int],
@@ -56,8 +56,8 @@ class DatasetSplit(Dataset):
         """Keep what every read needs, and check every instrument can be normalised.
 
         Args:
-            build: The build the features are read from.
-            features: The index rows of each sensor of each feature, keyed by identity.
+            build: The build the tiles are read from.
+            tiles: The index rows of each sensor of each tile, keyed by identity.
             axes: What each axis of each instrument's values holds.
             statistics: What each sensor's values run to over the training split.
             sizes: How far a patch of each sensor runs along an axis it is cut on.
@@ -73,8 +73,8 @@ class DatasetSplit(Dataset):
             ValueError: When a sensor the model reads has no statistics to scale by.
         """
         self.build = build
-        self.features = features
-        self.identities = list(features)
+        self.tiles = tiles
+        self.identities = list(tiles)
         self.axes = axes
         self.statistics = statistics
         self.sizes = sizes
@@ -85,7 +85,7 @@ class DatasetSplit(Dataset):
         self.overlap = overlap
         self.seed = seed
         self.ceiling = ceiling
-        self.kept: dict[tuple[str, str], dict[str, dict[str, np.ndarray]]] = {}
+        self.kept: dict[str, dict[str, dict[str, np.ndarray]]] = {}
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -94,29 +94,27 @@ class DatasetSplit(Dataset):
         """Return how many reads the split holds.
 
         Returns:
-            count: One per feature.
+            count: One per tile.
         """
         return len(self.identities)
 
-    def __getitem__(
-        self, index: int
-    ) -> tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]:
-        """Return what one read of a feature holds, and whose it is.
+    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
+        """Return what one read of a tile holds, and whose it is.
 
         Args:
             index: Which read of the split.
 
         Returns:
             sample: Each sensor's patches: values, valid, channels and position.
-            identity: The feature the read belongs to, its class and its name.
+            identity: The tile the read belongs to, its class and its name.
 
         Raises:
-            ValueError: When the feature has no elevation to stand on.
+            ValueError: When the tile has no elevation to stand on.
         """
         identity = self.identities[index]
         if identity in self.kept:
             return self.kept[identity], identity
-        rows = self.features[identity]
+        rows = self.tiles[identity]
         held = rows.get(self.elevation)
         if not held:
             raise ValueError(f"{identity} has no {self.elevation} to stand on")
@@ -125,7 +123,7 @@ class DatasetSplit(Dataset):
             draw = random.Random(
                 None if self.seed is None else f"{self.seed}/{identity}"
             )
-            read = draw_feature_patches(
+            read = draw_tile_patches(
                 rows,
                 self.build,
                 self.sizes,
@@ -136,7 +134,7 @@ class DatasetSplit(Dataset):
                 draw,
             )
         else:
-            read = read_feature_patches(
+            read = read_tile_patches(
                 rows,
                 self.build,
                 self.sizes,

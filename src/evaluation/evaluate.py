@@ -13,12 +13,12 @@ from umap import UMAP
 from architecture.mae import CrossSensorMAE
 from evaluation.metrics import (
     class_similarity,
-    feature_similarity,
     grid_metrics,
     reconstruction_metrics,
     retrieval_metrics,
     silhouette_metrics,
     similarity_metrics,
+    tile_similarity,
 )
 from training.masking import masked_reconstruction
 
@@ -32,7 +32,7 @@ class Evaluation:
         intervals: Half the 95% interval around each mean, zero for a count.
         similarity: The mean matched similarity of every ordered pair of classes. (C, C)
         names: The classes, in the order the matrix holds them.
-        placed: Where each measured feature sits on the plane. (N, 2)
+        placed: Where each measured tile sits on the plane. (N, 2)
         classes: The class of each of them, in that same order.
     """
 
@@ -55,8 +55,8 @@ def evaluate_latent_space(
 
     Args:
         model: The model, loaded from a checkpoint and on the device.
-        loader: The split to read, in batches, each feature read whole.
-        neighbours: How many nearest features one retrieval reads.
+        loader: The split to read, in batches, each tile read whole.
+        neighbours: How many nearest tiles one retrieval reads.
         seed: What fixes the layout on the plane.
         device: Where the model runs.
 
@@ -72,11 +72,11 @@ def evaluate_latent_space(
             for at, (one, _) in enumerate(identities):
                 embedded.append(grid.values[at][grid.occupied[at]])  # (Q, D)
                 read.append(one)
-    # A feature holding no patch of any instrument the model reads reaches no cell.
+    # A tile holding no patch of any instrument the model reads reaches no cell.
     kept = [(one, held) for one, held in zip(read, embedded, strict=True) if len(held)]
     classes = [one for one, _ in kept]
     cells = [held for _, held in kept]
-    matched = feature_similarity(cells)  # (N, N)
+    matched = tile_similarity(cells)  # (N, N)
     distance = (1 - matched).clamp(min=0).numpy()  # (N, N)
     np.fill_diagonal(distance, 0)
     similarity, names = class_similarity(matched, classes)  # (C, C)
@@ -91,14 +91,14 @@ def evaluate_latent_space(
     return Evaluation(
         metrics={name: value for name, (value, _) in measured.items()}
         | {
-            "features": len(classes),
+            "tiles": len(classes),
             "classes": len(names),
             "empty": len(read) - len(classes),
         },
         intervals={name: half for name, (_, half) in measured.items()},
         similarity=similarity,
         names=names,
-        # Map the features into 2D space from the distances already measured
+        # Map the tiles into 2D space from the distances already measured
         placed=UMAP(
             n_components=2, metric="precomputed", random_state=seed
         ).fit_transform(distance),  # (N, 2)

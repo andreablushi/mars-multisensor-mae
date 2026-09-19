@@ -59,7 +59,7 @@ def load_platform(path: Path = PLATFORM_CONFIG_PATH) -> Platform:
 
 
 def stage_workers(stage: str) -> int:
-    """Return how many processes read features beside one stage's own work.
+    """Return how many processes read tiles beside one stage's own work.
 
     Args:
         stage: Which stage, whose cores are what a box running it holds.

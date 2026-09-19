@@ -9,7 +9,7 @@ from itertools import chain
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import ELEVATION, GROUND, WAVELENGTH
+from building.common.layout import DELAY, GROUND, WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from torch import Tensor
 
@@ -40,7 +40,7 @@ def patch_sizes(
     return {name: patchsize[name] for name in instruments}
 
 
-def draw_feature_patches(
+def draw_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, int],
@@ -50,14 +50,14 @@ def draw_feature_patches(
     overlap: float,
     draw: random.Random,
 ) -> dict[str, list[Patch]]:
-    """Return a bounded draw of every instrument's patches over one feature.
+    """Return a bounded draw of every instrument's patches over one tile.
 
     Args:
-        rows: The feature's index rows of each instrument, keyed as ODE names it.
+        rows: The tile's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along an axis it is cut on.
         wavelengths: What each band of each spectral sensor is centred on, in nm.
-        heights: Where the ground stands over the feature. (N, 3)
+        heights: Where the ground stands over the tile. (N, 3)
         budget: How many patches of each instrument the draw runs to at most.
         overlap: The share of each other sensor's patches over the anchor's ground.
         draw: What picks each observation and the patches taken from it.
@@ -128,7 +128,7 @@ def draw_feature_patches(
     return drawn
 
 
-def read_feature_patches(
+def read_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, int],
@@ -136,14 +136,14 @@ def read_feature_patches(
     heights: np.ndarray,
     ceiling: int,
 ) -> dict[str, list[Patch]]:
-    """Return every patch of every observation of one feature, bounded in count.
+    """Return every patch of every observation of one tile, bounded in count.
 
     Args:
-        rows: The feature's index rows of each instrument, keyed as ODE names it.
+        rows: The tile's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along an axis it is cut on.
         wavelengths: What each band of each spectral sensor is centred on, in nm.
-        heights: Where the ground stands over the feature. (N, 3)
+        heights: Where the ground stands over the tile. (N, 3)
         ceiling: How many patches of each instrument one read hands back at most.
 
     Returns:
@@ -190,7 +190,7 @@ def cut_patch(
         record: Its index row, which carries what a patch says about the whole.
         index: Which patch, counting whole ones as the axes run, the last fastest.
         patchsize: How far a patch of this instrument runs along an axis it is cut on.
-        heights: Where the ground stands over the feature. (N, 3)
+        heights: Where the ground stands over the tile. (N, 3)
         wavelengths: What each band is centred on, in nm, empty for every other.
 
     Returns:
@@ -208,7 +208,7 @@ def cut_patch(
         for start, length in zip(origin, lengths, strict=True)
     )
     taken = tuple(window[at] for at in observation.ground_axes)
-    north, east = observation.ground_metres(taken)
+    north, east = observation.distance_centre_m(taken)
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
     ground_shape = tuple(
         length if holds == GROUND else 1
@@ -227,7 +227,7 @@ def cut_patch(
         ].copy()
         for name, held in observation.beside.items()
     }
-    if ELEVATION in axes:
+    if DELAY in axes:
         # A sounder reads one delay at one height, which tells its channels apart.
         elevations = beside[HEIGHTS]
         channels = np.asarray(elevations, np.float32)
@@ -367,7 +367,7 @@ def patch_coordinates(
     folded = tuple(chain.from_iterable((count, 2) for count in blocks))
     over = tuple(range(1, 2 * len(blocks), 2))
     corners = [
-        one.reshape(folded) for one in reversed(observation.ground_metres(taken))
+        one.reshape(folded) for one in reversed(observation.distance_centre_m(taken))
     ]  # east then north
     low = np.stack([one.min(over) for one in corners], axis=-1)  # (*blocks, 2)
     high = np.stack([one.max(over) for one in corners], axis=-1)  # (*blocks, 2)

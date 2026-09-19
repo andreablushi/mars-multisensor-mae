@@ -9,7 +9,7 @@ from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.models import Cells, FeatureGrid
+from architecture.models import Cells, TileGrid
 
 
 def cell_positions(offset: Tensor, cell_m: float) -> Tensor:
@@ -68,8 +68,8 @@ class CrossAttentionFusion(nn.Module):
         counted: dict[str, Tensor],
         cells: Cells,
         read: Sequence[str],
-    ) -> FeatureGrid:
-        """Return the grid one set of instruments makes of each feature.
+    ) -> TileGrid:
+        """Return the grid one set of instruments makes of each tile.
 
         Args:
             tokens: Each instrument's tokens from the cross-sensor encoder. (B, K, D)
@@ -103,4 +103,4 @@ class CrossAttentionFusion(nn.Module):
             need_weights=False,
         )  # (B, Q, D)
         values = functional.normalize(self.norm(attended), dim=-1)  # (B, Q, D)
-        return FeatureGrid(values * occupied.unsqueeze(-1), occupied, cells.offset)
+        return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset)

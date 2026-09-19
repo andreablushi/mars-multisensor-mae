@@ -54,7 +54,6 @@ def run_training(project=None, overrides: list[str] | None = None):
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
-        config.dataset.least_classes,
         config.model.elevation,
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
@@ -85,7 +84,7 @@ def run_training(project=None, overrides: list[str] | None = None):
             "shapes": shapes,
             "strides": strides,
             "wavelengths_nm": wavelengths,
-            "features": {
+            "tiles": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),
             },

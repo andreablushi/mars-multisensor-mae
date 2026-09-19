@@ -5,12 +5,12 @@ from __future__ import annotations
 import math
 
 import torch
-from building.common.layout import ELEVATION, WAVELENGTH
+from building.common.layout import DELAY, WAVELENGTH
 from torch import Tensor, nn
 
 from dataset.patches import channel_axis
 
-CHANNEL_RUN = {WAVELENGTH: (6.0, 2700.0), ELEVATION: (11.0, 30_000.0)}
+CHANNEL_RUN = {WAVELENGTH: (6.0, 2700.0), DELAY: (11.0, 30_000.0)}
 
 
 def by_channel(held: Tensor, at: int | None) -> Tensor:

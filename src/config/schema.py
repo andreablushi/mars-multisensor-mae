@@ -13,17 +13,15 @@ class DatasetConfig:
         build: The build to read, which is published as dataset-<build>.
         root: Where every build sits on this machine, under a directory of its own name.
         patchsize: How far a patch runs along each cut axis, by instrument.
-        split: The share of the features each split holds, in the code's order.
-        least_classes: How many classes a split it is asked for must hold.
+        split: The share of the tiles each split holds, in the code's order.
         overlap: The share of each other sensor's patches over the anchor's ground.
-        seed: The number that fixes where a feature falls.
+        seed: The number that fixes where a tile falls.
     """
 
     build: str
     root: str
     patchsize: dict[str, int]
     split: list[float]
-    least_classes: int
     overlap: float
     seed: int
 
@@ -36,7 +34,7 @@ class ModelConfig:
         name: The architecture.
         instruments: The instruments whose patches become tokens, the elevation apart.
         elevation: The instrument whose values give every surface patch its height.
-        cell_m: How far a cell of a feature's grid runs along the ground, in metres.
+        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
         encoder_heads: How many attention heads every encoder and the fusion run.
         encoder_depth: How many blocks each instrument encoder stacks.
@@ -64,8 +62,8 @@ class TrainingConfig:
     """How a run trains, validates and stops.
 
     Attributes:
-        epochs: How many passes over the training features, at most.
-        batch_size: How many features one step reads, which settles patches per read.
+        epochs: How many passes over the training tiles, at most.
+        batch_size: How many tiles one step reads, which settles patches per read.
         patches_per_step: How many patches one step carries, set by the widest.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.

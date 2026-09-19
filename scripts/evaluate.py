@@ -32,7 +32,7 @@ log = rich_logger(__name__)
 
 @handler()
 def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
-    """Measure what one published model's latent space made of the feature classes.
+    """Measure what one published model's latent space made of the tile classes.
 
     Args:
         project: The DigitalHub project the model was published in, unused here.
@@ -51,7 +51,6 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
-        config.dataset.least_classes,
         config.model.elevation,
         max(config.training.patches_per_step // config.training.batch_size, 1),
         config.dataset.overlap,
@@ -86,7 +85,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
             "device": str(device),
             "checkpoint": name,
             "epochs_trained": epochs,
-            "features": len(loader.dataset),
+            "tiles": len(loader.dataset),
             "patch_ceiling": ceiling,
         },
     )

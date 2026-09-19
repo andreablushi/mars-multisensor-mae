@@ -1,8 +1,8 @@
 # Multi-Sensor Masked Autoencoder for Mars
 
-This repository trains a multimodal, multisensor, multiresolution masked autoencoder (MAE) over Mars remote sensing data. Given every source available for a geological feature, the model learns a single latent representation of it, a foundation model for Mars remote sensing.
+This repository trains a multimodal, multisensor, multiresolution masked autoencoder (MAE) over Mars remote sensing data. Given every source available for one tile of the Martian surface, the model learns a single latent representation of it, a foundation model for Mars remote sensing.
 
-The samples it trains on come from [mars-multisensor-dataset](https://github.com/andreablushi/mars-multisensor-dataset), which selects geological features from NASA's [Orbital Data Explorer (ODE)](https://ode.rsl.wustl.edu/mars/) and crops each one's co-temporal CTX, CRISM and SHARAD observations. The built dataset is published on DigitalHub.
+The samples it trains on come from [mars-multisensor-dataset](https://github.com/andreablushi/mars-multisensor-dataset), which splits Mars into equal-area tiles and crops each one's co-temporal CTX, CRISM, MOLA and SHARAD observations, drawn from NASA's [Orbital Data Explorer (ODE)](https://ode.rsl.wustl.edu/mars/). The built dataset is published on DigitalHub.
 
 ## Development commands
 
@@ -68,12 +68,12 @@ some hundred gigabytes and a job's disk holds a fraction of it, so only a build
 brought down whole is read off disk.
 
 ```python
-from dh.store import published_build
+from dhub.store import published_build
 
 build = published_build(config.dataset)
 ```
 
-Everything that reaches the platform is in `scripts/dh`: the project the builds
+Everything that reaches the platform is in `scripts/dhub`: the project the builds
 are published in, the artifact each is published under, and the credentials a
 long read mints again. `configs/dataset/<build>.yaml` names the build to read and
 where builds sit, which a local read needs just as much.
@@ -87,8 +87,7 @@ under `model/`, composed by hydra into the run described by `configs/config.yaml
 from config.load import load_config
 
 config = load_config()  # the defaults
-config = load_config(["dataset=small"])  # another file of a group
-config = load_config(["dataset.seed=7"])  # one value of one
+config = load_config(["dataset.patchsize.CTX=512"])  # one value of one
 ```
 
 What comes back is `config.schema.Config`, read under the schema rather than

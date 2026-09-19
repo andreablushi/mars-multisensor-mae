@@ -22,8 +22,8 @@ class Observation:
         values: The values themselves, in the shape the instrument publishes.
         axes: What each axis of the values holds, in the array's own order.
         dims: What each axis of every array is called, keyed as it is written.
-        measured: Whether each ground sample measures the feature, over ground alone.
-        north: How far each sample sits north of the feature centre, as written.
+        measured: Whether each ground sample measures the tile, over ground alone.
+        north: How far each sample sits north of the tile centre, as written.
         east: How far it sits eastward, holding the same.
         beside: What else the instrument stores, keyed as it is written.
         described: What the build wrote beside the arrays, which places them.
@@ -50,7 +50,7 @@ class Observation:
         """
         return tuple(at for at, holds in enumerate(self.axes) if holds == GROUND)
 
-    def ground_metres(
+    def distance_centre_m(
         self, taken: tuple[slice, ...] = ()
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return where the ground samples one cut keeps sit, in metres.
@@ -69,4 +69,4 @@ class Observation:
             self.described["separable"],
             None if grid is None else tuple(grid),
         ).offsets(taken)
-        return read.ground_metres({NORTH: held[0], EAST: held[1]}, self.described)
+        return read.distance_centre_m({NORTH: held[0], EAST: held[1]}, self.described)

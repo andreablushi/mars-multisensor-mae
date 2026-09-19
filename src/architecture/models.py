@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 @dataclass(frozen=True, slots=True)
 class Tokens:
-    """One sensor's patches over a batch of features, padded to one count.
+    """One sensor's patches over a batch of tiles, padded to one count.
 
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
@@ -52,11 +52,11 @@ class Tokens:
 
 @dataclass(frozen=True, slots=True)
 class Cells:
-    """The cells a batch of features is cut into, padded to one count.
+    """The cells a batch of tiles is cut into, padded to one count.
 
-    A cell is a square of ground the same size for every feature, so one cell
-    offset stands for the same place whichever feature holds it and two
-    features are compared over the offsets they share. How many cells a feature
+    A cell is a square of ground the same size for every tile, so one cell
+    offset stands for the same place whichever tile holds it and two
+    tiles are compared over the offsets they share. How many cells a tile
     holds is its own, since a patch reaches every cell its span covers.
 
     Attributes:
@@ -80,8 +80,8 @@ class Cells:
 
 
 @dataclass(frozen=True, slots=True)
-class FeatureGrid:
-    """A batch of features as a grid of cells, each standing for the ground it covers.
+class TileGrid:
+    """A batch of tiles as a grid of cells, each standing for the ground it covers.
 
     Attributes:
         values: The cell vectors, of unit length where occupied, else zero. (B, Q, D)
@@ -95,19 +95,19 @@ class FeatureGrid:
 
 
 def collate(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]],
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
     cell_m: float,
-) -> tuple[dict[str, Tokens], Cells, list[tuple[str, str]]]:
+) -> tuple[dict[str, Tokens], Cells, list[str]]:
     """Return one batch of every instrument's tokens, the cells they reach, and whose.
 
     Args:
-        samples: What one read of each feature holds, and the feature it belongs to.
+        samples: What one read of each tile holds, and the tile it belongs to.
         cell_m: How far a cell runs along the ground, in metres.
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
         cells: Every cell those patches reach, in one order for the whole batch.
-        identities: The feature each read belongs to, in the batch's own order.
+        identities: The tile each read belongs to, in the batch's own order.
     """
     batch = {}
     # Process each instrument/sensor present in the first dataset sample

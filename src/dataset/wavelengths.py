@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from building.common.layout import WAVELENGTH
 from building.configs import crism
 
-NANOMETRES = {crism.LAYOUT.instrument: crism.WAVELENGTHS_NM}
+NANOMETRES = {crism.LAYOUT.instrument: crism.BANDS_NM}
 
 
 def band_wavelengths(

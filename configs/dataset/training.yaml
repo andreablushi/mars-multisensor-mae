@@ -1,7 +1,7 @@
 # What a run reads of the published dataset, and how it cuts what it reads.
 
 # The build to read, which is published as dataset-<build>.
-build: full
+build: training
 
 # Where every build sits on this machine, under a directory of its own name.
 root: data/dataset
@@ -15,11 +15,8 @@ patchsize:
   # A radargram along one line, its other axis depth, so this is its delay bins too.
   SHARAD: 8
 
-# The shares the features are split into, in the code's order: train, validation, test.
+# The shares the tiles are split into, in the code's order: train, validation, test.
 split: [0.8, 0.1, 0.1]
-
-# How many classes a split must hold, seeded with the commonest ones until it does.
-least_classes: 2
 
 # The share of a draw taken over the anchor's ground, the rest from anywhere it reaches.
 overlap: 0.25

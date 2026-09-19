@@ -50,7 +50,7 @@ def train(
         model: The model, already on the device.
         training: The training split, in batches.
         validation: The validation split, in batches.
-        epochs: How many passes over the training features, at most.
+        epochs: How many passes over the training tiles, at most.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.

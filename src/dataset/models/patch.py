@@ -21,7 +21,7 @@ class Patch:
         channels: What each channel measures, in its own unit. (C)
         origin: Where the patch starts along each axis of the observation.
         beside: What the instrument stores beside its values, cut to the patch.
-        north_m: How far north of the feature centre the patch centre sits, in metres.
+        north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
         height_m: How high above the areoid the patch centre stands, in metres.
         north_span_m: How far the patch reaches northward, in metres.

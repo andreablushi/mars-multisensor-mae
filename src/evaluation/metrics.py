@@ -16,7 +16,7 @@ def confidence(samples: np.ndarray) -> tuple[float, float]:
     """Return what a set of measurements comes to, and how far that is pinned down.
 
     Args:
-        samples: One measurement per feature or per query. (N,)
+        samples: One measurement per tile or per query. (N,)
 
     Returns:
         mean: Their mean, and zero where none was measured.
@@ -28,11 +28,11 @@ def confidence(samples: np.ndarray) -> tuple[float, float]:
     return float(held.mean()), float(1.96 * held.std(ddof=1) / np.sqrt(held.size))
 
 
-def feature_similarity(cells: Sequence[Tensor]) -> Tensor:
-    """Return how alike each pair of features is, every cell matched to its closest.
+def tile_similarity(cells: Sequence[Tensor]) -> Tensor:
+    """Return how alike each pair of tiles is, every cell matched to its closest.
 
     Args:
-        cells: The occupied cells of each feature, of unit length. (Q, D) each.
+        cells: The occupied cells of each tile, of unit length. (Q, D) each.
 
     Returns:
         similarity: The matched similarity of every ordered pair. (N, N)
@@ -47,13 +47,13 @@ def feature_similarity(cells: Sequence[Tensor]) -> Tensor:
 
 
 def grid_metrics(cells: Sequence[Tensor]) -> dict[str, tuple[float, float]]:
-    """Return how far a feature's own cells stand apart, and how many it holds.
+    """Return how far a tile's own cells stand apart, and how many it holds.
 
     Args:
-        cells: The occupied cells of each feature, of unit length. (Q, D) each.
+        cells: The occupied cells of each tile, of unit length. (Q, D) each.
 
     Returns:
-        metrics: The "spread" of a feature's own cells, and how many "cells" it holds.
+        metrics: The "spread" of a tile's own cells, and how many "cells" it holds.
     """
     apart = []
     for one in cells:
@@ -71,12 +71,12 @@ def grid_metrics(cells: Sequence[Tensor]) -> dict[str, tuple[float, float]]:
 def retrieval_metrics(
     similarity: Tensor, classes: Sequence[str], neighbours: int
 ) -> dict[str, tuple[float, float]]:
-    """Return how much of what each feature retrieves shares its own class.
+    """Return how much of what each tile retrieves shares its own class.
 
     Args:
-        similarity: How alike every ordered pair of features is. (N, N)
+        similarity: How alike every ordered pair of tiles is. (N, N)
         classes: The class of each of them, in that same order.
-        neighbours: How many nearest features one query reads, or all of them.
+        neighbours: How many nearest tiles one query reads, or all of them.
 
     Returns:
         metrics: The precision, recall, F1 and "map", each a mean and a half width.
@@ -109,10 +109,10 @@ def retrieval_metrics(
 def class_similarity(
     similarity: Tensor, classes: Sequence[str]
 ) -> tuple[np.ndarray, list[str]]:
-    """Return how alike the features of each pair of classes are.
+    """Return how alike the tiles of each pair of classes are.
 
     Args:
-        similarity: How alike every ordered pair of features is. (N, N)
+        similarity: How alike every ordered pair of tiles is. (N, N)
         classes: The class of each of them, in that same order.
 
     Returns:
@@ -163,7 +163,7 @@ def silhouette_metrics(
     """Return how well each class stands apart from the rest, as a silhouette reads it.
 
     Args:
-        distance: How far every ordered pair of features stands, nothing on its own.
+        distance: How far every ordered pair of tiles stands, nothing on its own.
         classes: The class of each of them, in that same order.
 
     Returns:

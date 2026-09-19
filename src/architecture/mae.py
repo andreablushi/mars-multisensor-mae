@@ -14,7 +14,7 @@ from architecture.components.crossattention_fusion import (
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.models import Cells, FeatureGrid, Tokens
+from architecture.models import Cells, TileGrid, Tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,13 +23,13 @@ class Reconstruction:
 
     Attributes:
         predictions: The predicted patches, by the sensor asked and the sensor read.
-        grid: The grid every instrument the feature holds was read into.
+        grid: The grid every instrument the tile holds was read into.
         grids: The grid each instrument alone was read into, keyed as ODE names it.
     """
 
     predictions: dict[tuple[str, str], Tensor]
-    grid: FeatureGrid
-    grids: dict[str, FeatureGrid]
+    grid: TileGrid
+    grids: dict[str, TileGrid]
 
 
 class CrossSensorMAE(nn.Module):
@@ -62,7 +62,7 @@ class CrossSensorMAE(nn.Module):
             decoder_dim: How wide a token is in the decoders.
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
-            cell_m: How far a cell of a feature's grid runs along the ground, in metres.
+            cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         """
         super().__init__()
         # Sensor-specific input projection stems and positional/modality encoders
@@ -140,8 +140,8 @@ class CrossSensorMAE(nn.Module):
         counted: dict[str, Tensor],
         cells: Cells,
         read: Sequence[str],
-    ) -> FeatureGrid:
-        """Return the grid one set of instruments makes of each feature of a batch.
+    ) -> TileGrid:
+        """Return the grid one set of instruments makes of each tile of a batch.
 
         Args:
             encoded: Each instrument's shared tokens. (B, K, D)
@@ -161,8 +161,8 @@ class CrossSensorMAE(nn.Module):
             read,
         )
 
-    def embed(self, batch: dict[str, Tokens], cells: Cells) -> FeatureGrid:
-        """Return the grid standing for each feature, over every instrument it holds.
+    def embed(self, batch: dict[str, Tokens], cells: Cells) -> TileGrid:
+        """Return the grid standing for each tile, over every instrument it holds.
 
         Args:
             batch: Each instrument's patches over the batch.

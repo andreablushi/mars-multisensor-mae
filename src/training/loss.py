@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 from architecture.mae import Reconstruction
-from architecture.models import FeatureGrid, Tokens
+from architecture.models import TileGrid, Tokens
 from dataset.patches import normalize_patches
 
 
@@ -32,11 +32,11 @@ def reconstruction_error(
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
 
 
-def consistency_loss(whole: FeatureGrid, part: FeatureGrid) -> Tensor:
+def consistency_loss(whole: TileGrid, part: TileGrid) -> Tensor:
     """Return how far a grid read from some instruments stands from the grid of all.
 
     Args:
-        whole: The grid every instrument the feature holds was read into.
+        whole: The grid every instrument the tile holds was read into.
         part: The grid one of them alone was read into.
 
     Returns:
@@ -48,15 +48,15 @@ def consistency_loss(whole: FeatureGrid, part: FeatureGrid) -> Tensor:
     return (error * counted).sum() / counted.sum().clamp(min=1)  # ()
 
 
-def uniformity_loss(grid: FeatureGrid) -> Tensor:
+def uniformity_loss(grid: TileGrid) -> Tensor:
     """Return how far the cells stand from spread evenly over the space they live in.
 
     Two cells drawn from the training set at random stand orthogonal where the
     cells are spread, so the batch is rolled to pair each cell with one of
-    another feature and their agreement is what is made small.
+    another tile and their agreement is what is made small.
 
     Args:
-        grid: The grid every instrument the feature holds was read into.
+        grid: The grid every instrument the tile holds was read into.
 
     Returns:
         loss: The mean agreement of those pairs, without regard to its sign.
