@@ -18,15 +18,15 @@ class Patch:
         values: The patch's own values, in the observation's axis order.
         valid: Whether each sample is a measurement, broadcasting over the values.
         axes: What each axis of the values holds, in that same order.
-        channels: What each channel measures, in its own unit. (C)
         origin: Where the patch starts along each axis of the observation.
-        beside: What the instrument stores beside its values, cut to the patch.
-        north_m: How far north of the feature centre the patch centre sits, in metres.
+        north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
-        height_m: How high above the areoid the patch centre stands, in metres.
+        delay: Which row of the radargram window the patch centre sounds at, its
+            own cut for a sounder and the surface echo beneath it for the rest.
         north_span_m: How far the patch reaches northward, in metres.
         east_span_m: How far it reaches eastward, in metres.
-        height_span_m: How far it reaches in height, in metres.
+        delay_span: How many rows it reaches across, which is none for a patch
+            lying on the ground.
         t_start: When the observation started, or None where none is published.
         t_end: When it ended, or None for the same reason.
     """
@@ -36,14 +36,12 @@ class Patch:
     values: np.ndarray
     valid: np.ndarray
     axes: tuple[str, ...]
-    channels: np.ndarray
     origin: tuple[int, ...]
-    beside: dict[str, np.ndarray]
     north_m: float
     east_m: float
-    height_m: float
+    delay: float
     north_span_m: float
     east_span_m: float
-    height_span_m: float
+    delay_span: float
     t_start: datetime | None
     t_end: datetime | None

@@ -9,7 +9,13 @@ class Transformer(nn.Module):
     """Pre-norm transformer blocks stacked, normalised once more at the end."""
 
     def __init__(self, dim: int, heads: int, depth: int) -> None:
-        """Build the stack for one token width."""
+        """Build the stack for one token width.
+
+        Args:
+            dim: The token width.
+            heads: How many attention heads each block runs.
+            depth: How many blocks are stacked.
+        """
         super().__init__()
         # Build pre-norm encoder layer with GELU activation and 4x MLP expansion
         block = nn.TransformerEncoderLayer(
@@ -27,7 +33,15 @@ class Transformer(nn.Module):
         )
 
     def forward(self, tokens: Tensor, attended: Tensor) -> Tensor:
-        """Return the tokens after attending over the ones that carry something."""
+        """Return the tokens after attending over the ones that carry something.
+
+        Args:
+            tokens: The tokens to attend over. (B, N, D)
+            attended: Which of them carry something. (B, N)
+
+        Returns:
+            tokens: The attended tokens. (B, N, D)
+        """
         # Invert valid mask: PyTorch key_padding_mask expects True for tokens to ignore
         padding = ~attended  # (B, N)
         # Unmask wholly empty sequences to keep the soft-max from going nan

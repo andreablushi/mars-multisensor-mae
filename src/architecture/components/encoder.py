@@ -6,10 +6,9 @@ import math
 
 from torch import Tensor, nn
 
-from architecture.components.modality_encoding import ModalityEncoding, by_channel
+from architecture.components.channels import by_channel, channel_axis, channel_vectors
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
-from dataset.patches import channel_axis
 
 
 class Encoder(nn.Module):
@@ -18,7 +17,7 @@ class Encoder(nn.Module):
     Attributes:
         at: Which axis a patch's channels run along, or None where it holds one.
         embed: From one channel's ground samples to one token, shared by all.
-        modality: What the instrument is and what each channel of it measures.
+        channel: What each channel of this instrument is, one vector each. (C, D)
         place: The positional encoding.
         blocks: The transformer.
     """
@@ -49,8 +48,8 @@ class Encoder(nn.Module):
         self.embed = nn.Linear(
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
-        # Module for embedding channel metadata (e.g., band type, wavelength)
-        self.modality = ModalityEncoding(axes, dim)
+        # One vector per channel, since every crop is laid out on the one fixed grid
+        self.channel = channel_vectors(shape, self.at, dim)  # (C, D)
         # Module for continuous geospatial (metric coordinate) positional embeddings
         self.place = PositionalEncoding(dim, stride)
         # Transformer encoder stack for intra-sensor self-attention
@@ -59,7 +58,6 @@ class Encoder(nn.Module):
     def forward(
         self,
         values: Tensor,
-        channels: Tensor,
         valid: Tensor,
         position: Tensor,
         visible: Tensor,
@@ -68,7 +66,6 @@ class Encoder(nn.Module):
 
         Args:
             values: The normalised patches. (B, K, *P)
-            channels: What each channel of each patch measures. (B, K, C)
             valid: Whether each sample of a patch is a measurement. (B, K, *P')
             position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
             visible: Which patches the encoder may read. (B, K)
@@ -76,10 +73,8 @@ class Encoder(nn.Module):
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
-        # Embed each channel's samples and add what that channel measures
-        held = self.embed(by_channel(values, self.at)) + self.modality(
-            channels
-        )  # (B, K, C, D)
+        # Embed each channel's samples and add which channel of the grid it is
+        held = self.embed(by_channel(values, self.at)) + self.channel  # (B, K, C, D)
         # Mark which channels hold a measurement
         weight = by_channel(valid, self.at).any(dim=-1).unsqueeze(-1)  # (B, K, C', 1)
         weight = weight.to(held.dtype)  # (B, K, C', 1)

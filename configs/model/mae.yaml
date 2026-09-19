@@ -1,22 +1,19 @@
-# The cross-sensor masked autoencoder: an encoder and a decoder per instrument,
-# and one cross-sensor encoder between them.
+# An encoder and a decoder per instrument, one cross-sensor encoder between them.
 
 name: mae
 
-# The instruments read as tokens. MOLA is not one: it gives every surface patch
-# its height, and a SHARAD patch carries its own.
+# The instruments read as tokens, MOLA instead giving every surface patch the
+# radargram row its echo lands on, so every patch is placed in delay alone.
 instruments: [CTX, CRISM, SHARAD]
-elevation: MOLA
+delay: MOLA
 
-# How far a cell of a feature's grid runs along the ground. A patch reaches
-# every cell its span covers, so the finest instrument settles one cell and a
-# coarser one spreads over the several it spans.
-cell_m: 639.0
+# How far a cell of a tile's grid runs, which the finest instrument's patch settles.
+cell_m: 2560.0
 
-# The instrument encoders and the cross-sensor encoder.
-dim: 384
-heads: 6
-depth: 4
+# The instrument encoders, the cross-sensor encoder and the fusion, all one width.
+encoder_dim: 384
+encoder_heads: 6
+encoder_depth: 4
 crossencoder_depth: 2
 
 # The decoders.

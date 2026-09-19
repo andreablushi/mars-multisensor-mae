@@ -56,3 +56,15 @@ def load_platform(path: Path = PLATFORM_CONFIG_PATH) -> Platform:
         for stage, one in config["resources"].items()
     }
     return Platform(**config | {"resources": asked})
+
+
+def stage_workers(stage: str) -> int:
+    """Return how many processes read tiles beside one stage's own work.
+
+    Args:
+        stage: Which stage, whose cores are what a box running it holds.
+
+    Returns:
+        workers: Those cores, which a run here reads as a run on the platform does.
+    """
+    return int(load_platform().resources[stage]["cpu"])

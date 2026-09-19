@@ -8,47 +8,42 @@ import torch
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from config.schema import Config
 from training.loss import csmae_loss
-from training.masking import random_correspondence
+from training.masking import masked_reconstruction
 
 
-def validate(
-    model: CrossSensorMAE, loader: DataLoader, config: Config, device: torch.device
+def validation_terms(
+    model: CrossSensorMAE,
+    loader: DataLoader,
+    mask_ratio: float,
+    seed: int,
+    device: torch.device,
 ) -> dict[str, float]:
     """Return the loss terms over one split.
 
     Args:
         model: The model, which is switched to evaluation.
         loader: The split, in batches.
-        config: How the split is masked.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        seed: What fixes the masks.
         device: Where the model runs.
 
     Returns:
         metrics: Every loss term averaged over the batches, on the same mask.
     """
     model.eval()  # Switch model to evaluation mode (disables dropout/batchnorm updates)
-    generator = torch.Generator(device=device).manual_seed(
-        config.dataset.seed
-    )  # Seed generator for reproducible evaluation masks
+    # Seed generator for reproducible evaluation masks
+    generator = torch.Generator(device=device).manual_seed(seed)
     totals = defaultdict(float)  # Accumulate loss components across batches
     batches = 0
-    with (
-        torch.no_grad()
-    ):  # Disable gradient calculation to save memory and speed up processing
+    # Disable gradient calculation to save memory and speed up processing
+    with torch.no_grad():
         for batch, cells, _ in loader:
-            # Transfer input batch tensors to execution device
-            batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            cells = cells.to(device)
-            # Apply deterministic sensor masking
-            batch = random_correspondence(batch, config.training.mask_ratio, generator)
-            # Compute loss metrics on the masked batch
-            terms = csmae_loss(
-                model(batch, cells),
-                batch,
-                config.training.consistency,
-                config.training.uniformity,
+            batch, reconstruction = masked_reconstruction(
+                model, batch, cells, mask_ratio, generator, device
             )
+            # Compute loss metrics on the masked batch
+            terms = csmae_loss(reconstruction, batch)
             # Sum each individual loss term for batch averaging later
             for name, value in terms.items():
                 totals[name] += float(value)

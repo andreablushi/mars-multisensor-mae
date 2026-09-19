@@ -10,20 +10,13 @@ source_root: /shared
 # The image a job is built on, its extras what the platform itself asks for
 python_version: PYTHON3_13
 image_extras:
-  - digitalhub>=0.15,<0.16
-  - digitalhub-runtime-python>=0.15,<0.16
+  - digitalhub>=0.15.11,<0.16
+  - digitalhub-runtime-python>=0.15.2,<0.16
 
-# Whether every stage queues on the shared pool rather than the reserved one,
-# which marks each profile below with -shared.
+# Whether every stage queues on the shared pool, which marks each profile -shared.
 shared: true
 
-# What the platform gives each stage. A profile settles the cores, the GPU and
-# the memory of the box: cpu, 1xrtxa5000 and 1xv100 exist on both pools, while
-# up to 8xv100 and 3xrtxa5000 exist on the shared one alone. What is asked for
-# here is what the job is scheduled on; the profile settles the limit it is
-# killed at, which on 1xrtxa5000 is 13 cores and 59Gi of memory and of disk. The
-# cores are also how many processes read features beside the training. The image
-# build reads no GPU, so it names a profile alone.
+# What each stage gets: the profile settles the box, its cores are also the workers.
 resources:
   build:
     profile: cpu

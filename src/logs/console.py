@@ -7,7 +7,7 @@ import logging
 from rich.logging import RichHandler
 
 
-def logger(name: str) -> logging.Logger:
+def rich_logger(name: str) -> logging.Logger:
     """Return a logger writing through rich, the root set up once for every one.
 
     Args:

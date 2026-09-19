@@ -1,8 +1,7 @@
-"""One split of the dataset, each feature read as the patches of each instrument."""
+"""One split of the dataset, each tile read as the patches of each instrument."""
 
 from __future__ import annotations
 
-import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -12,80 +11,58 @@ from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import channel_axis, draw_feature_patches, read_feature_patches
+from dataset.patches import read_tile_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
 
 class DatasetSplit(Dataset):
-    """Every feature of one split, each read as the patches of each instrument.
+    """Every tile of one split, each read as the patches of each instrument.
 
     Attributes:
-        build: The build the features are read from.
-        features: The index rows of each sensor of each feature, keyed by identity.
-        identities: The features, in the order the split holds them.
+        build: The build the tiles are read from.
+        tiles: The index rows of each sensor of each tile, keyed by tile.
+        identities: The tiles, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
         statistics: What each sensor's values run to over the training split.
-        sizes: How far a patch of each sensor runs along an axis it is cut on.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        wavelengths: What each band of each spectral sensor is centred on, in nm.
-        elevation: The instrument whose values give every surface patch its height.
-        budget: How many patches of each instrument one draw takes at most.
-        overlap: The share of each other sensor's patches over the anchor's ground.
-        seed: What fixes every read's draw, or None to draw anew each time.
-        ceiling: How many patches one whole read hands back, or None to draw.
-        kept: What each seeded draw held, since it hands back the same every read.
+        delay: The instrument whose rows give every surface patch its delay.
     """
 
     def __init__(
         self,
         build: DatasetBuild,
-        features: Mapping[tuple[str, str], dict[str, list[ObservationMetadata]]],
+        tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
         axes: Mapping[str, tuple[str, ...]],
         statistics: Mapping[str, dict[str, np.ndarray]],
-        sizes: Mapping[str, int],
+        sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
-        wavelengths: Mapping[str, tuple[float, ...]],
-        elevation: str,
-        budget: int,
-        overlap: float,
-        seed: int | None,
-        ceiling: int | None = None,
+        delay: str,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
         Args:
-            build: The build the features are read from.
-            features: The index rows of each sensor of each feature, keyed by identity.
+            build: The build the tiles are read from.
+            tiles: The index rows of each sensor of each tile, keyed by tile.
             axes: What each axis of each instrument's values holds.
             statistics: What each sensor's values run to over the training split.
-            sizes: How far a patch of each sensor runs along an axis it is cut on.
+            sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
-            wavelengths: What each band of each spectral sensor is centred on, in nm.
-            elevation: The instrument whose values give every surface patch its height.
-            budget: How many patches of each instrument one draw takes at most.
-            overlap: The share of each other sensor's patches over the anchor's ground.
-            seed: What fixes every read's draw, or None to draw anew each time.
-            ceiling: How many patches one whole read hands back, or None to draw.
+            delay: The instrument whose rows give every surface patch its delay.
 
         Raises:
             ValueError: When a sensor the model reads has no statistics to scale by.
         """
         self.build = build
-        self.features = features
-        self.identities = list(features)
+        self.tiles = tiles
+        self.identities = list(tiles)
         self.axes = axes
         self.statistics = statistics
         self.sizes = sizes
         self.shapes = shapes
-        self.wavelengths = wavelengths
-        self.elevation = elevation
-        self.budget = budget
-        self.overlap = overlap
-        self.seed = seed
-        self.ceiling = ceiling
-        self.kept: dict[tuple[str, str], dict[str, dict[str, np.ndarray]]] = {}
+        self.delay = delay
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -94,64 +71,36 @@ class DatasetSplit(Dataset):
         """Return how many reads the split holds.
 
         Returns:
-            count: One per feature.
+            count: One per tile.
         """
         return len(self.identities)
 
-    def __getitem__(
-        self, index: int
-    ) -> tuple[dict[str, dict[str, np.ndarray]], tuple[str, str]]:
-        """Return what one read of a feature holds, and whose it is.
+    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
+        """Return what one read of a tile holds, and whose it is.
 
         Args:
             index: Which read of the split.
 
         Returns:
-            sample: Each sensor's patches: values, valid, channels and position.
-            identity: The feature the read belongs to, its class and its name.
+            sample: Each sensor's patches: values, valid and position.
+            identity: The tile the read belongs to.
 
         Raises:
-            ValueError: When the feature has no elevation to stand on.
+            ValueError: When the tile has no delay to stand on.
         """
         identity = self.identities[index]
-        if identity in self.kept:
-            return self.kept[identity], identity
-        rows = self.features[identity]
-        held = rows.get(self.elevation)
+        rows = self.tiles[identity]
+        held = rows.get(self.delay)
         if not held:
-            raise ValueError(f"{identity} has no {self.elevation} to stand on")
-        heights = self.build.read_heights(held)
-        if self.ceiling is None:
-            draw = random.Random(
-                None if self.seed is None else f"{self.seed}/{identity}"
-            )
-            read = draw_feature_patches(
-                rows,
-                self.build,
-                self.sizes,
-                self.wavelengths,
-                heights,
-                self.budget,
-                self.overlap,
-                draw,
-            )
-        else:
-            read = read_feature_patches(
-                rows,
-                self.build,
-                self.sizes,
-                self.wavelengths,
-                heights,
-                self.ceiling,
-            )
+            raise ValueError(f"{identity} has no {self.delay} to stand on")
+        delays = self.build.read_delays(held)
+        read = read_tile_patches(rows, self.build, self.sizes, delays)
         sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
             )
             for name, drawn in read.items()
         }
-        if self.seed is not None and self.ceiling is None:
-            self.kept[identity] = sample
         return sample, identity
 
 
@@ -170,14 +119,12 @@ def patch_arrays(
         statistics: What its values run to over the training split.
 
     Returns:
-        arrays: The patches under "values", "valid", "channels" and "position".
+        arrays: The patches under "values", "valid" and "position".
     """
     valid_shape = tuple(
         held if holds in (GROUND, WAVELENGTH) else 1
         for held, holds in zip(shape, axes, strict=True)
     )
-    at = channel_axis(axes)
-    channels = shape[at] if at is not None else 1
     scaled = [
         np.where(
             one.valid,
@@ -190,17 +137,16 @@ def patch_arrays(
     return {
         "values": stacked(scaled, tuple(shape), np.float32),
         "valid": stacked([one.valid for one in patches], valid_shape, bool),
-        "channels": stacked([one.channels for one in patches], (channels,), np.float32),
         "position": stacked(
             [
                 np.array(
                     [
                         one.east_m,
                         one.north_m,
-                        one.height_m,
+                        one.delay,
                         one.east_span_m,
                         one.north_span_m,
-                        one.height_span_m,
+                        one.delay_span,
                     ],
                     np.float32,
                 )
@@ -227,4 +173,4 @@ def stacked(
     """
     if not arrays:
         return np.zeros((0, *shape), dtype)
-    return np.stack(list(arrays))
+    return np.stack(arrays)

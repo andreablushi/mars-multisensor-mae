@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from itertools import islice
 from pathlib import Path
 
 import torch
@@ -14,25 +15,45 @@ from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from config.paths import REPO_ROOT
-from config.schema import Config
-from logs.console import logger
-from logs.tracker import log_epoch, log_step, log_summary
+from logs.console import rich_logger
+from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
 from training.loss import csmae_loss
-from training.masking import random_correspondence
-from training.validate import validate
+from training.masking import masked_reconstruction
+from training.validate import validation_terms
 
 BEST_CHECKPOINT = "best.pt"
 
-log = logger(__name__)
+log = rich_logger(__name__)
+
+
+def endless(loader: DataLoader):
+    """Yield the loader's batches over and over, so a run is counted in steps.
+
+    Args:
+        loader: The split to read, in batches.
+
+    Yields:
+        batch: What one step reads, the loader started again once it runs out.
+    """
+    while True:
+        yield from loader
 
 
 def train(
     model: CrossSensorMAE,
     training: DataLoader,
     validation: DataLoader,
-    config: Config,
+    max_steps: int,
+    learning_rate: float,
+    weight_decay: float,
+    warmup_steps: int,
+    validate_every: int,
+    patience: int,
+    mask_ratio: float,
+    checkpoints: str,
+    seed: int,
     device: torch.device,
     run: Run,
 ) -> Path:
@@ -42,83 +63,79 @@ def train(
         model: The model, already on the device.
         training: The training split, in batches.
         validation: The validation split, in batches.
-        config: How to train, validate and stop.
+        max_steps: How many steps the run takes, at most.
+        learning_rate: The peak learning rate, reached after the warmup.
+        weight_decay: The AdamW weight decay.
+        warmup_steps: How many steps the rate climbs before the cosine decay.
+        validate_every: How many steps between two validations.
+        patience: How many validations without a lower loss before the run stops.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        checkpoints: Where checkpoints are written, relative to the repository.
+        seed: What fixes the masks.
         device: Where the model runs.
         run: The tracked run every metric is logged to.
 
     Returns:
         best: The checkpoint with the lowest validation loss.
     """
-    settings = config.training
     # Configure AdamW optimizer with custom hyperparameters
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=settings.learning_rate,
-        weight_decay=settings.weight_decay,
+        lr=learning_rate,
+        weight_decay=weight_decay,
         betas=(0.9, 0.95),
     )
-    # Compute total steps and warmup duration
-    steps = len(training) * settings.epochs
-    warmup = len(training) * settings.warmup_epochs
 
     # Schedule function: linear warmup followed by cosine decay
     def lambda_lr_schedule(step: int) -> float:
-        if step < warmup:
-            return step / max(warmup, 1)  # Warmup phase
-        progress = (step - warmup) / max(steps - warmup, 1)
+        if step < warmup_steps:
+            return step / max(warmup_steps, 1)  # Warmup phase
+        progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
         return 0.5 * (1 + math.cos(math.pi * progress))  # Cosine decay phase
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
-    stopping = EarlyStopping(settings.patience)
-    generator = torch.Generator(device=device).manual_seed(
-        config.dataset.seed
-    )  # Deterministic seed generator
-    best = REPO_ROOT / settings.checkpoints / BEST_CHECKPOINT
+    stopping = EarlyStopping(patience)
+    # Deterministic seed generator
+    generator = torch.Generator(device=device).manual_seed(seed)
+    best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
-    step, best_epoch = 0, -1
-    for epoch in range(settings.epochs):
-        model.train()  # Enable training mode
-        for batch, cells, _ in training:
-            # Transfer input tensors to execution device
-            batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            cells = cells.to(device)
-            # Apply dynamic random sensor masking
-            batch = random_correspondence(batch, settings.mask_ratio, generator)
-            # Compute cross-sensor MAE loss terms
-            terms = csmae_loss(
-                model(batch, cells), batch, settings.consistency, settings.uniformity
-            )
-            # Backpropagation pass
-            optimizer.zero_grad()
-            terms["loss"].backward()
-            clip_grad_norm_(
-                model.parameters(), 1.0
-            )  # Stabilize training against exploding gradients
-            optimizer.step()
-            scheduler.step()
-            step += 1
-            log_step(run, step, terms)  # Log step-level metrics to experiment tracker
-        # Run validation pass after each epoch
-        metrics = validate(model, validation, config, device)
-        log_epoch(run, step, epoch, metrics)
-        log.info("epoch %d validation loss %.4f", epoch, metrics["loss"])
+    step, best_step = 0, -1
+    model.train()  # Enable training mode
+    for batch, cells, _ in islice(endless(training), max_steps):
+        batch, reconstruction = masked_reconstruction(
+            model, batch, cells, mask_ratio, generator, device
+        )
+        # Compute cross-sensor MAE loss terms
+        terms = csmae_loss(reconstruction, batch)
+        # Backpropagation pass
+        optimizer.zero_grad()
+        terms["loss"].backward()
+        # Stabilize training against exploding gradients
+        clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        scheduler.step()
+        step += 1
+        log_step(run, step, terms)  # Log step-level metrics to experiment tracker
+        if step % validate_every:
+            continue
+        metrics = validation_terms(model, validation, mask_ratio, seed, device)
+        model.train()  # Validating switched it to evaluation
+        log_validation(run, step, metrics)
+        log.info("step %d validation loss %.4f", step, metrics["loss"])
         # Track early stopping and persist best model weights
         if stopping.improved(metrics["loss"]):
-            save_checkpoint(best, model, optimizer, epoch)
-            best_epoch = epoch
+            save_checkpoint(best, model, optimizer, step)
+            best_step = step
         # Check early stopping patience trigger
         if stopping.stopped:
-            log.info(
-                "no lower validation loss for %d epochs, stopping", settings.patience
-            )
+            log.info("no lower validation loss for %d validations, stopping", patience)
             break
     # Record final run summary metadata
     log_summary(
         run,
         {
             "best_validation_loss": stopping.best,
-            "best_epoch": best_epoch,
-            "epochs_trained": epoch + 1,
+            "best_step": best_step,
             "steps": step,
             "run_seconds": time.perf_counter() - started,
         },

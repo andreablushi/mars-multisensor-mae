@@ -20,11 +20,9 @@ from building.common.layout import WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import (
     EAST,
-    INSIDE,
     MEASURED,
     META,
     NORTH,
-    VALID,
 )
 from shared.disk import parquet
 from torch.utils.data import DataLoader
@@ -32,14 +30,14 @@ from torch.utils.data import DataLoader
 from dataset.models.observation import Observation
 from dataset.models.split import DatasetSplit
 
-# What is left free on the disk a run is given, under which nothing more is kept.
 DISK_RESERVE_BYTES = 8 * 1024**3
 
-# The splits a build is read in, which the config gives a share of the features each.
+# What MOLA stores beside its heights: the radargram row each of them sounds at.
+DELAY_PLANE = "delay"
+
 TRAINING_SPLIT = "train"
 VALIDATION_SPLIT = "validation"
-TEST_SPLIT = "test"
-SPLITS = (TRAINING_SPLIT, VALIDATION_SPLIT, TEST_SPLIT)
+SPLITS = (TRAINING_SPLIT, VALIDATION_SPLIT)
 
 
 @dataclass(slots=True)
@@ -57,12 +55,7 @@ class DatasetBuild:
     records: list[ObservationMetadata] | None = None
 
     def read_object(self, path: str) -> bytes:
-        """Return what one object of the build holds, off disk or from the store.
-
-        A build runs to some hundred gigabytes and the disk a run is given holds
-        a fraction of it, but a run reads the same few thousand objects of it
-        once an epoch. What is fetched is kept while there is room, so an epoch
-        after the first reads off disk instead of over the network.
+        """Return what one object of the build holds, off disk or fetched and kept.
 
         Args:
             path: Where it sits, relative to the build root, as the index names it.
@@ -97,18 +90,18 @@ class DatasetBuild:
             ]
         return self.records
 
-    def read_observation_metadata_by_feature(
+    def read_observation_metadata_by_tile(
         self,
-    ) -> dict[tuple[str, str], dict[str, list[ObservationMetadata]]]:
-        """Return the observations of each feature, by the instrument that took them.
+    ) -> dict[str, dict[str, list[ObservationMetadata]]]:
+        """Return the observations of each tile, by the instrument that took them.
 
         Returns:
-            standing: The rows of each sensor of each feature, keyed by identity.
+            standing: The rows of each sensor of each tile, keyed by identity.
         """
         standing = defaultdict(lambda: defaultdict(list))
         for one in self.read_observation_metadata():
-            standing[one.feature][one.instrument].append(one)
-        return {feature: dict(rows) for feature, rows in standing.items()}
+            standing[one.tile][one.instrument].append(one)
+        return {tile: dict(rows) for tile, rows in standing.items()}
 
     def read_row_by_instrument(self) -> dict[str, ObservationMetadata]:
         """Return one index row of each instrument the build reached.
@@ -122,50 +115,48 @@ class DatasetBuild:
         """Return how much ground one sample of each instrument spans, over the build.
 
         Returns:
-            ground_sample_m: One length per sensor, its median finest ground axis.
+            sample_spacing_m: One length per sensor, its median finest ground axis.
         """
         standing = defaultdict(list)
         for one in self.read_observation_metadata():
-            standing[one.instrument].append(min(one.ground_sample_m))
+            standing[one.instrument].append(min(one.sample_spacing_m))
         return {name: float(np.median(held)) for name, held in standing.items()}
 
-    def read_heights(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
-        """Return every height the elevation instrument measured over one feature.
+    def read_delays(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
+        """Return the row every sample of the delay instrument sounds at, over a tile.
 
         Args:
-            observations: The feature's index rows of the elevation instrument.
+            observations: The tile's index rows of the instrument carrying the delay.
 
         Returns:
-            heights: One row per sample: north, east and height, in metres. (N, 3)
+            delays: One row per sample: north, east and the delay row. (N, 3)
 
         Raises:
             ValueError: When none of them measured anything.
         """
         placed = []
         for record in observations:
-            observation = self.read_observation(record.path)
+            observation = self.read_observation(record.path, (DELAY_PLANE,))
             measured = observation.measured
-            north, east = observation.ground_metres()
+            north, east = observation.distance_centre_m()
+            rows = observation.beside[DELAY_PLANE]
             placed.append(
-                np.stack(
-                    [north[measured], east[measured], observation.values[measured]],
-                    axis=1,
-                )
+                np.stack([north[measured], east[measured], rows[measured]], axis=1)
             )  # (n, 3)
-        heights = np.concatenate(placed).astype(np.float64)  # (N, 3)
-        if not heights.size:
+        delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
+        if not delays.size:
             raise ValueError(
                 f"nothing measured over {[one.identity for one in observations]}"
             )
-        return heights
+        return delays
 
-    def compute_stats(
-        self, features: Collection[tuple[str, str]] | None = None
+    def read_statistics_by_instrument(
+        self, tiles: Collection[str] | None = None
     ) -> dict[str, dict[str, np.ndarray]]:
         """Return what each instrument's values run to, without reading one observation.
 
         Args:
-            features: The features to pool over, or None for every one.
+            tiles: The tiles to pool over, or None for every one.
 
         Returns:
             statistics: Per sensor, the mean and deviation of its measurements.
@@ -173,22 +164,27 @@ class DatasetBuild:
         standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
         spreads: dict[str, list[int]] = {}
         for one in self.read_observation_metadata():
+            if tiles is not None and one.tile not in tiles:
+                continue
             # A spectral instrument is pooled a band at a time, every other whole.
-            banded = WAVELENGTH in one.axes
             held = (
                 (one.band_valid_count, one.band_mean, one.band_std)
-                if banded
+                if WAVELENGTH in one.axes
                 else (one.valid_count, one.value_mean, one.value_std)
             )
             # An observation measuring nothing leaves them unset, a sounder nan.
-            if (features is not None and one.feature not in features) or any(
-                each is None for each in held
-            ):
+            if any(each is None for each in held):
                 continue
-            moments = tuple(np.asarray(each, dtype=np.float64) for each in held)
-            if not moments[0].sum() or not np.isfinite(moments[1:]).all():
+            counts, mean, deviation = (
+                np.asarray(each, dtype=np.float64) for each in held
+            )
+            # A band the observation never measured holds no mean and says so with
+            # nan, which its count already tells apart and which would pool to nan.
+            mean = np.where(counts > 0, mean, 0.0)
+            deviation = np.where(counts > 0, deviation, 0.0)
+            if not counts.sum() or not np.isfinite([mean, deviation]).all():
                 continue
-            standing[one.instrument].append(moments)
+            standing[one.instrument].append((counts, mean, deviation))
             spreads[one.instrument] = [
                 -1 if holds == WAVELENGTH else 1 for holds in one.axes
             ]
@@ -214,143 +210,100 @@ class DatasetBuild:
             }
         return statistics
 
-    def read_observation(self, path: str) -> Observation:
+    def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.
 
         Args:
             path: Where that object sits, as the index names it.
+            beside: What else the instrument stores to read, none of it by default.
 
         Returns:
             observation: The observation, its arrays as the build wrote them.
         """
-        # What INSIDE and VALID hold is what MEASURED holds, and reading one of
-        # them costs as much as reading the values, so they are left unread.
-        skipped = (META, INSIDE, VALID)
         with np.load(io.BytesIO(self.read_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
-            arrays = {name: held[name] for name in held.files if name not in skipped}
+            # Only these are read, so what is not asked for stays packed.
+            arrays = {
+                name: held[name]
+                for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
+            }
         return Observation(
             instrument=described["instrument"],
             identifier=described["identifier"],
             measurement=described["measurement"],
-            values=arrays.pop(described["measurement"]),
+            values=arrays[described["measurement"]],
             axes=tuple(described["axes"]),
             dims={name: tuple(held) for name, held in described["dims"].items()},
-            measured=arrays.pop(MEASURED),
-            north=arrays.pop(NORTH),
-            east=arrays.pop(EAST),
-            # What the pops left is what the instrument stores beside its values.
-            beside=arrays,
+            measured=arrays[MEASURED],
+            north=arrays[NORTH],
+            east=arrays[EAST],
+            beside={name: arrays[name] for name in beside},
             described=described,
         )
 
     def loaders_by_split(
         self,
-        sizes: Mapping[str, int],
+        sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
-        wavelengths: Mapping[str, tuple[float, ...]],
         collate: Callable,
         shares: Sequence[float],
         seed: int,
-        least_classes: int,
-        elevation: str,
-        budget: int,
-        overlap: float,
+        delay: str,
         batch_size: int,
         workers: int,
-        ceiling: int | None = None,
     ) -> dict[str, DataLoader]:
-        """Return every split of the build in batches, whole features at a time.
+        """Return every split of the build in batches, whole tiles at a time.
 
         Args:
-            sizes: How far a patch of each sensor runs along a cut axis, and which ones.
+            sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
-            wavelengths: What each band of each spectral sensor is centred on, in nm.
-            collate: How one batch of drawn features becomes what the model is handed.
+            collate: How one batch of read tiles becomes what the model is handed.
             shares: The share of the observations each split holds, in the code's order.
-            seed: What fixes where a feature falls, and every draw that is not anew.
-            least_classes: How many classes a split it is asked for must hold.
-            elevation: The instrument whose values give every surface patch its height.
-            budget: How many patches of each instrument one draw takes at most.
-            overlap: The share of each other sensor's patches over the anchor's ground.
-            batch_size: How many features one step reads.
-            workers: How many processes read features beside the training.
-            ceiling: How many patches one whole read hands back, or None to draw.
+            seed: What fixes which split a tile falls in.
+            delay: The instrument whose rows give every surface patch its delay.
+            batch_size: How many tiles one step reads.
+            workers: How many processes read tiles beside the training.
 
         Returns:
-            loaders: One loader per split, the training one shuffled and the rest not.
-
-        Raises:
-            ValueError: When a split it is asked for holds too few classes to measure.
+            loaders: One loader per split, the training one shuffled and the other not.
         """
-        by_feature = self.read_observation_metadata_by_feature()
+        by_tile = self.read_observation_metadata_by_tile()
         wanted = dict(zip(SPLITS, shares, strict=True))
         counted = {
-            identity: sum(len(held) for held in rows.values())
-            for identity, rows in by_feature.items()
+            tile: sum(len(held) for held in rows.values())
+            for tile, rows in by_tile.items()
         }
-        classes: defaultdict[str, list[tuple[str, str]]] = defaultdict(list)
-        for identity in by_feature:
-            classes[identity[0]].append(identity)
         order = sorted(
-            by_feature,
-            key=lambda identity: (
-                -counted[identity],
-                random.Random(f"{seed}/{'/'.join(identity)}").random(),
+            by_tile,
+            key=lambda tile: (
+                -counted[tile],
+                random.Random(f"{seed}/{tile}").random(),
             ),
         )
-        asked = [name for name in SPLITS if wanted[name]]
-        # Each split is seeded with the lightest features of the commonest classes, so
-        # it holds enough of them to be measured over before weight decides the rest.
-        seeded = {
-            identity: name
-            for one in sorted(classes, key=lambda one: (-len(classes[one]), one))[
-                :least_classes
-            ]
-            for name, identity in zip(
-                asked,
-                [identity for identity in reversed(order) if identity[0] == one],
-                strict=False,
-            )
-        }
-        # A feature is one sample, so the splits are filled with whole features, the
+        # A tile is one sample, so the splits are filled with whole tiles, the
         # heaviest first and each into the split standing furthest under its share.
-        splits: dict[str, list[tuple[str, str]]] = {name: [] for name in SPLITS}
+        splits: dict[str, list[str]] = {name: [] for name in SPLITS}
         placed = dict.fromkeys(SPLITS, 0.0)
-        for identity in order:
-            name = seeded.get(identity) or min(
+        for tile in order:
+            name = min(
                 SPLITS,
                 key=lambda one: placed[one] / wanted[one] if wanted[one] else math.inf,
             )
-            splits[name].append(identity)
-            placed[name] += counted[identity]
-        for name, held in splits.items():
-            standing = {identity[0] for identity in held}
-            if wanted[name] and len(standing) < least_classes:
-                raise ValueError(
-                    f"{name} holds {len(standing)} classes, "
-                    f"{least_classes} say the least"
-                )
-        # Compute stats for the training split and extract instrument axes
-        statistics = self.compute_stats(set(splits[TRAINING_SPLIT]))
+            splits[name].append(tile)
+            placed[name] += counted[tile]
+        statistics = self.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
         axes = {name: one.axes for name, one in self.read_row_by_instrument().items()}
-        # Build and return a DataLoader for each data split
         return {
             name: DataLoader(
                 DatasetSplit(
                     self,
-                    {identity: by_feature[identity] for identity in held},
+                    {tile: by_tile[tile] for tile in held},
                     axes,
                     statistics,
                     sizes,
                     shapes,
-                    wavelengths,
-                    elevation,
-                    budget,
-                    overlap,
-                    None if name == TRAINING_SPLIT else seed,
-                    ceiling,
+                    delay,
                 ),
                 batch_size=batch_size,
                 shuffle=name == TRAINING_SPLIT,  # Shuffle only for training

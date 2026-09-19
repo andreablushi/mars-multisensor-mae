@@ -7,6 +7,7 @@ from functools import partial
 
 import torch
 from dhub import submit
+from dhub.configs import stage_workers
 from dhub.publish import model_name
 from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
@@ -16,21 +17,20 @@ from architecture.models import collate
 from config.load import load_config
 from config.paths import REPO_ROOT
 from dataset.patches import patch_sizes, read_patch_layout
-from dataset.wavelengths import band_wavelengths
-from evaluation.evaluate import evaluate_latent_space, evaluate_reconstruction
-from evaluation.report import report_latent_space, report_reconstruction
-from logs.console import logger
+from evaluation.evaluate import evaluate_latent_space
+from logs.console import rich_logger
 from logs.tracker import start_logging
 from training.checkpoint import load_checkpoint
 
+EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 
-log = logger(__name__)
+log = rich_logger(__name__)
 
 
 @handler()
 def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
-    """Measure what one published model's latent space made of the feature classes.
+    """Measure what one published model's latent space made of a split of tiles.
 
     Args:
         project: The DigitalHub project the model was published in, unused here.
@@ -41,61 +41,45 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
     axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
-    wavelengths = band_wavelengths(shapes, axes)
-    read = (
+    loader = build.loaders_by_split(
         sizes,
         shapes,
-        wavelengths,
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
-        config.dataset.least_classes,
-        config.model.elevation,
-        max(config.training.patches_per_step // config.training.batch_size, 1),
-        config.dataset.overlap,
+        config.model.delay,
         config.training.batch_size,
-        config.training.workers,
-    )
-    # The latents are read over every patch, the reconstruction over one draw of them.
-    loader = build.loaders_by_split(*read)[config.evaluation.split]
-    ceiling = config.training.patches_per_step
-    whole = build.loaders_by_split(*read, ceiling)[config.evaluation.split]
+        stage_workers(EVALUATION_STAGE),
+    )[config.evaluation.split]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CrossSensorMAE(shapes, axes, strides, config.model).to(device)
+    model = CrossSensorMAE(
+        shapes,
+        axes,
+        strides,
+        config.model.encoder_dim,
+        config.model.encoder_heads,
+        config.model.encoder_depth,
+        config.model.crossencoder_depth,
+        config.model.decoder_dim,
+        config.model.decoder_heads,
+        config.model.decoder_depth,
+        config.model.cell_m,
+    ).to(device)
     name = config.evaluation.model or model_name(config.model)
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
-    epochs = load_checkpoint(published_checkpoint(name, held), model) + 1
-    log.info("evaluating %s, trained for %d epochs, on %s", name, epochs, device)
+    steps = load_checkpoint(published_checkpoint(name, held), model)
+    log.info("evaluating %s, trained for %d steps, on %s", name, steps, device)
     run = start_logging(
         config,
         {
             "device": str(device),
-            "model": name,
-            "epochs_trained": epochs,
-            "features": len(loader.dataset),
-            "patch_ceiling": ceiling,
+            "checkpoint": name,
+            "steps_trained": steps,
+            "tiles": len(loader.dataset),
         },
     )
-    report_latent_space(
-        run,
-        evaluate_latent_space(
-            model,
-            whole,
-            config.evaluation.neighbours,
-            config.dataset.seed,
-            device,
-        ),
-    )
-    report_reconstruction(
-        run,
-        evaluate_reconstruction(
-            model,
-            loader,
-            config.training.mask_ratio,
-            config.dataset.seed,
-            device,
-        ),
-    )
+    grids = evaluate_latent_space(model, loader, device)
+    run.log({"latent/tiles": len(grids)})
     run.finish()
 
 
@@ -118,7 +102,7 @@ def main() -> int:
     arguments = parsed.parse_args()
     if arguments.dh:
         return submit.submitted(
-            "evaluation", EVALUATION_HANDLER, arguments.ref, arguments.overrides
+            EVALUATION_STAGE, EVALUATION_HANDLER, arguments.ref, arguments.overrides
         )
     # The platform calls the handler, a run here the function under it.
     run_evaluation.__wrapped__(overrides=arguments.overrides)
