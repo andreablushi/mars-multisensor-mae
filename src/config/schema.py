@@ -87,12 +87,10 @@ class EvaluationConfig:
 
     Attributes:
         split: The split the latents are read from, as the code names the splits.
-        neighbours: How many nearest latents one retrieval reads.
         model: The published model to read, or None for the latest of this one.
     """
 
     split: str
-    neighbours: int
     model: str | None
 
 

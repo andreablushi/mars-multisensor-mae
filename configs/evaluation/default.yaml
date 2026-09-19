@@ -1,10 +1,9 @@
-# How a trained model's latent space is measured against the feature classes.
+# How a trained model's latent space is read. Nothing is measured over it yet:
+# a tile is matched against a similarity between geological features, and that
+# dataset is not built.
 
 # The split the latents are read from: train or validation.
 split: validation
-
-# How many nearest latents one retrieval reads, the paper's top ten.
-neighbours: 10
 
 # The published model to read, or nothing for the latest this architecture published.
 model: null
