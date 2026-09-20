@@ -24,7 +24,7 @@ from building.preprocessing.common.store import (
     META,
     NORTH,
 )
-from shared.disk import parquet
+from common.disk import parquet
 from torch.utils.data import DataLoader
 
 from dataset.models.observation import Observation
