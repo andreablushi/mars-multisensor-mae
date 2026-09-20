@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 
@@ -69,3 +69,23 @@ def log_summary(run: Run, summary: Mapping[str, object]) -> None:
         summary: What it came to, keyed as it is recorded.
     """
     run.summary.update(dict(summary))
+
+
+def log_latent_space(
+    run: Run,
+    metrics: Mapping[str, float],
+    classes: Sequence[str],
+    distances: Sequence[Sequence[float]],
+) -> None:
+    """Log what a model's latent space came to over the labelled tiles.
+
+    Args:
+        run: The tracked run.
+        metrics: Every number measured, keyed as it is logged.
+        classes: The classes, in the order the distances hold them.
+        distances: The mean distance between the tiles of two classes. (C, C)
+    """
+    table = wandb.Table(columns=["class", *classes])
+    for name, row in zip(classes, distances, strict=True):
+        table.add_data(name, *(float(one) for one in row))
+    run.log(dict(metrics) | {"class_distances": table})

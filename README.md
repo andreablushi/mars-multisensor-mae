@@ -59,7 +59,7 @@ from config.paths import build_root
 from dataset.store import DatasetBuild
 
 config = load_config()
-build = DatasetBuild(build_root(config.dataset))
+build = DatasetBuild(build_root(config.dataset.root, config.dataset.build))
 ```
 
 A build published on DigitalHub is fetched an observation at a time, straight
@@ -70,13 +70,39 @@ brought down whole is read off disk.
 ```python
 from dhub.store import published_build
 
-build = published_build(config.dataset)
+build = published_build(config.dataset.build, config.dataset.root)
 ```
 
 Everything that reaches the platform is in `scripts/dhub`: the project the builds
 are published in, the artifact each is published under, and the credentials a
 long read mints again. `configs/dataset/<build>.yaml` names the build to read and
 where builds sit, which a local read needs just as much.
+
+## Evaluating what it learnt
+
+The dataset repository builds a second dataset beside the training one: a
+balanced draw of tiles, each labelled with the geological class the IAU
+catalogue gives the feature it holds. It is published as its own build and
+carries `labels.parquet` beside its index, which `src/evaluation/store.py`
+reads with the tiles themselves.
+
+```bash
+uv run python scripts/evaluate.py             # the run named in configs/config.yaml
+uv run python scripts/evaluate.py run=mae-deep
+```
+
+The model embeds every labelled tile into its grid of cells, and two tiles are
+compared by a normalised Chamfer distance over those cells: each cell of one is
+matched to the nearest cell of the other and the cost, a cosine distance
+between two unit vectors, is averaged both ways. `evaluation.neighbourhood`
+keeps a match near where the cell sits, so the arrangement of a feature counts
+and not only what its places are made of; null matches a cell anywhere in the
+other tile.
+
+What comes out of that distance is retrieval at `evaluation.neighbours`
+(precision, recall, F1 and mAP, a shared class its relevance), the silhouette
+overall and per class, and the mean distance between each pair of classes with
+its within, between and separation.
 
 ## Configs
 

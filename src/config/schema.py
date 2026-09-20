@@ -88,10 +88,15 @@ class EvaluationConfig:
     """What a trained model's latent space is measured over, and how.
 
     Attributes:
-        split: The split the latents are read from, as the code names the splits.
+        build: The build the labelled tiles are read from, published as dataset-<build>.
+        neighbourhood: How far, in cells along either axis, a cell may be matched
+            from its own offset, or None to match it anywhere in the other tile.
+        neighbours: How many nearest tiles the retrieval is counted over.
     """
 
-    split: str
+    build: str
+    neighbourhood: int | None
+    neighbours: int
 
 
 @dataclass
