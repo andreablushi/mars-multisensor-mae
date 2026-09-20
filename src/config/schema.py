@@ -89,11 +89,9 @@ class EvaluationConfig:
 
     Attributes:
         split: The split the latents are read from, as the code names the splits.
-        model: The published model to read, or None for the latest of this one.
     """
 
     split: str
-    model: str | None
 
 
 @dataclass
@@ -101,12 +99,14 @@ class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
+        run: What the run is called, which names its checkpoint and its tracking.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
         evaluation: How what it trained is measured.
     """
 
+    run: str
     dataset: DatasetConfig
     model: ModelConfig
     training: TrainingConfig

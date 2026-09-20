@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
 
 import wandb
 from dotenv import load_dotenv
@@ -16,26 +15,22 @@ from config.paths import REPO_ROOT
 from config.schema import Config
 
 
-def start_logging(config: Config, facts: Mapping[str, object]) -> Run:
-    """Return the tracked run every metric of one training is logged to.
+def start_logging(config: Config, stage: str, facts: Mapping[str, object]) -> Run:
+    """Return the tracked run every metric of one stage is logged to.
 
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
+        stage: What the stage is called, which tells a training from an evaluation.
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named for its branch or short commit and its start, its place
-            read from the .env.
+        run: The run, named for the config's own run, the stage and its start, its
+            place read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
-    head = REPO_ROOT / ".git"
-    if head.is_file():
-        head = Path(head.read_text().partition("gitdir:")[2].strip())
-    held = (head / "HEAD").read_text().strip() if (head / "HEAD").exists() else ""
-    branch = held.rpartition("/")[2] if held.startswith("ref:") else held[:7]
     run = wandb.init(
         config=asdict(config),
-        name=f"{branch or 'detached'}-{datetime.now():%Y%m%d-%H%M%S}",
+        name=f"{config.run}-{stage}-{datetime.now():%Y%m%d-%H%M%S}",
     )
     run.config.update(dict(facts))
     return run

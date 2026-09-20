@@ -4,23 +4,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config.schema import ModelConfig
 from dhub import credentials
 from dhub.configs import load_platform
 
 KIND = "model"
 
 
-def model_name(model: ModelConfig) -> str:
+def model_name(run: str) -> str:
     """Return what a run's best checkpoint is published as.
 
     Args:
-        model: What the run trained, whose architecture names the publication.
+        run: What the run is called, as the config names it.
 
     Returns:
         name: That name, which a later publication versions rather than replaces.
     """
-    return f"{load_platform().publishes['model']}-{model.name}"
+    return f"{load_platform().publishes['model']}-{run}"
 
 
 def publish_checkpoint(project, path: Path, name: str):

@@ -4,6 +4,3 @@
 
 # The split the latents are read from: train or validation.
 split: validation
-
-# The published model to read, or nothing for the latest this architecture published.
-model: null

@@ -73,6 +73,7 @@ def run_training(project=None, overrides: list[str] | None = None):
     ).to(device)
     run = start_logging(
         config,
+        TRAINING_STAGE,
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
@@ -103,7 +104,7 @@ def run_training(project=None, overrides: list[str] | None = None):
     run.finish()
     if project is None:
         return best
-    return publish_checkpoint(project, best, model_name(config.model))
+    return publish_checkpoint(project, best, model_name(config.run))
 
 
 def main() -> int:
