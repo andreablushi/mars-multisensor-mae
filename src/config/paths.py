@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config.schema import DatasetConfig
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CONFIGS_ROOT = REPO_ROOT / "configs"
 
 
-def build_root(dataset: DatasetConfig) -> Path:
-    """Return where the build a read is made of sits on this machine.
+def build_root(root: str, build: str) -> Path:
+    """Return where one build of the dataset sits on this machine.
 
     Args:
-        dataset: What a run reads, naming the build and where builds sit.
+        root: Where every build sits, relative to the repository.
+        build: The build's own name, which is the directory it owns.
 
     Returns:
-        root: That build's own directory, which need not exist yet.
+        path: That build's own directory, which need not exist yet.
     """
-    return REPO_ROOT / dataset.root / dataset.build
+    return REPO_ROOT / root / build

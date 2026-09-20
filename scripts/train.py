@@ -41,7 +41,7 @@ def run_training(project=None, overrides: list[str] | None = None):
         model: The published checkpoint, or where it was written on a run here.
     """
     config = load_config(overrides or [])
-    build = published_build(config.dataset)
+    build = published_build(config.dataset.build, config.dataset.root)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
     axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}

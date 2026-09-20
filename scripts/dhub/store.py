@@ -9,24 +9,24 @@ import digitalhub as dh
 from botocore.exceptions import ClientError
 
 from config.paths import build_root
-from config.schema import DatasetConfig
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform
 
 
-def published_build(dataset: DatasetConfig) -> DatasetBuild:
-    """Return the build the config names, read from the platform's store.
+def published_build(build: str, root: str) -> DatasetBuild:
+    """Return one published build of the dataset, read from the platform's store.
 
     Args:
-        dataset: What a run reads, naming the build and where it lands here.
+        build: The build to read, which is published as dataset-<build>.
+        root: Where every build sits here, relative to the repository.
 
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
     """
     platform = load_platform()
     project = dh.get_or_create_project(platform.project)
-    name = f"{platform.publishes['dataset']}-{dataset.build}"
+    name = f"{platform.publishes['dataset']}-{build}"
     published = urlparse(project.get_artifact(name).spec.path)
     bucket = published.netloc
     prefix = published.path.lstrip("/").rstrip("/") + "/"
@@ -48,7 +48,7 @@ def published_build(dataset: DatasetConfig) -> DatasetBuild:
                 raise RuntimeError(f"{key}: {refused}") from None
         return fetched["Body"].read()
 
-    return DatasetBuild(root=build_root(dataset), fetch=fetch)
+    return DatasetBuild(root=build_root(root, build), fetch=fetch)
 
 
 def published_checkpoint(name: str, destination: Path) -> Path:
