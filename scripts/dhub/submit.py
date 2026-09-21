@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping
 
 import digitalhub as dh
 
@@ -12,14 +12,16 @@ from dhub import credentials
 from dhub.configs import load_platform
 
 
-def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> int:
+def submitted(
+    stage: str, handler: str, ref: str, parameters: Mapping[str, object]
+) -> int:
     """Register a version of one stage from a pushed commit, and run it.
 
     Args:
         stage: Which stage, naming its registered function and the resources it gets.
         handler: The dotted path the platform imports and calls.
         ref: The branch, tag, or commit the platform clones.
-        overrides: What the run composes its config with, as hydra spells them.
+        parameters: What the handler is called with, keyed by its own arguments.
 
     Returns:
         code: A process exit code, non zero when the image did not build.
@@ -64,7 +66,7 @@ def submitted(stage: str, handler: str, ref: str, overrides: Sequence[str]) -> i
             {"name": "PYTHONPATH", "value": f"{root}:{root}/src:{root}/scripts"},
             *credentials.minting_envs(),
         ],
-        parameters={"overrides": list(overrides)},
+        parameters=dict(parameters),
         wait=False,
     )
     print(run.key)

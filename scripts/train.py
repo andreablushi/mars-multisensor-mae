@@ -8,9 +8,10 @@ from functools import partial
 import torch
 from dhub import submit
 from dhub.configs import load_platform, stage_workers
-from dhub.publish import model_name, publish_checkpoint
+from dhub.publish import publish_checkpoint, published_name
 from dhub.store import published_build
 from digitalhub_runtime_python import handler
+from evaluate import evaluate_checkpoint
 
 from architecture.mae import CrossSensorMAE
 from architecture.models import collate
@@ -30,12 +31,15 @@ log = rich_logger(__name__)
 
 
 @handler(outputs=[_MODEL])
-def run_training(project=None, overrides: list[str] | None = None):
-    """Train one run, and publish the best checkpoint it left.
+def run_training(
+    project=None, overrides: list[str] | None = None, evaluate: bool = False
+):
+    """Train one run, publish the best checkpoint it left, and evaluate it if asked.
 
     Args:
         project: The DigitalHub project the model is logged into, or None here.
         overrides: What to compose the config with, as hydra spells them.
+        evaluate: Whether to evaluate the best checkpoint once the training ends.
 
     Returns:
         model: The published checkpoint, or where it was written on a run here.
@@ -102,9 +106,13 @@ def run_training(project=None, overrides: list[str] | None = None):
         run,
     )
     run.finish()
-    if project is None:
-        return best
-    return publish_checkpoint(project, best, model_name(config.run_name))
+    published = best
+    if project is not None:
+        name = published_name("model", config.run_name)
+        published = publish_checkpoint(project, best, name)
+    if evaluate:
+        evaluate_checkpoint(config, best, project)
+    return published
 
 
 def main() -> int:
@@ -119,6 +127,9 @@ def main() -> int:
     )
     parsed.add_argument("--ref", default="main", help="branch, tag, or commit to run")
     parsed.add_argument(
+        "--evaluate", action="store_true", help="evaluate the model once trained"
+    )
+    parsed.add_argument(
         "overrides",
         nargs="*",
         help="what to compose the config with, as hydra spells them",
@@ -126,10 +137,13 @@ def main() -> int:
     arguments = parsed.parse_args()
     if arguments.dh:
         return submit.submitted(
-            TRAINING_STAGE, TRAINING_HANDLER, arguments.ref, arguments.overrides
+            TRAINING_STAGE,
+            TRAINING_HANDLER,
+            arguments.ref,
+            {"overrides": arguments.overrides, "evaluate": arguments.evaluate},
         )
     # The platform calls the handler, a run here the function under it.
-    run_training.__wrapped__(overrides=arguments.overrides)
+    run_training.__wrapped__(overrides=arguments.overrides, evaluate=arguments.evaluate)
     return 0
 
 

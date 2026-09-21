@@ -8,6 +8,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CONFIGS_ROOT = REPO_ROOT / "configs"
 
+RESULTS_ROOT = REPO_ROOT / "results"
+
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.

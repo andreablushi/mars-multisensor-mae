@@ -28,11 +28,15 @@ class LatentMeasure:
         metrics: Every number measured, keyed as it is logged.
         classes: The classes, in the order the distances hold them.
         distances: The mean distance between the tiles of two classes. (C, C)
+        tiles: The tiles, in the order the tile distances hold them.
+        tile_distances: The distance between every pair of tiles. (T, T)
     """
 
     metrics: dict[str, float]
     classes: list[str]
     distances: np.ndarray
+    tiles: list[str]
+    tile_distances: np.ndarray
 
 
 def evaluate_latent_space(
@@ -64,29 +68,32 @@ def evaluate_latent_space(
 def measure_latent_space(
     grids: Mapping[str, TileGrid],
     classes: Mapping[str, str],
-    neighbourhood: int | None,
-    neighbours: int,
+    minimal_chamfer_cell_distance: int | None,
 ) -> LatentMeasure:
     """Return what the grids came to, read against the class each tile carries.
 
     Args:
         grids: One grid per tile, keyed by the tile it stands for.
         classes: The class each of those tiles earned, keyed the same way.
-        neighbourhood: How far, in cells, a cell may be matched from its own offset.
-        neighbours: How many nearest tiles the retrieval is counted over.
+        minimal_chamfer_cell_distance: How far, in cells, a cell may be matched
+            from its own offset.
 
     Returns:
-        measured: Every number the latent space came to, and the class distances.
+        measured: Every number the latent space came to, the class and tile distances.
     """
     tiles = sorted(grids)
     labels = [classes[tile] for tile in tiles]
-    held = chamfer_distances([grids[tile] for tile in tiles], neighbourhood)
+    held = chamfer_distances(
+        [grids[tile] for tile in tiles], minimal_chamfer_cell_distance
+    )
     distances = held.double().cpu().numpy()  # (T, T)
     order, matrix = class_distances(distances, labels)
     return LatentMeasure(
-        metrics=retrieval_metrics(distances, labels, neighbours)
+        metrics=retrieval_metrics(distances, labels)
         | silhouette_by_class(distances, labels)
         | class_separation(matrix),
         classes=order,
         distances=matrix,
+        tiles=tiles,
+        tile_distances=distances,
     )

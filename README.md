@@ -94,13 +94,13 @@ uv run python scripts/evaluate.py run_name=mae-deep
 The model embeds every labelled tile into its grid of cells, and two tiles are
 compared by a normalised Chamfer distance over those cells: each cell of one is
 matched to the nearest cell of the other and the cost, a cosine distance
-between two unit vectors, is averaged both ways. `evaluation.neighbourhood`
-keeps a match near where the cell sits, so the arrangement of a feature counts
+between two unit vectors, is averaged both ways.
+`evaluation.minimal_chamfer_cell_distance` keeps a match near where the cell sits, so the arrangement of a feature counts
 and not only what its places are made of; null matches a cell anywhere in the
 other tile.
 
-What comes out of that distance is retrieval at `evaluation.neighbours`
-(precision, recall, F1 and mAP, a shared class its relevance), the silhouette
+What comes out of that distance is retrieval at k of 1, 5, 10 and 20
+(precision, recall and F1, a shared class its relevance), the silhouette
 overall and per class, and the mean distance between each pair of classes with
 its within, between and separation.
 

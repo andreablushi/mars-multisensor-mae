@@ -87,14 +87,13 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        neighbourhood: How far, in cells along either axis, a cell may be matched
-            from its own offset, or None to match it anywhere in the other tile.
-        neighbours: How many nearest tiles the retrieval is counted over.
+        minimal_chamfer_cell_distance: How far, in cells along either axis, a
+            cell may be matched from its own offset, or None to match it anywhere
+            in the other tile.
     """
 
     build: str
-    neighbourhood: int | None
-    neighbours: int
+    minimal_chamfer_cell_distance: int | None
 
 
 @dataclass

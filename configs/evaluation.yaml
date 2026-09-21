@@ -9,7 +9,4 @@ build: evaluation
 # A feature is an arrangement of places and not only what those places are made
 # of, so a cell is matched near where it sits. Null matches it anywhere in the
 # other tile, which is the bare token set and keeps no arrangement at all.
-neighbourhood: 1
-
-# How many nearest tiles the precision, the recall and the F1 are counted over.
-neighbours: 10
+minimal_chamfer_cell_distance: 1

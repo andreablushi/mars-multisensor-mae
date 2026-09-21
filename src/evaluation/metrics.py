@@ -11,9 +11,11 @@ from torch import Tensor
 
 from architecture.models import TileGrid
 
+TOP_K = (1, 5, 10, 20)
+
 
 def chamfer_distances(
-    grids: Sequence[TileGrid], neighbourhood: int | None = None
+    grids: Sequence[TileGrid], minimal_chamfer_cell_distance: int | None = None
 ) -> Tensor:
     """Return how far every tile stands from every other, over the cells they hold.
 
@@ -25,8 +27,9 @@ def chamfer_distances(
 
     Args:
         grids: One grid per tile, in the order the distances are wanted.
-        neighbourhood: How far, in cells along either axis, a cell may be matched
-            from its own offset, or None to match it anywhere in the other tile.
+        minimal_chamfer_cell_distance: How far, in cells along either axis, a
+            cell may be matched from its own offset, or None to match it anywhere
+            in the other tile.
 
     Returns:
         distances: The distance between every pair of tiles, in [0, 1]. (T, T)
@@ -54,12 +57,14 @@ def chamfer_distances(
             1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
         ) / 2  # (R, W, W)
         matched = held[at].view(1, -1, 1) & held[rest].unsqueeze(1)  # (R, W, W)
-        if neighbourhood is not None:
+        if minimal_chamfer_cell_distance is not None:
             # Taken an axis at a time, so no difference is held for both at once.
             here, there = offsets[at].unbind(-1), offsets[rest].unbind(-1)
             east = (here[0].view(1, -1, 1) - there[0].unsqueeze(1)).abs()
             north = (here[1].view(1, -1, 1) - there[1].unsqueeze(1)).abs()
-            matched &= torch.maximum(east, north) <= neighbourhood  # (R, W, W)
+            matched &= (
+                torch.maximum(east, north) <= minimal_chamfer_cell_distance
+            )  # (R, W, W)
         cost.masked_fill_(matched.logical_not_(), torch.inf)
         forward = cost.amin(dim=2).nan_to_num(posinf=1.0)  # (R, W)
         backward = cost.amin(dim=1).nan_to_num(posinf=1.0)  # (R, W)
@@ -70,19 +75,16 @@ def chamfer_distances(
     return (distances + distances.T).fill_diagonal_(0.0)
 
 
-def retrieval_metrics(
-    distances: np.ndarray, labels: Sequence[str], neighbours: int
-) -> dict[str, float]:
+def retrieval_metrics(distances: np.ndarray, labels: Sequence[str]) -> dict[str, float]:
     """Return how far a tile's nearest tiles share its class, over every tile asked.
 
     Args:
         distances: The distance between every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
-        neighbours: How many nearest tiles a precision and a recall are counted over.
 
     Returns:
-        metrics: The precision, recall and F1 at that many neighbours, and the mean
-            average precision over the whole ranking, averaged over the tiles.
+        metrics: The precision, recall and F1 at every k of TOP_K, averaged over
+            the tiles.
     """
     held = np.asarray(labels)
     itself = np.eye(len(held), dtype=bool)
@@ -90,19 +92,18 @@ def retrieval_metrics(
     ranked = np.argsort(np.where(itself, np.inf, distances), axis=1)[:, :-1]  # (T, T-1)
     relevant = held[ranked] == held[:, None]  # (T, T-1)
     total = np.maximum(relevant.sum(axis=1), 1)  # (T,)
-    taken = relevant[:, :neighbours]  # (T, k)
-    precision = taken.mean(axis=1)  # (T,)
-    recall = taken.sum(axis=1) / total  # (T,)
-    together = np.maximum(precision + recall, np.finfo(float).eps)
-    # Average precision reads the whole ranking, not the neighbours alone.
-    hits = np.cumsum(relevant, axis=1)  # (T, T-1)
-    ranks = np.arange(1, relevant.shape[1] + 1)  # (T-1,)
-    return {
-        f"precision@{neighbours}": float(precision.mean()),
-        f"recall@{neighbours}": float(recall.mean()),
-        f"f1@{neighbours}": float((2 * precision * recall / together).mean()),
-        "map": float(((relevant * hits / ranks).sum(axis=1) / total).mean()),
-    }
+    metrics = {}
+    for k in TOP_K:
+        taken = relevant[:, :k]  # (T, k)
+        precision = taken.mean(axis=1)  # (T,)
+        recall = taken.sum(axis=1) / total  # (T,)
+        together = np.maximum(precision + recall, np.finfo(float).eps)
+        metrics |= {
+            f"precision@{k}": float(precision.mean()),
+            f"recall@{k}": float(recall.mean()),
+            f"f1@{k}": float((2 * precision * recall / together).mean()),
+        }
+    return metrics
 
 
 def silhouette_by_class(

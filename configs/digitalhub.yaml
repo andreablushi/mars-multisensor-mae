@@ -42,3 +42,4 @@ functions:
 publishes:
   dataset: dataset
   model: model
+  results: results

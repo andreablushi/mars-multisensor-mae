@@ -4,21 +4,24 @@ from __future__ import annotations
 
 import argparse
 from functools import partial
+from pathlib import Path
 
 import torch
 from dhub import submit
 from dhub.configs import stage_workers
-from dhub.publish import model_name
+from dhub.publish import publish_results, published_name
 from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from architecture.models import collate
 from config.load import load_config
-from config.paths import REPO_ROOT
+from config.paths import REPO_ROOT, RESULTS_ROOT
+from config.schema import Config
 from dataset.patches import patch_sizes, read_patch_layout
 from dataset.store import tile_loader
 from evaluation.evaluate import evaluate_latent_space, measure_latent_space
+from evaluation.results import RESULTS_FILE, write_tile_distances
 from evaluation.store import read_label_by_tile
 from logs.console import rich_logger
 from logs.tracker import log_latent_space, start_logging
@@ -30,15 +33,14 @@ EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 log = rich_logger(__name__)
 
 
-@handler()
-def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
-    """Measure what one published model's latent space made of the labelled tiles.
+def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
+    """Measure one checkpoint's latent space over the labelled tiles, and keep it.
 
     Args:
-        project: The DigitalHub project the model was published in, unused here.
-        overrides: What to compose the config with, as hydra spells them.
+        config: What the run reads, the model it builds, and how it is measured.
+        checkpoint: The checkpoint to measure, on this machine.
+        project: The DigitalHub project the results are published in, or None here.
     """
-    config = load_config(overrides or [])
     # The model is built and normalised as the training build left it, whichever
     # build the tiles it never read come from.
     trained = published_build(config.dataset.build, config.dataset.root)
@@ -77,16 +79,14 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         config.model.decoder_depth,
         config.model.cell_m,
     ).to(device)
-    name = model_name(config.run_name)
-    held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
-    steps = load_checkpoint(published_checkpoint(name, held), model)
-    log.info("evaluating %s, trained for %d steps, on %s", name, steps, device)
+    steps = load_checkpoint(checkpoint, model)
+    log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
     run = start_logging(
         config,
         EVALUATION_STAGE,
         {
             "device": str(device),
-            "checkpoint": name,
+            "checkpoint": checkpoint.name,
             "steps_trained": steps,
             "tiles": len(loader.dataset),
             "classes": len(set(classes.values())),
@@ -96,11 +96,29 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     measured = measure_latent_space(
         grids,
         classes,
-        config.evaluation.neighbourhood,
-        config.evaluation.neighbours,
+        config.evaluation.minimal_chamfer_cell_distance,
     )
     log_latent_space(run, measured.metrics, measured.classes, measured.distances)
     run.finish()
+    results = RESULTS_ROOT / config.run_name / RESULTS_FILE
+    write_tile_distances(results, measured.tiles, classes, measured.tile_distances)
+    log.info("results written to %s", results)
+    if project is not None:
+        publish_results(project, results, published_name("results", config.run_name))
+
+
+@handler()
+def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
+    """Measure what one published model's latent space made of the labelled tiles.
+
+    Args:
+        project: The DigitalHub project the model was published in, or None here.
+        overrides: What to compose the config with, as hydra spells them.
+    """
+    config = load_config(overrides or [])
+    name = published_name("model", config.run_name)
+    held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
+    evaluate_checkpoint(config, published_checkpoint(name, held), project)
 
 
 def main() -> int:
@@ -122,7 +140,10 @@ def main() -> int:
     arguments = parsed.parse_args()
     if arguments.dh:
         return submit.submitted(
-            EVALUATION_STAGE, EVALUATION_HANDLER, arguments.ref, arguments.overrides
+            EVALUATION_STAGE,
+            EVALUATION_HANDLER,
+            arguments.ref,
+            {"overrides": arguments.overrides},
         )
     # The platform calls the handler, a run here the function under it.
     run_evaluation.__wrapped__(overrides=arguments.overrides)
