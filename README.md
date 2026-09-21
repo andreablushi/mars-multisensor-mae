@@ -75,8 +75,8 @@ build = published_build(config.dataset.build, config.dataset.root)
 
 Everything that reaches the platform is in `scripts/dhub`: the project the builds
 are published in, the artifact each is published under, and the credentials a
-long read mints again. `configs/dataset/<build>.yaml` names the build to read and
-where builds sit, which a local read needs just as much.
+long read mints again. `configs/dataset.yaml` names the build to read and where
+builds sit, which a local read needs just as much.
 
 ## Evaluating what it learnt
 
@@ -106,8 +106,9 @@ its within, between and separation.
 
 ## Configs
 
-`configs/` holds one file per build under `dataset/` and one per architecture
-under `model/`, composed by hydra into the run described by `configs/config.yaml`:
+`configs/` holds one file per section, `dataset.yaml`, `model.yaml`,
+`training.yaml` and `evaluation.yaml`, composed by hydra into the run described
+by `configs/config.yaml`, which also names the run with `run_name`:
 
 ```python
 from config.load import load_config
