@@ -48,7 +48,7 @@ def published_build(build: str, root: str) -> DatasetBuild:
                 raise RuntimeError(f"{key}: {refused}") from None
         return fetched["Body"].read()
 
-    return DatasetBuild(root=build_root(root, build), fetch=fetch)
+    return DatasetBuild(root=build_root(build, root), fetch=fetch)
 
 
 def published_checkpoint(name: str, destination: Path) -> Path:

@@ -9,12 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_ROOT = REPO_ROOT / "configs"
 
 
-def build_root(root: str, build: str) -> Path:
+def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.
 
     Args:
-        root: Where every build sits, relative to the repository.
         build: The build's own name, which is the directory it owns.
+        root: Where every build sits, relative to the repository.
 
     Returns:
         path: That build's own directory, which need not exist yet.

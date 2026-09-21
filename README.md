@@ -59,7 +59,7 @@ from config.paths import build_root
 from dataset.store import DatasetBuild
 
 config = load_config()
-build = DatasetBuild(build_root(config.dataset.root, config.dataset.build))
+build = DatasetBuild(build_root(config.dataset.build, config.dataset.root))
 ```
 
 A build published on DigitalHub is fetched an observation at a time, straight

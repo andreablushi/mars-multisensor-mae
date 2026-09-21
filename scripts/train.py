@@ -44,7 +44,7 @@ def run_training(project=None, overrides: list[str] | None = None):
     build = published_build(config.dataset.build, config.dataset.root)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
-    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
+    axes = build.read_axes_by_instrument()
     loaders = build.loaders_by_split(
         sizes,
         shapes,

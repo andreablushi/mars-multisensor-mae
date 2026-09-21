@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 from building import paths as built
 from building.common.layout import WAVELENGTH
@@ -75,6 +76,18 @@ class DatasetBuild:
             temporary.replace(held)
         return data
 
+    def read_table(self, path: str, schema: pa.Schema | None = None) -> pa.Table:
+        """Return one parquet object of the build, read out of the bytes it holds.
+
+        Args:
+            path: Where it sits, relative to the build root.
+            schema: What to read it under, or None to take the file's own.
+
+        Returns:
+            table: The rows it holds.
+        """
+        return pq.read_table(io.BytesIO(self.read_object(path)), schema=schema)
+
     def read_observation_metadata(self) -> list[ObservationMetadata]:
         """Return what every observation of the build is, reading the index once.
 
@@ -82,9 +95,7 @@ class DatasetBuild:
             records: One row per observation, in the order the index holds them.
         """
         if self.records is None:
-            held = pq.read_table(
-                io.BytesIO(self.read_object(built.OBSERVATION_METADATA_NAME))
-            )
+            held = self.read_table(built.OBSERVATION_METADATA_NAME)
             self.records = [
                 parquet.build(ObservationMetadata, row) for row in held.to_pylist()
             ]
@@ -110,6 +121,14 @@ class DatasetBuild:
             rows: One row per sensor, saying what each axis holds and how far it runs.
         """
         return {one.instrument: one for one in self.read_observation_metadata()}
+
+    def read_axes_by_instrument(self) -> dict[str, tuple[str, ...]]:
+        """Return what each axis of each instrument's values holds.
+
+        Returns:
+            axes: The axes of one sensor's values, in the array's own order, per sensor.
+        """
+        return {name: one.axes for name, one in self.read_row_by_instrument().items()}
 
     def read_ground_sample_by_instrument(self) -> dict[str, float]:
         """Return how much ground one sample of each instrument spans, over the build.
@@ -284,11 +303,14 @@ class DatasetBuild:
             loaders: One loader per split, the training one shuffled and the other not.
         """
         by_tile = self.read_observation_metadata_by_tile()
-        statistics = self.read_training_statistics(shares, seed)
+        splits = split_tiles(by_tile, shares, seed)
+        statistics = self.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
+        axes = self.read_axes_by_instrument()
         return {
             name: tile_loader(
                 self,
                 {tile: by_tile[tile] for tile in held},
+                axes,
                 statistics,
                 sizes,
                 shapes,
@@ -296,9 +318,9 @@ class DatasetBuild:
                 delay,
                 batch_size,
                 workers,
-                name == TRAINING_SPLIT,  # Shuffle only for training
+                shuffle=name == TRAINING_SPLIT,
             )
-            for name, held in split_tiles(by_tile, shares, seed).items()
+            for name, held in splits.items()
         }
 
 
@@ -342,6 +364,7 @@ def split_tiles(
 def tile_loader(
     build: DatasetBuild,
     tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
+    axes: Mapping[str, tuple[str, ...]],
     statistics: Mapping[str, dict[str, np.ndarray]],
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
@@ -349,13 +372,16 @@ def tile_loader(
     delay: str,
     batch_size: int,
     workers: int,
-    shuffle: bool,
+    *,
+    shuffle: bool = False,
 ) -> DataLoader:
     """Return one set of tiles of a build in batches, each tile read whole.
 
     Args:
         build: The build the tiles are read from.
         tiles: The index rows of each sensor of each tile, keyed by tile.
+        axes: What each axis of each instrument's values holds, which is the model's
+            own reading of them and not whatever build the tiles came from.
         statistics: What each sensor's values are scaled by, whatever they were
             pooled over.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
@@ -369,7 +395,6 @@ def tile_loader(
     Returns:
         loader: The tiles, in batches.
     """
-    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
     return DataLoader(
         DatasetSplit(build, tiles, axes, statistics, sizes, shapes, delay),
         batch_size=batch_size,
