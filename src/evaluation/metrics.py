@@ -1,11 +1,73 @@
-"""What a distance between tiles comes to, read against the classes they carry."""
+"""How far tiles stand from each other, and what that comes to against their classes."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import numpy as np
+import torch
 from sklearn.metrics import silhouette_samples
+from torch import Tensor
+
+from architecture.models import TileGrid
+
+
+def chamfer_distances(
+    grids: Sequence[TileGrid], neighbourhood: int | None = None
+) -> Tensor:
+    """Return how far every tile stands from every other, over the cells they hold.
+
+    A tile is its occupied cells and nothing else, so two are compared by matching
+    each cell of one to the nearest cell of the other and averaging both ways. The
+    cost of a match is the cosine distance between two cells, which the fusion's
+    unit vectors put in [0, 1], so the distance is already normalised. A cell whose
+    neighbourhood holds nothing to match stands a whole mismatch from that tile.
+
+    Args:
+        grids: One grid per tile, in the order the distances are wanted.
+        neighbourhood: How far, in cells along either axis, a cell may be matched
+            from its own offset, or None to match it anywhere in the other tile.
+
+    Returns:
+        distances: The distance between every pair of tiles, in [0, 1]. (T, T)
+
+    Raises:
+        ValueError: When a tile holds no occupied cell to be measured over.
+    """
+    counts = torch.tensor([int(one.occupied.sum()) for one in grids])  # (T,)
+    if not counts.all():
+        raise ValueError("a tile holding no occupied cell cannot be measured")
+    device = grids[0].values.device
+    width = int(counts.max())
+    values = grids[0].values.new_zeros(len(grids), width, grids[0].values.shape[-1])
+    offsets = values.new_zeros(len(grids), width, 2)
+    for at, grid in enumerate(grids):
+        values[at, : counts[at]] = grid.values[grid.occupied]
+        offsets[at, : counts[at]] = grid.offset[grid.occupied].to(values.dtype)
+    counted = counts.to(device, values.dtype)  # (T,)
+    held = torch.arange(width, device=device) < counted.unsqueeze(1)  # (T, W)
+    distances = values.new_zeros(len(grids), len(grids))
+    # Both ways round are the same sum, so only a tile against those after it is read.
+    for at in range(len(grids)):
+        rest = slice(at, len(grids))
+        cost = (
+            1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
+        ) / 2  # (R, W, W)
+        matched = held[at].view(1, -1, 1) & held[rest].unsqueeze(1)  # (R, W, W)
+        if neighbourhood is not None:
+            # Taken an axis at a time, so no difference is held for both at once.
+            here, there = offsets[at].unbind(-1), offsets[rest].unbind(-1)
+            east = (here[0].view(1, -1, 1) - there[0].unsqueeze(1)).abs()
+            north = (here[1].view(1, -1, 1) - there[1].unsqueeze(1)).abs()
+            matched &= torch.maximum(east, north) <= neighbourhood  # (R, W, W)
+        cost.masked_fill_(matched.logical_not_(), torch.inf)
+        forward = cost.amin(dim=2).nan_to_num(posinf=1.0)  # (R, W)
+        backward = cost.amin(dim=1).nan_to_num(posinf=1.0)  # (R, W)
+        distances[at, rest] = (
+            (forward * held[at]).sum(-1) / counted[at]
+            + (backward * held[rest]).sum(-1) / counted[rest]
+        ) / 2
+    return (distances + distances.T).fill_diagonal_(0.0)
 
 
 def retrieval_metrics(

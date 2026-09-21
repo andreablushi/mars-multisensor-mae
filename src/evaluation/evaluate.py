@@ -11,8 +11,8 @@ from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
 from architecture.models import TileGrid
-from evaluation.chamfer import chamfer_distances
 from evaluation.metrics import (
+    chamfer_distances,
     class_distances,
     class_separation,
     retrieval_metrics,
