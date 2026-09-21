@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
-from datetime import datetime
 
 import wandb
 from dotenv import load_dotenv
@@ -24,13 +23,15 @@ def start_logging(config: Config, stage: str, facts: Mapping[str, object]) -> Ru
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named for the config's own run, the stage and its start, its
-            place read from the .env.
+        run: The run, named and grouped by the config's run name so the training and
+            the evaluation of one model sit together, its place read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
     run = wandb.init(
         config=asdict(config),
-        name=f"{config.run}-{stage}-{datetime.now():%Y%m%d-%H%M%S}",
+        name=config.run_name,
+        group=config.run_name,
+        job_type=stage,
     )
     run.config.update(dict(facts))
     return run
@@ -85,7 +86,6 @@ def log_latent_space(
         classes: The classes, in the order the distances hold them.
         distances: The mean distance between the tiles of two classes. (C, C)
     """
-    table = wandb.Table(columns=["class", *classes])
-    for name, row in zip(classes, distances, strict=True):
-        table.add_data(name, *(float(one) for one in row))
+    rows = [[name, *map(float, row)] for name, row in zip(classes, distances)]
+    table = wandb.Table(columns=["class", *classes], data=rows)
     run.log(dict(metrics) | {"class_distances": table})

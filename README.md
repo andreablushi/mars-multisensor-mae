@@ -88,7 +88,7 @@ reads with the tiles themselves.
 
 ```bash
 uv run python scripts/evaluate.py             # the run named in configs/config.yaml
-uv run python scripts/evaluate.py run=mae-deep
+uv run python scripts/evaluate.py run_name=mae-deep
 ```
 
 The model embeds every labelled tile into its grid of cells, and two tiles are

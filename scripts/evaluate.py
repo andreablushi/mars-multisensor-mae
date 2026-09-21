@@ -77,7 +77,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         config.model.decoder_depth,
         config.model.cell_m,
     ).to(device)
-    name = model_name(config.run)
+    name = model_name(config.run_name)
     held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
     steps = load_checkpoint(published_checkpoint(name, held), model)
     log.info("evaluating %s, trained for %d steps, on %s", name, steps, device)

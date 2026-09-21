@@ -30,7 +30,6 @@ class ModelConfig:
     """What the model reads, and how wide and deep each of its parts is.
 
     Attributes:
-        name: The architecture.
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
         cell_m: How far a cell of a tile's grid runs along the ground, in metres.
@@ -43,7 +42,6 @@ class ModelConfig:
         decoder_depth: How many blocks each decoder stacks.
     """
 
-    name: str
     instruments: list[str]
     delay: str
     cell_m: float
@@ -104,14 +102,15 @@ class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
-        run: What the run is called, which names its checkpoint and its tracking.
+        run_name: What the run is called, which names the model it saves and the
+            tracked run it logs to.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
         evaluation: How what it trained is measured.
     """
 
-    run: str
+    run_name: str
     dataset: DatasetConfig
     model: ModelConfig
     training: TrainingConfig

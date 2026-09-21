@@ -10,16 +10,16 @@ from dhub.configs import load_platform
 KIND = "model"
 
 
-def model_name(run: str) -> str:
+def model_name(run_name: str) -> str:
     """Return what a run's best checkpoint is published as.
 
     Args:
-        run: What the run is called, as the config names it.
+        run_name: What the run is called, as the config names it.
 
     Returns:
         name: That name, which a later publication versions rather than replaces.
     """
-    return f"{load_platform().publishes['model']}-{run}"
+    return f"{load_platform().publishes['model']}-{run_name}"
 
 
 def publish_checkpoint(project, path: Path, name: str):

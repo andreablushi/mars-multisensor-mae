@@ -104,7 +104,7 @@ def run_training(project=None, overrides: list[str] | None = None):
     run.finish()
     if project is None:
         return best
-    return publish_checkpoint(project, best, model_name(config.run))
+    return publish_checkpoint(project, best, model_name(config.run_name))
 
 
 def main() -> int:
