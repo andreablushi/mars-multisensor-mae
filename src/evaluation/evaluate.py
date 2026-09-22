@@ -17,6 +17,7 @@ from evaluation.metrics import (
     class_separation,
     retrieval_metrics,
     silhouette_by_class,
+    umap_projection,
 )
 
 
@@ -30,6 +31,7 @@ class LatentMeasure:
         distances: The mean distance between the tiles of two classes. (C, C)
         tiles: The tiles, in the order the tile distances hold them.
         tile_distances: The distance between every pair of tiles. (T, T)
+        projection: Where UMAP lays each tile on a plane, in the same order. (T, 2)
     """
 
     metrics: dict[str, float]
@@ -37,6 +39,7 @@ class LatentMeasure:
     distances: np.ndarray
     tiles: list[str]
     tile_distances: np.ndarray
+    projection: np.ndarray
 
 
 def evaluate_latent_space(
@@ -69,6 +72,7 @@ def measure_latent_space(
     grids: Mapping[str, TileGrid],
     classes: Mapping[str, str],
     minimal_chamfer_cell_distance: int | None,
+    seed: int,
 ) -> LatentMeasure:
     """Return what the grids came to, read against the class each tile carries.
 
@@ -77,6 +81,7 @@ def measure_latent_space(
         classes: The class each of those tiles earned, keyed the same way.
         minimal_chamfer_cell_distance: How far, in cells, a cell may be matched
             from its own offset.
+        seed: What the UMAP layout is drawn with.
 
     Returns:
         measured: Every number the latent space came to, the class and tile distances.
@@ -96,4 +101,5 @@ def measure_latent_space(
         distances=matrix,
         tiles=tiles,
         tile_distances=distances,
+        projection=umap_projection(distances, seed),
     )

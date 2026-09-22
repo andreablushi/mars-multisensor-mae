@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from sklearn.metrics import silhouette_samples
 from torch import Tensor
+from umap import UMAP
 
 from architecture.models import TileGrid
 
@@ -168,3 +169,16 @@ def class_separation(matrix: np.ndarray) -> dict[str, float]:
     within = float(np.mean(np.diag(matrix)))
     between = float(np.mean(matrix[~np.eye(len(matrix), dtype=bool)]))
     return {"within": within, "between": between, "separation": between - within}
+
+
+def umap_projection(distances: np.ndarray, seed: int) -> np.ndarray:
+    """Return every tile laid on a plane by UMAP, read off the tile distances.
+
+    Args:
+        distances: The distance between every pair of tiles. (T, T)
+        seed: What the layout is drawn with, so the same distances lay out the same.
+
+    Returns:
+        projection: Where each tile lands on the plane, in the same order. (T, 2)
+    """
+    return UMAP(metric="precomputed", random_state=seed).fit_transform(distances)

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 
+import numpy as np
+import plotly.graph_objects as go
 import wandb
 from dotenv import load_dotenv
 from torch import Tensor
@@ -77,6 +79,9 @@ def log_latent_space(
     metrics: Mapping[str, float],
     classes: Sequence[str],
     distances: Sequence[Sequence[float]],
+    tiles: Sequence[str],
+    labels: Sequence[str],
+    projection: np.ndarray,
 ) -> None:
     """Log what a model's latent space came to over the labelled tiles.
 
@@ -85,7 +90,25 @@ def log_latent_space(
         metrics: Every number measured, keyed as it is logged.
         classes: The classes, in the order the distances hold them.
         distances: The mean distance between the tiles of two classes. (C, C)
+        tiles: The tiles, in the order the projection holds them.
+        labels: The class each tile carries, in the same order.
+        projection: Where UMAP lays each tile on a plane. (T, 2)
     """
     rows = [[name, *map(float, row)] for name, row in zip(classes, distances)]
     table = wandb.Table(columns=["class", *classes], data=rows)
-    run.log(dict(metrics) | {"class_distances": table})
+    held = np.asarray(labels)
+    named = np.asarray(tiles)
+    figure = go.Figure(
+        [
+            go.Scatter(
+                x=projection[held == name, 0],
+                y=projection[held == name, 1],
+                mode="markers",
+                name=name,
+                text=named[held == name],
+                hoverinfo="text+name",
+            )
+            for name in classes
+        ]
+    )
+    run.log(dict(metrics) | {"class_distances": table, "umap": wandb.Plotly(figure)})

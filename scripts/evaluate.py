@@ -98,8 +98,17 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         grids,
         classes,
         config.evaluation.minimal_chamfer_cell_distance,
+        config.dataset.seed,
     )
-    log_latent_space(run, measured.metrics, measured.classes, measured.distances)
+    log_latent_space(
+        run,
+        measured.metrics,
+        measured.classes,
+        measured.distances,
+        measured.tiles,
+        [classes[tile] for tile in measured.tiles],
+        measured.projection,
+    )
     run.finish()
     results = RESULTS_ROOT / config.run_name / RESULTS_FILE
     write_tile_distances(results, measured.tiles, classes, measured.tile_distances)

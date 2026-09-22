@@ -19,6 +19,8 @@ dependencies = [
     "torch>=2.14.0",
     "wandb>=0.22",
     "zarr>=3.3",
+    "umap-learn>=0.5.12",
+    "plotly>=7.1.0",
 ]
 
 [build-system]
