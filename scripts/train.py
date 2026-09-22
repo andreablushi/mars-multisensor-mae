@@ -47,11 +47,12 @@ def run_training(
     config = load_config(overrides or [])
     build = published_build(config.dataset.build, config.dataset.root)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = read_patch_layout(build, sizes)
+    shapes, strides = read_patch_layout(build, sizes, config.dataset.pool)
     axes = build.read_axes_by_instrument()
     loaders = loaders_by_split(
         build,
         sizes,
+        config.dataset.pool,
         shapes,
         partial(collate, cell_m=config.model.cell_m),
         config.dataset.split,

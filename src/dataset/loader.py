@@ -78,6 +78,7 @@ def tile_loader(
     axes: Mapping[str, tuple[str, ...]],
     statistics: Mapping[str, dict[str, np.ndarray]],
     sizes: Mapping[str, Mapping[str, int]],
+    pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
     collate: Callable,
     delay: str,
@@ -96,6 +97,7 @@ def tile_loader(
         statistics: What each sensor's values are scaled by, whatever they were
             pooled over.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         collate: How one batch of read tiles becomes what the model is handed.
         delay: The instrument whose rows give every surface patch its delay.
@@ -107,7 +109,7 @@ def tile_loader(
         loader: The tiles, in batches.
     """
     return DataLoader(
-        DatasetSplit(build, tiles, axes, statistics, sizes, shapes, delay),
+        DatasetSplit(build, tiles, axes, statistics, sizes, pool, shapes, delay),
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=workers,
@@ -119,6 +121,7 @@ def tile_loader(
 def loaders_by_split(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
+    pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
     collate: Callable,
     shares: Sequence[float],
@@ -132,6 +135,7 @@ def loaders_by_split(
     Args:
         build: The build the splits are cut from.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         collate: How one batch of read tiles becomes what the model is handed.
         shares: The share of the observations each split holds, in the code's order.
@@ -153,6 +157,7 @@ def loaders_by_split(
             axes,
             statistics,
             sizes,
+            pool,
             shapes,
             collate,
             delay,

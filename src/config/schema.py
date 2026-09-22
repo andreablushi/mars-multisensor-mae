@@ -14,6 +14,8 @@ class DatasetConfig:
         root: Where every build sits on this machine, under a directory of its own name.
         patchsize: How far a patch runs along an axis holding each thing, by
             instrument, an axis it omits taken whole.
+        pool: How many ground samples of a patch are averaged into one, by
+            instrument, one left out read whole.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -21,6 +23,7 @@ class DatasetConfig:
     build: str
     root: str
     patchsize: dict[str, dict[str, int]]
+    pool: dict[str, int]
     split: list[float]
     seed: int
 

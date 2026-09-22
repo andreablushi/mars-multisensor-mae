@@ -27,6 +27,7 @@ class DatasetSplit(Dataset):
         axes: What each axis of each instrument's values holds.
         statistics: What each sensor's values run to over the training split.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
     """
@@ -38,6 +39,7 @@ class DatasetSplit(Dataset):
         axes: Mapping[str, tuple[str, ...]],
         statistics: Mapping[str, dict[str, np.ndarray]],
         sizes: Mapping[str, Mapping[str, int]],
+        pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
     ) -> None:
@@ -49,6 +51,7 @@ class DatasetSplit(Dataset):
             axes: What each axis of each instrument's values holds.
             statistics: What each sensor's values run to over the training split.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
+            pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
 
@@ -61,6 +64,7 @@ class DatasetSplit(Dataset):
         self.axes = axes
         self.statistics = statistics
         self.sizes = sizes
+        self.pool = pool
         self.shapes = shapes
         self.delay = delay
         for name in sizes:
@@ -94,7 +98,7 @@ class DatasetSplit(Dataset):
         if not held:
             raise ValueError(f"{identity} has no {self.delay} to stand on")
         delays = self.build.read_delays(held)
-        read = read_tile_patches(rows, self.build, self.sizes, delays)
+        read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
         sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
