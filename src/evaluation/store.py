@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from analysis import paths as labelled
-from analysis.labels.artifacts import LABELS
-from analysis.labels.models.label import Label
+from analysis.ground_truth.artifacts import LABELS
+from analysis.ground_truth.models.label import Label
 from common.disk import parquet
 
 from dataset.store import DatasetBuild
