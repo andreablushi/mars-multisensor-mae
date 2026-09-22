@@ -18,8 +18,8 @@ from architecture.models import collate
 from config.load import load_config
 from config.paths import REPO_ROOT, RESULTS_ROOT
 from config.schema import Config
+from dataset.loader import read_training_statistics, tile_loader
 from dataset.patches import patch_sizes, read_patch_layout
-from dataset.store import tile_loader
 from evaluation.evaluate import evaluate_latent_space, measure_latent_space
 from evaluation.results import RESULTS_FILE, write_tile_distances
 from evaluation.store import read_label_by_tile
@@ -47,8 +47,8 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(trained, sizes)
     axes = trained.read_axes_by_instrument()
-    statistics = trained.read_training_statistics(
-        config.dataset.split, config.dataset.seed
+    statistics = read_training_statistics(
+        trained, config.dataset.split, config.dataset.seed
     )
     build = published_build(config.evaluation.build, config.dataset.root)
     classes = read_label_by_tile(build)

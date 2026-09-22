@@ -16,8 +16,8 @@ from evaluate import evaluate_checkpoint
 from architecture.mae import CrossSensorMAE
 from architecture.models import collate
 from config.load import load_config
+from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
 from dataset.patches import patch_sizes, read_patch_layout
-from dataset.store import TRAINING_SPLIT, VALIDATION_SPLIT
 from logs.console import rich_logger
 from logs.tracker import start_logging
 from training.train import train
@@ -49,7 +49,8 @@ def run_training(
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
     shapes, strides = read_patch_layout(build, sizes)
     axes = build.read_axes_by_instrument()
-    loaders = build.loaders_by_split(
+    loaders = loaders_by_split(
+        build,
         sizes,
         shapes,
         partial(collate, cell_m=config.model.cell_m),
