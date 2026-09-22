@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -12,9 +13,12 @@ from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
 from dataset.patches import read_tile_patches
+from logs.console import rich_logger
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
+
+log = rich_logger(__name__)
 
 
 class DatasetSplit(Dataset):
@@ -92,6 +96,8 @@ class DatasetSplit(Dataset):
         Raises:
             ValueError: When the tile has no delay to stand on.
         """
+        started = time.perf_counter()
+        fetched = self.build.fetched_bytes
         identity = self.identities[index]
         rows = self.tiles[identity]
         held = rows.get(self.delay)
@@ -105,6 +111,12 @@ class DatasetSplit(Dataset):
             )
             for name, drawn in read.items()
         }
+        log.info(
+            "tile %s read in %.1f s, %.1f MB of it fetched",
+            identity,
+            time.perf_counter() - started,
+            (self.build.fetched_bytes - fetched) / 1e6,
+        )
         return sample, identity
 
 
