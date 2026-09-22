@@ -101,7 +101,10 @@ def train(
     started = time.perf_counter()
     step, best_step = 0, -1
     model.train()  # Enable training mode
+    ready = time.perf_counter()
     for batch, cells, _ in islice(endless(training), max_steps):
+        arrived = time.perf_counter()
+        waited = arrived - ready
         batch, reconstruction = masked_reconstruction(
             model, batch, cells, mask_ratio, generator, device
         )
@@ -116,12 +119,20 @@ def train(
         scheduler.step()
         step += 1
         log_step(run, step, terms)  # Log step-level metrics to experiment tracker
+        ready = time.perf_counter()
+        log.info(
+            "step %d waited %.1f s for data, computed in %.1f s",
+            step,
+            waited,
+            ready - arrived,
+        )
         if step % validate_every:
             continue
         metrics = validation_terms(model, validation, mask_ratio, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
+        ready = time.perf_counter()
         # Track early stopping and persist best model weights
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, step)

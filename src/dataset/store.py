@@ -6,6 +6,7 @@ import io
 import json
 import os
 import shutil
+import time
 from collections import defaultdict
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -21,11 +22,14 @@ from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
 
 from dataset.models.observation import Observation
+from logs.console import rich_logger
 
 DISK_RESERVE_BYTES = 8 * 1024**3
 
 # What MOLA stores beside its heights: the radargram row each of them sounds at.
 DELAY_PLANE = "delay"
+
+log = rich_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -54,7 +58,14 @@ class DatasetBuild:
         held = self.root / path
         if held.is_file():
             return held.read_bytes()
+        started = time.perf_counter()
         data = self.fetch(path)
+        log.info(
+            "fetched %s, %.1f MB in %.1f s",
+            path,
+            len(data) / 1e6,
+            time.perf_counter() - started,
+        )
         held.parent.mkdir(parents=True, exist_ok=True)
         if shutil.disk_usage(held.parent).free - len(data) > DISK_RESERVE_BYTES:
             # Written whole then moved, so a reader beside this one finds it finished.
