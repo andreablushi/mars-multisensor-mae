@@ -64,6 +64,7 @@ def submitted(
         secrets=credentials.SECRETS,
         envs=[
             {"name": "PYTHONPATH", "value": f"{root}:{root}/src:{root}/scripts"},
+            {"name": "PYTORCH_CUDA_ALLOC_CONF", "value": "expandable_segments:True"},
             *credentials.minting_envs(),
         ],
         parameters=dict(parameters),
