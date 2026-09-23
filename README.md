@@ -99,10 +99,9 @@ between two unit vectors, is averaged both ways.
 and not only what its places are made of; null matches a cell anywhere in the
 other tile.
 
-What comes out of that distance is retrieval at k of 1, 5, 10 and 20
+What `notebooks/evaluation.ipynb` reads off that distance is retrieval at k of 1, 5, 10 and 20
 (precision, recall and F1, a shared class its relevance), the silhouette
-overall and per class, and the mean distance between each pair of classes with
-its within, between and separation.
+overall and per class, and the mean distance between each pair of classes.
 
 ## Configs
 

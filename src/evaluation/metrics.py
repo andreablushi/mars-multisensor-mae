@@ -76,16 +76,17 @@ def chamfer_distances(
     return (distances + distances.T).fill_diagonal_(0.0)
 
 
-def retrieval_metrics(distances: np.ndarray, labels: Sequence[str]) -> dict[str, float]:
-    """Return how far a tile's nearest tiles share its class, over every tile asked.
+def retrieval_by_tile(
+    distances: np.ndarray, labels: Sequence[str]
+) -> dict[str, np.ndarray]:
+    """Return how far each tile's nearest tiles share its class.
 
     Args:
         distances: The distance between every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
 
     Returns:
-        metrics: The precision, recall and F1 at every k of TOP_K, averaged over
-            the tiles.
+        scores: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
     """
     held = np.asarray(labels)
     itself = np.eye(len(held), dtype=bool)
@@ -93,18 +94,18 @@ def retrieval_metrics(distances: np.ndarray, labels: Sequence[str]) -> dict[str,
     ranked = np.argsort(np.where(itself, np.inf, distances), axis=1)[:, :-1]  # (T, T-1)
     relevant = held[ranked] == held[:, None]  # (T, T-1)
     total = np.maximum(relevant.sum(axis=1), 1)  # (T,)
-    metrics = {}
+    scores = {}
     for k in TOP_K:
         taken = relevant[:, :k]  # (T, k)
         precision = taken.mean(axis=1)  # (T,)
         recall = taken.sum(axis=1) / total  # (T,)
         together = np.maximum(precision + recall, np.finfo(float).eps)
-        metrics |= {
-            f"precision@{k}": float(precision.mean()),
-            f"recall@{k}": float(recall.mean()),
-            f"f1@{k}": float((2 * precision * recall / together).mean()),
+        scores |= {
+            f"precision@{k}": precision,
+            f"recall@{k}": recall,
+            f"f1@{k}": 2 * precision * recall / together,
         }
-    return metrics
+    return scores
 
 
 def silhouette_by_class(
@@ -154,21 +155,6 @@ def class_distances(
         ]
     )
     return classes, matrix
-
-
-def class_separation(matrix: np.ndarray) -> dict[str, float]:
-    """Return what the class distances come to, whichever classes they were measured on.
-
-    Args:
-        matrix: The mean distance between the tiles of two classes. (C, C)
-
-    Returns:
-        separation: How far a class sits from itself, how far from another, and the
-            gap between the two, which is what a latent space is asked for.
-    """
-    within = float(np.mean(np.diag(matrix)))
-    between = float(np.mean(matrix[~np.eye(len(matrix), dtype=bool)]))
-    return {"within": within, "between": between, "separation": between - within}
 
 
 def umap_projection(distances: np.ndarray, seed: int) -> np.ndarray:

@@ -20,11 +20,11 @@ from config.paths import REPO_ROOT, RESULTS_ROOT
 from config.schema import Config
 from dataset.loader import read_training_statistics, tile_loader
 from dataset.patches import patch_sizes, read_patch_layout
-from evaluation.evaluate import evaluate_latent_space, measure_latent_space
+from evaluation.evaluate import evaluate_latent_space
+from evaluation.metrics import chamfer_distances
 from evaluation.results import RESULTS_FILE, write_tile_distances
 from evaluation.store import read_label_by_tile
 from logs.console import rich_logger
-from logs.tracker import log_latent_space, start_logging
 from training.checkpoint import load_checkpoint
 
 EVALUATION_STAGE = "evaluation"
@@ -82,36 +82,13 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     ).to(device)
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
-    run = start_logging(
-        config,
-        EVALUATION_STAGE,
-        {
-            "device": str(device),
-            "checkpoint": checkpoint.name,
-            "steps_trained": steps,
-            "tiles": len(loader.dataset),
-            "classes": len(set(classes.values())),
-        },
-    )
     grids = evaluate_latent_space(model, loader, device)
-    measured = measure_latent_space(
-        grids,
-        classes,
-        config.evaluation.minimal_chamfer_cell_distance,
-        config.dataset.seed,
+    tiles = sorted(grids)
+    distances = chamfer_distances(
+        [grids[tile] for tile in tiles], config.evaluation.minimal_chamfer_cell_distance
     )
-    log_latent_space(
-        run,
-        measured.metrics,
-        measured.classes,
-        measured.distances,
-        measured.tiles,
-        [classes[tile] for tile in measured.tiles],
-        measured.projection,
-    )
-    run.finish()
     results = RESULTS_ROOT / config.run_name / RESULTS_FILE
-    write_tile_distances(results, measured.tiles, classes, measured.tile_distances)
+    write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
     log.info("results written to %s", results)
     if project is not None:
         publish_results(project, results, published_name("results", config.run_name))
