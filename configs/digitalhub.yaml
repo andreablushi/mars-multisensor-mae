@@ -22,7 +22,7 @@ resources:
     profile: cpu
   training:
     profile: 1xrtxa5000
-    cpu: 8
+    cpu: 12
     gpu: 1
     memory: 48Gi
     disk: 64Gi
