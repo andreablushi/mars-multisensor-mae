@@ -104,7 +104,16 @@ def cut_patch(
         for start, length in zip(origin, lengths, strict=True)
     )
     taken = tuple(window[at] for at in observation.ground_axes)
-    north, east = observation.distance_centre_m(taken)
+    # A separable grid is regular, so its corners place the patch as all its samples do
+    placed = (
+        tuple(
+            slice(one.start, one.stop, max(one.stop - one.start - 1, 1))
+            for one in taken
+        )
+        if observation.described["separable"]
+        else taken
+    )
+    north, east = observation.distance_centre_m(placed)
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
     ground_shape = tuple(
         length if holds == GROUND else 1
