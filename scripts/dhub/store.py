@@ -1,4 +1,4 @@
-"""Reading what DigitalHub published, a build of the dataset or a trained model."""
+"""Reading what DigitalHub published: a build of the dataset, a model, or results."""
 
 from __future__ import annotations
 
@@ -8,10 +8,11 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError
 
-from config.paths import build_root
+from config.paths import RESULTS_ROOT, build_root
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform
+from evaluation.results import RESULTS_FILE
 
 
 def published_build(build: str, root: str) -> DatasetBuild:
@@ -65,3 +66,23 @@ def published_checkpoint(name: str, destination: Path) -> Path:
     project = dh.get_or_create_project(load_platform().project)
     destination.parent.mkdir(parents=True, exist_ok=True)
     return Path(project.get_model(name).download(str(destination), overwrite=True))
+
+
+def fetched_results() -> list[Path]:
+    """Return where every published evaluation this machine lacked was fetched to.
+
+    Returns:
+        paths: One results file per run fetched, none where it was already here.
+    """
+    credentials.refresh()
+    platform = load_platform()
+    project = dh.get_or_create_project(platform.project)
+    prefix = f"{platform.publishes['results']}-"
+    paths = []
+    for artifact in project.list_artifacts():
+        held = RESULTS_ROOT / artifact.name.removeprefix(prefix) / RESULTS_FILE
+        if not artifact.name.startswith(prefix) or held.is_file():
+            continue
+        held.parent.mkdir(parents=True, exist_ok=True)
+        paths.append(Path(artifact.download(str(held), overwrite=True)))
+    return paths

@@ -39,6 +39,8 @@ module-name = [
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.3.0",
+    "nbformat>=5.11.1",
     "ruff>=0.16.2",
     "wandb-workspaces>=0.4.11",
 ]
