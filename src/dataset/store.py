@@ -45,7 +45,7 @@ class DatasetBuild:
     fetched_bytes: int = 0
 
     def read_object(self, path: str) -> bytes:
-        """Return what one object of the build holds, off disk or fetched and kept.
+        """Return what one object of the build holds, off disk or fetched.
 
         Args:
             path: Where it sits, relative to the build root, as the index names it.
@@ -53,18 +53,38 @@ class DatasetBuild:
         Returns:
             data: The bytes of that object.
         """
+        data = self.read_kept(path)
+        if data is None:
+            data = self.fetch(path)
+            self.fetched_bytes += len(data)
+        return data
+
+    def read_kept(self, path: str) -> bytes | None:
+        """Return what one file kept under the root holds.
+
+        Args:
+            path: Where it sits, relative to the build root.
+
+        Returns:
+            data: Its bytes, or None when it is not kept.
+        """
         held = self.root / path
-        if held.is_file():
-            return held.read_bytes()
-        data = self.fetch(path)
-        self.fetched_bytes += len(data)
+        return held.read_bytes() if held.is_file() else None
+
+    def keep(self, path: str, data: bytes) -> None:
+        """Keep one file under the root while the disk has room, else drop it.
+
+        Args:
+            path: Where it goes, relative to the build root.
+            data: What it holds.
+        """
+        held = self.root / path
         held.parent.mkdir(parents=True, exist_ok=True)
         if shutil.disk_usage(held.parent).free - len(data) > DISK_RESERVE_BYTES:
             # Written whole then moved, so a reader beside this one finds it finished.
             temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
             temporary.write_bytes(data)
             temporary.replace(held)
-        return data
 
     def read_table(self, path: str, schema: pa.Schema | None = None) -> pa.Table:
         """Return one parquet object of the build, read out of the bytes it holds.

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
 import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
@@ -20,6 +23,8 @@ if TYPE_CHECKING:
 
 log = rich_logger(__name__)
 
+READY = "ready"
+
 
 class DatasetSplit(Dataset):
     """Every tile of one split, each read as the patches of each instrument.
@@ -34,6 +39,7 @@ class DatasetSplit(Dataset):
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
+        ready: Where the tiles already read are kept, named for all that shapes them.
     """
 
     def __init__(
@@ -74,6 +80,13 @@ class DatasetSplit(Dataset):
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
+        shaped = hashlib.sha256(
+            json.dumps([sizes, pool, shapes, axes, delay], sort_keys=True).encode()
+        )
+        for name in sorted(sizes):
+            shaped.update(statistics[name]["mean"].tobytes())
+            shaped.update(statistics[name]["deviation"].tobytes())
+        self.ready = f"{READY}/{shaped.hexdigest()[:16]}"
 
     def __len__(self) -> int:
         """Return how many reads the split holds.
@@ -99,6 +112,20 @@ class DatasetSplit(Dataset):
         started = time.perf_counter()
         fetched = self.build.fetched_bytes
         identity = self.identities[index]
+        kept = f"{self.ready}/{identity}.npz"
+        stored = self.build.read_kept(kept)
+        if stored is not None:
+            sample = {}
+            with np.load(io.BytesIO(stored)) as arrays:
+                for packed in arrays.files:
+                    name, key = packed.split("/")
+                    sample.setdefault(name, {})[key] = arrays[packed]
+            log.info(
+                "tile %s read ready in %.2f s",
+                identity,
+                time.perf_counter() - started,
+            )
+            return sample, identity
         rows = self.tiles[identity]
         held = rows.get(self.delay)
         if not held:
@@ -111,6 +138,16 @@ class DatasetSplit(Dataset):
             )
             for name, drawn in read.items()
         }
+        packed = io.BytesIO()
+        np.savez(
+            packed,
+            **{
+                f"{name}/{key}": array
+                for name, arrays in sample.items()
+                for key, array in arrays.items()
+            },
+        )
+        self.build.keep(kept, packed.getvalue())
         log.info(
             "tile %s read in %.1f s, %.1f MB of it fetched",
             identity,
