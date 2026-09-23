@@ -1008,6 +1008,7 @@ dependencies = [
 dev = [
     { name = "ipykernel" },
     { name = "nbformat" },
+    { name = "pandas" },
     { name = "ruff" },
     { name = "wandb-workspaces" },
 ]
@@ -1037,6 +1038,7 @@ requires-dist = [
 dev = [
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "nbformat", specifier = ">=5.11.1" },
+    { name = "pandas", specifier = ">=3.0.5" },
     { name = "ruff", specifier = ">=0.16.2" },
     { name = "wandb-workspaces", specifier = ">=0.4.11" },
 ]
