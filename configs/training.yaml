@@ -3,7 +3,7 @@
 # A run is counted in steps, so how long a split happens to be settles nothing.
 max_steps: 100000
 # How many tiles one step reads, each carrying every patch of its own.
-batch_size: 2
+batch_size: 3
 learning_rate: 0.00015
 weight_decay: 0.05
 warmup_steps: 2000
