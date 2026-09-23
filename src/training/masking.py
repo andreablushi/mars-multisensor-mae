@@ -61,4 +61,5 @@ def masked_reconstruction(
     batch = {name: tokens.to(device) for name, tokens in batch.items()}
     # Apply random sensor masking
     masked = random_correspondence(batch, mask_ratio, generator)
-    return masked, model(masked, cells.to(device))
+    with torch.autocast(device.type, dtype=torch.bfloat16):
+        return masked, model(masked, cells.to(device))

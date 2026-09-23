@@ -1,0 +1,12 @@
+# How a trained model's latent space is read: every labelled tile of the evaluation
+# build is embedded, and what the grids come to is read against the class each tile
+# carries.
+
+# The build the labelled tiles are read from, published as dataset-<build>.
+build: evaluation
+
+# How far, in cells along either axis, a cell may be matched from its own offset.
+# A feature is an arrangement of places and not only what those places are made
+# of, so a cell is matched near where it sits. Null matches it anywhere in the
+# other tile, which is the bare token set and keeps no arrangement at all.
+minimal_chamfer_cell_distance: 1

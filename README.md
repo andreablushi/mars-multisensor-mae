@@ -59,7 +59,7 @@ from config.paths import build_root
 from dataset.store import DatasetBuild
 
 config = load_config()
-build = DatasetBuild(build_root(config.dataset))
+build = DatasetBuild(build_root(config.dataset.build, config.dataset.root))
 ```
 
 A build published on DigitalHub is fetched an observation at a time, straight
@@ -70,18 +70,44 @@ brought down whole is read off disk.
 ```python
 from dhub.store import published_build
 
-build = published_build(config.dataset)
+build = published_build(config.dataset.build, config.dataset.root)
 ```
 
 Everything that reaches the platform is in `scripts/dhub`: the project the builds
 are published in, the artifact each is published under, and the credentials a
-long read mints again. `configs/dataset/<build>.yaml` names the build to read and
-where builds sit, which a local read needs just as much.
+long read mints again. `configs/dataset.yaml` names the build to read and where
+builds sit, which a local read needs just as much.
+
+## Evaluating what it learnt
+
+The dataset repository builds a second dataset beside the training one: a
+balanced draw of tiles, each labelled with the geological class the IAU
+catalogue gives the feature it holds. It is published as its own build and
+carries `labels.parquet` beside its index, which `src/evaluation/store.py`
+reads with the tiles themselves.
+
+```bash
+uv run python scripts/evaluate.py             # the run named in configs/config.yaml
+uv run python scripts/evaluate.py run_name=mae-deep
+```
+
+The model embeds every labelled tile into its grid of cells, and two tiles are
+compared by a normalised Chamfer distance over those cells: each cell of one is
+matched to the nearest cell of the other and the cost, a cosine distance
+between two unit vectors, is averaged both ways.
+`evaluation.minimal_chamfer_cell_distance` keeps a match near where the cell sits, so the arrangement of a feature counts
+and not only what its places are made of; null matches a cell anywhere in the
+other tile.
+
+What `notebooks/evaluation.ipynb` reads off that distance is retrieval at k of 1, 5, 10 and 20
+(precision, recall and F1, a shared class its relevance), the silhouette
+overall and per class, and the mean distance between each pair of classes.
 
 ## Configs
 
-`configs/` holds one file per build under `dataset/` and one per architecture
-under `model/`, composed by hydra into the run described by `configs/config.yaml`:
+`configs/` holds one file per section, `dataset.yaml`, `model.yaml`,
+`training.yaml` and `evaluation.yaml`, composed by hydra into the run described
+by `configs/config.yaml`, which also names the run with `run_name`:
 
 ```python
 from config.load import load_config

@@ -14,10 +14,13 @@ dependencies = [
     "pyarrow>=25.0.1",
     "python-dotenv>=1.0",
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.8",
     "rich>=14.0.0",
     "torch>=2.14.0",
     "wandb>=0.22",
     "zarr>=3.3",
+    "umap-learn>=0.5.12",
+    "plotly>=7.1.0",
 ]
 
 [build-system]
@@ -36,6 +39,9 @@ module-name = [
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.3.0",
+    "nbformat>=5.11.1",
+    "pandas>=3.0.5",
     "ruff>=0.16.2",
     "wandb-workspaces>=0.4.11",
 ]

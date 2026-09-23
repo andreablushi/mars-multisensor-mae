@@ -22,13 +22,13 @@ resources:
     profile: cpu
   training:
     profile: 1xrtxa5000
-    cpu: 8
+    cpu: 12
     gpu: 1
     memory: 48Gi
     disk: 64Gi
   evaluation:
     profile: 1xrtxa5000
-    cpu: 4
+    cpu: 12
     gpu: 1
     memory: 32Gi
     disk: 64Gi
@@ -42,3 +42,4 @@ functions:
 publishes:
   dataset: dataset
   model: model
+  results: results

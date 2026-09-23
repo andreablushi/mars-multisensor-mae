@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
+import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -12,9 +16,14 @@ from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
 from dataset.patches import read_tile_patches
+from logs.console import rich_logger
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
+
+log = rich_logger(__name__)
+
+READY = "ready"
 
 
 class DatasetSplit(Dataset):
@@ -27,8 +36,10 @@ class DatasetSplit(Dataset):
         axes: What each axis of each instrument's values holds.
         statistics: What each sensor's values run to over the training split.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
+        ready: Where the tiles already read are kept, named for all that shapes them.
     """
 
     def __init__(
@@ -38,6 +49,7 @@ class DatasetSplit(Dataset):
         axes: Mapping[str, tuple[str, ...]],
         statistics: Mapping[str, dict[str, np.ndarray]],
         sizes: Mapping[str, Mapping[str, int]],
+        pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
     ) -> None:
@@ -49,6 +61,7 @@ class DatasetSplit(Dataset):
             axes: What each axis of each instrument's values holds.
             statistics: What each sensor's values run to over the training split.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
+            pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
 
@@ -61,11 +74,19 @@ class DatasetSplit(Dataset):
         self.axes = axes
         self.statistics = statistics
         self.sizes = sizes
+        self.pool = pool
         self.shapes = shapes
         self.delay = delay
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
+        shaped = hashlib.sha256(
+            json.dumps([sizes, pool, shapes, axes, delay], sort_keys=True).encode()
+        )
+        for name in sorted(sizes):
+            shaped.update(statistics[name]["mean"].tobytes())
+            shaped.update(statistics[name]["deviation"].tobytes())
+        self.ready = f"{READY}/{shaped.hexdigest()[:16]}"
 
     def __len__(self) -> int:
         """Return how many reads the split holds.
@@ -88,19 +109,51 @@ class DatasetSplit(Dataset):
         Raises:
             ValueError: When the tile has no delay to stand on.
         """
+        started = time.perf_counter()
+        fetched = self.build.fetched_bytes
         identity = self.identities[index]
+        kept = f"{self.ready}/{identity}.npz"
+        stored = self.build.read_kept(kept)
+        if stored is not None:
+            sample = {}
+            with np.load(io.BytesIO(stored)) as arrays:
+                for packed in arrays.files:
+                    name, key = packed.split("/")
+                    sample.setdefault(name, {})[key] = arrays[packed]
+            log.info(
+                "tile %s read ready in %.2f s",
+                identity,
+                time.perf_counter() - started,
+            )
+            return sample, identity
         rows = self.tiles[identity]
         held = rows.get(self.delay)
         if not held:
             raise ValueError(f"{identity} has no {self.delay} to stand on")
         delays = self.build.read_delays(held)
-        read = read_tile_patches(rows, self.build, self.sizes, delays)
+        read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
         sample = {
             name: patch_arrays(
                 drawn, self.shapes[name], self.axes[name], self.statistics[name]
             )
             for name, drawn in read.items()
         }
+        packed = io.BytesIO()
+        np.savez(
+            packed,
+            **{
+                f"{name}/{key}": array
+                for name, arrays in sample.items()
+                for key, array in arrays.items()
+            },
+        )
+        self.build.keep(kept, packed.getvalue())
+        log.info(
+            "tile %s read in %.1f s, %.1f MB of it fetched",
+            identity,
+            time.perf_counter() - started,
+            (self.build.fetched_bytes - fetched) / 1e6,
+        )
         return sample, identity
 
 

@@ -12,6 +12,7 @@ from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
+from dataset.per_instrument import pooled_patch, pooled_patch_shape
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -40,6 +41,7 @@ def read_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
+    pool: Mapping[str, int],
     delays: np.ndarray,
 ) -> dict[str, list[Patch]]:
     """Return every patch of every observation one tile holds, by instrument.
@@ -48,6 +50,7 @@ def read_tile_patches(
         rows: The tile's index rows of each instrument, keyed as ODE names it.
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
         delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
@@ -65,7 +68,7 @@ def read_tile_patches(
             for at in range(math.prod(counts)):
                 patch = cut_patch(observation, record, at, lengths, counts, delays)
                 if patch.valid.any():
-                    held.append(patch)
+                    held.append(pooled_patch(patch, pool))
         read[name] = held
     return read
 
@@ -101,7 +104,13 @@ def cut_patch(
         for start, length in zip(origin, lengths, strict=True)
     )
     taken = tuple(window[at] for at in observation.ground_axes)
-    north, east = observation.distance_centre_m(taken)
+    # A separable grid is regular, so its corners place the patch as all its samples do
+    corners = tuple(
+        slice(one.start, one.stop, one.stop - one.start - 1 or 1) for one in taken
+    )
+    north, east = observation.distance_centre_m(
+        corners if observation.described["separable"] else taken
+    )
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
     ground_shape = tuple(
         length if holds == GROUND else 1
@@ -184,13 +193,16 @@ def patch_counts(
 
 
 def read_patch_layout(
-    build: DatasetBuild, sizes: Mapping[str, Mapping[str, int]]
+    build: DatasetBuild,
+    sizes: Mapping[str, Mapping[str, int]],
+    pool: Mapping[str, int],
 ) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
     """Return the shape of one patch of each instrument, and how far two sit apart.
 
     Args:
         build: The published build the instruments are read from.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
 
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
@@ -200,7 +212,11 @@ def read_patch_layout(
     ground = build.read_ground_sample_by_instrument()
     return (
         {
-            name: patch_lengths(rows[name].shape, rows[name].axes, size)
+            name: pooled_patch_shape(
+                patch_lengths(rows[name].shape, rows[name].axes, size),
+                rows[name].axes,
+                pool.get(name, 1),
+            )
             for name, size in sizes.items()
         },
         {name: size[GROUND] * ground[name] for name, size in sizes.items()},

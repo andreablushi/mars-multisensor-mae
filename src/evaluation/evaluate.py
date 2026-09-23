@@ -1,4 +1,4 @@
-"""Measuring what a trained model's latent space made of the tiles it never read."""
+"""Embedding the tiles a trained model never read."""
 
 from __future__ import annotations
 
@@ -12,14 +12,11 @@ from architecture.models import TileGrid
 def evaluate_latent_space(
     model: CrossSensorMAE, loader: DataLoader, device: torch.device
 ) -> dict[str, TileGrid]:
-    """Return the grid standing for every tile of one split, none of it hidden.
-
-    Nothing is measured over them yet. What a tile should be matched against is
-    a similarity between geological features, and that dataset is not built.
+    """Return the grid standing for every tile of one build, none of it hidden.
 
     Args:
         model: The model, loaded from a checkpoint and on the device.
-        loader: The split to read, in batches, each tile read whole.
+        loader: The tiles to read, in batches, each tile read whole.
         device: Where the model runs.
 
     Returns:
@@ -30,9 +27,11 @@ def evaluate_latent_space(
     with torch.no_grad():
         for batch, cells, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            grid = model.embed(batch, cells.to(device))
+            with torch.autocast(device.type, dtype=torch.bfloat16):
+                grid = model.embed(batch, cells.to(device))
             for at, identity in enumerate(identities):
+                # Kept in full precision, since the distances are read in its dtype
                 grids[identity] = TileGrid(
-                    grid.values[at], grid.occupied[at], grid.offset[at]
+                    grid.values[at].float(), grid.occupied[at], grid.offset[at]
                 )
     return grids

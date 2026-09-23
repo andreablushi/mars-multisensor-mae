@@ -4,22 +4,27 @@ from __future__ import annotations
 
 import argparse
 from functools import partial
+from pathlib import Path
 
 import torch
 from dhub import submit
 from dhub.configs import stage_workers
-from dhub.publish import model_name
+from dhub.publish import publish_results, published_name
 from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from architecture.models import collate
 from config.load import load_config
-from config.paths import REPO_ROOT
+from config.paths import REPO_ROOT, RESULTS_ROOT
+from config.schema import Config
+from dataset.loader import read_training_statistics, tile_loader
 from dataset.patches import patch_sizes, read_patch_layout
 from evaluation.evaluate import evaluate_latent_space
+from evaluation.metrics import chamfer_distances
+from evaluation.results import RESULTS_FILE, write_tile_distances
+from evaluation.store import read_label_by_tile
 from logs.console import rich_logger
-from logs.tracker import start_logging
 from training.checkpoint import load_checkpoint
 
 EVALUATION_STAGE = "evaluation"
@@ -28,29 +33,39 @@ EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 log = rich_logger(__name__)
 
 
-@handler()
-def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
-    """Measure what one published model's latent space made of a split of tiles.
+def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
+    """Measure one checkpoint's latent space over the labelled tiles, and keep it.
 
     Args:
-        project: The DigitalHub project the model was published in, unused here.
-        overrides: What to compose the config with, as hydra spells them.
+        config: What the run reads, the model it builds, and how it is measured.
+        checkpoint: The checkpoint to measure, on this machine.
+        project: The DigitalHub project the results are published in, or None here.
     """
-    config = load_config(overrides or [])
-    build = published_build(config.dataset)
+    # The model is built and normalised as the training build left it, whichever
+    # build the tiles it never read come from.
+    trained = published_build(config.dataset.build, config.dataset.root)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = read_patch_layout(build, sizes)
-    axes = {name: one.axes for name, one in build.read_row_by_instrument().items()}
-    loader = build.loaders_by_split(
+    shapes, strides = read_patch_layout(trained, sizes, config.dataset.pool)
+    axes = trained.read_axes_by_instrument()
+    statistics = read_training_statistics(
+        trained, config.dataset.split, config.dataset.seed
+    )
+    build = published_build(config.evaluation.build, config.dataset.root)
+    classes = read_label_by_tile(build)
+    by_tile = build.read_observation_metadata_by_tile()
+    loader = tile_loader(
+        build,
+        {tile: rows for tile, rows in by_tile.items() if tile in classes},
+        axes,
+        statistics,
         sizes,
+        config.dataset.pool,
         shapes,
         partial(collate, cell_m=config.model.cell_m),
-        config.dataset.split,
-        config.dataset.seed,
         config.model.delay,
         config.training.batch_size,
         stage_workers(EVALUATION_STAGE),
-    )[config.evaluation.split]
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
@@ -65,22 +80,32 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         config.model.decoder_depth,
         config.model.cell_m,
     ).to(device)
-    name = config.evaluation.model or model_name(config.model)
-    held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
-    steps = load_checkpoint(published_checkpoint(name, held), model)
-    log.info("evaluating %s, trained for %d steps, on %s", name, steps, device)
-    run = start_logging(
-        config,
-        {
-            "device": str(device),
-            "checkpoint": name,
-            "steps_trained": steps,
-            "tiles": len(loader.dataset),
-        },
-    )
+    steps = load_checkpoint(checkpoint, model)
+    log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
     grids = evaluate_latent_space(model, loader, device)
-    run.log({"latent/tiles": len(grids)})
-    run.finish()
+    tiles = sorted(grids)
+    distances = chamfer_distances(
+        [grids[tile] for tile in tiles], config.evaluation.minimal_chamfer_cell_distance
+    )
+    results = RESULTS_ROOT / config.run_name / RESULTS_FILE
+    write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
+    log.info("results written to %s", results)
+    if project is not None:
+        publish_results(project, results, published_name("results", config.run_name))
+
+
+@handler()
+def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
+    """Measure what one published model's latent space made of the labelled tiles.
+
+    Args:
+        project: The DigitalHub project the model was published in, or None here.
+        overrides: What to compose the config with, as hydra spells them.
+    """
+    config = load_config(overrides or [])
+    name = published_name("model", config.run_name)
+    held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
+    evaluate_checkpoint(config, published_checkpoint(name, held), project)
 
 
 def main() -> int:
@@ -102,7 +127,10 @@ def main() -> int:
     arguments = parsed.parse_args()
     if arguments.dh:
         return submit.submitted(
-            EVALUATION_STAGE, EVALUATION_HANDLER, arguments.ref, arguments.overrides
+            EVALUATION_STAGE,
+            EVALUATION_HANDLER,
+            arguments.ref,
+            {"overrides": arguments.overrides},
         )
     # The platform calls the handler, a run here the function under it.
     run_evaluation.__wrapped__(overrides=arguments.overrides)

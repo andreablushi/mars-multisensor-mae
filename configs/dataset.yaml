@@ -17,6 +17,12 @@ patchsize:
   # A sounder walks one line, so its ground is traces and its delay is depth.
   SHARAD: {ground: 8, delay: 256}
 
+# How many ground samples of a patch are averaged into one along each ground axis,
+# an instrument left out read whole.
+pool:
+  # 512 samples at about 5 m pooled to 64 at about 40 m.
+  CTX: 8
+
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.8, 0.2]
 

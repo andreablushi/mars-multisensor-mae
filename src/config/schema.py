@@ -14,6 +14,8 @@ class DatasetConfig:
         root: Where every build sits on this machine, under a directory of its own name.
         patchsize: How far a patch runs along an axis holding each thing, by
             instrument, an axis it omits taken whole.
+        pool: How many ground samples of a patch are averaged into one, by
+            instrument, one left out read whole.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -21,6 +23,7 @@ class DatasetConfig:
     build: str
     root: str
     patchsize: dict[str, dict[str, int]]
+    pool: dict[str, int]
     split: list[float]
     seed: int
 
@@ -30,7 +33,6 @@ class ModelConfig:
     """What the model reads, and how wide and deep each of its parts is.
 
     Attributes:
-        name: The architecture.
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
         cell_m: How far a cell of a tile's grid runs along the ground, in metres.
@@ -43,7 +45,6 @@ class ModelConfig:
         decoder_depth: How many blocks each decoder stacks.
     """
 
-    name: str
     instruments: list[str]
     delay: str
     cell_m: float
@@ -88,12 +89,14 @@ class EvaluationConfig:
     """What a trained model's latent space is measured over, and how.
 
     Attributes:
-        split: The split the latents are read from, as the code names the splits.
-        model: The published model to read, or None for the latest of this one.
+        build: The build the labelled tiles are read from, published as dataset-<build>.
+        minimal_chamfer_cell_distance: How far, in cells along either axis, a
+            cell may be matched from its own offset, or None to match it anywhere
+            in the other tile.
     """
 
-    split: str
-    model: str | None
+    build: str
+    minimal_chamfer_cell_distance: int | None
 
 
 @dataclass
@@ -101,12 +104,15 @@ class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
+        run_name: What the run is called, which names the model it saves and the
+            tracked run it logs to.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
         evaluation: How what it trained is measured.
     """
 
+    run_name: str
     dataset: DatasetConfig
     model: ModelConfig
     training: TrainingConfig

@@ -1,8 +1,12 @@
 # What a run reads, what it trains, and how, one file each, composed into one config.
 
 defaults:
-  - dataset: training
-  - model: mae
-  - training: default
-  - evaluation: default
+  - dataset@dataset
+  - model@model
+  - training@training
+  - evaluation@evaluation
   - _self_
+
+# What this run is called: the model it saves is published under it, its tracked
+# run is named after it, and the evaluation reads the model by it.
+run_name: mae

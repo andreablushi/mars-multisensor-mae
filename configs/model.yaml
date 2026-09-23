@@ -1,7 +1,5 @@
 # An encoder and a decoder per instrument, one cross-sensor encoder between them.
 
-name: mae
-
 # The instruments read as tokens, MOLA instead giving every surface patch the
 # radargram row its echo lands on, so every patch is placed in delay alone.
 instruments: [CTX, CRISM, SHARAD]
