@@ -60,10 +60,12 @@ def evaluate_latent_space(
     with torch.no_grad():
         for batch, cells, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            grid = model.embed(batch, cells.to(device))
+            with torch.autocast(device.type, dtype=torch.bfloat16):
+                grid = model.embed(batch, cells.to(device))
             for at, identity in enumerate(identities):
+                # Kept in full precision, since the distances are read in its dtype
                 grids[identity] = TileGrid(
-                    grid.values[at], grid.occupied[at], grid.offset[at]
+                    grid.values[at].float(), grid.occupied[at], grid.offset[at]
                 )
     return grids
 
