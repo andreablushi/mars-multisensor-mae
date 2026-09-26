@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from building.common.layout import GROUND
-from building.preprocessing.common import read
-from building.preprocessing.common.models.relative_position import RelativePosition
-from building.preprocessing.common.store import EAST, NORTH
+from building.common.layout import Axis
+from building.preprocessing.common import relative_positioning
+from building.preprocessing.common.models.position import Position
+from common.models.tile import Tile
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +48,7 @@ class Observation:
         Returns:
             ground_axes: Their positions in the array's own order.
         """
-        return tuple(at for at, holds in enumerate(self.axes) if holds == GROUND)
+        return tuple(at for at, holds in enumerate(self.axes) if holds == Axis.GROUND)
 
     def distance_centre_m(
         self, taken: tuple[slice, ...] = ()
@@ -62,11 +62,17 @@ class Observation:
             north: The ground metres north of the centre, one per sample kept.
             east: The ground metres east of it, in the same frame.
         """
-        grid = self.described["polar"]
-        held = RelativePosition(
-            self.north,
-            self.east,
-            self.described["separable"],
-            None if grid is None else tuple(grid),
-        ).offsets(taken)
-        return read.distance_centre_m({NORTH: held[0], EAST: held[1]}, self.described)
+        described = self.described
+        separable = described["separable"]
+        north, east = self.north, self.east
+        if taken:
+            north, east = (
+                (north[taken[0]], east[taken[1]])
+                if separable
+                else (north[taken], east[taken])
+            )
+        grid = described["polar"]
+        return relative_positioning.distance_centre_m(
+            Position(north, east, separable, None if grid is None else tuple(grid)),
+            Tile(described["band"], described["column"], **described["box"]),
+        )

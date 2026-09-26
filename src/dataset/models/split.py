@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import GROUND, WAVELENGTH
+from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
@@ -175,7 +175,7 @@ def patch_arrays(
         arrays: The patches under "values", "valid" and "position".
     """
     valid_shape = tuple(
-        held if holds in (GROUND, WAVELENGTH) else 1
+        held if holds in (Axis.GROUND, Axis.WAVELENGTH) else 1
         for held, holds in zip(shape, axes, strict=True)
     )
     scaled = [

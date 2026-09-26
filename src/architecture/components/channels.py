@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import torch
-from building.common.layout import GROUND
+from building.common.layout import Axis
 from torch import Tensor, nn
 
 
@@ -18,7 +18,7 @@ def channel_axis(axes: Sequence[str]) -> int | None:
     Returns:
         at: The one axis that is not ground, or None where a patch is ground alone.
     """
-    return next((at for at, holds in enumerate(axes) if holds != GROUND), None)
+    return next((at for at, holds in enumerate(axes) if holds != Axis.GROUND), None)
 
 
 def channel_vectors(shape: Sequence[int], at: int | None, dim: int) -> nn.Parameter:

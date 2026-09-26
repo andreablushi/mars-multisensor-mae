@@ -15,7 +15,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 from building import paths as built
-from building.common.layout import WAVELENGTH
+from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
@@ -198,7 +198,7 @@ class DatasetBuild:
             # A spectral instrument is pooled a band at a time, every other whole.
             held = (
                 (one.band_valid_count, one.band_mean, one.band_std)
-                if WAVELENGTH in one.axes
+                if Axis.WAVELENGTH in one.axes
                 else (one.valid_count, one.value_mean, one.value_std)
             )
             # An observation measuring nothing leaves them unset, a sounder nan.
@@ -215,7 +215,7 @@ class DatasetBuild:
                 continue
             standing[one.instrument].append((counts, mean, deviation))
             spreads[one.instrument] = [
-                -1 if holds == WAVELENGTH else 1 for holds in one.axes
+                -1 if holds == Axis.WAVELENGTH else 1 for holds in one.axes
             ]
         statistics = {}
         for instrument, held in standing.items():

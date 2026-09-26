@@ -6,7 +6,7 @@ import dataclasses
 from collections.abc import Mapping, Sequence
 
 import numpy as np
-from building.common.layout import GROUND
+from building.common.layout import Axis
 
 from dataset.models.patch import Patch
 
@@ -29,13 +29,17 @@ def pooled_patch(patch: Patch, pool: Mapping[str, int]) -> Patch:
         return tuple(
             length
             for size, holds in zip(shape, patch.axes, strict=True)
-            for length in ((size // factor, factor) if holds == GROUND else (size,))
+            for length in (
+                (size // factor, factor) if holds == Axis.GROUND else (size,)
+            )
         )
 
     # Where each ground axis's pooled samples land once it is split in two
-    ends = np.cumsum([2 if holds == GROUND else 1 for holds in patch.axes]) - 1
+    ends = np.cumsum([2 if holds == Axis.GROUND else 1 for holds in patch.axes]) - 1
     pooled = tuple(
-        int(end) for end, holds in zip(ends, patch.axes, strict=True) if holds == GROUND
+        int(end)
+        for end, holds in zip(ends, patch.axes, strict=True)
+        if holds == Axis.GROUND
     )
     valid = patch.valid.reshape(split(patch.valid.shape))
     weight = np.broadcast_to(valid, split(patch.values.shape)).astype(np.float32)
@@ -62,6 +66,6 @@ def pooled_patch_shape(
         shape: The shape once pooled along the ground.
     """
     return tuple(
-        size // factor if holds == GROUND else size
+        size // factor if holds == Axis.GROUND else size
         for size, holds in zip(shape, axes, strict=True)
     )

@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from building.common.layout import DELAY, GROUND, WAVELENGTH
+from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
@@ -113,18 +113,18 @@ def cut_patch(
     )
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
     ground_shape = tuple(
-        length if holds == GROUND else 1
+        length if holds == Axis.GROUND else 1
         for length, holds in zip(lengths, axes, strict=True)
     )
     valid = observation.measured[taken].reshape(ground_shape).copy()
     if record.band_valid_count is not None:
         # A band the observation never measured was filled, so it measures nothing.
-        band_shape = tuple(-1 if holds == WAVELENGTH else 1 for holds in axes)
+        band_shape = tuple(-1 if holds == Axis.WAVELENGTH else 1 for holds in axes)
         measured = np.asarray(record.band_valid_count) > 0
         valid = valid & measured.reshape(band_shape)
-    if DELAY in axes:
+    if Axis.DELAY in axes:
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
-        at = axes.index(DELAY)
+        at = axes.index(Axis.DELAY)
         rows = np.arange(origin[at], origin[at] + lengths[at])
         delay = float(rows.mean())
         delay_span = float(np.ptp(rows))
@@ -219,5 +219,5 @@ def read_patch_layout(
             )
             for name, size in sizes.items()
         },
-        {name: size[GROUND] * ground[name] for name, size in sizes.items()},
+        {name: size[Axis.GROUND] * ground[name] for name, size in sizes.items()},
     )
