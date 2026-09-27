@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from itertools import islice
+from itertools import chain, islice, repeat
 from pathlib import Path
 
 import torch
@@ -15,7 +15,7 @@ from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from configs.paths import REPO_ROOT
-from logs.console import rich_logger
+from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
@@ -25,20 +25,7 @@ from training.validate import validation_terms
 
 BEST_CHECKPOINT = "best.pt"
 
-log = rich_logger(__name__)
-
-
-def endless(loader: DataLoader):
-    """Yield the loader's batches over and over, so a run is counted in steps.
-
-    Args:
-        loader: The split to read, in batches.
-
-    Yields:
-        batch: What one step reads, the loader started again once it runs out.
-    """
-    while True:
-        yield from loader
+log = console_logger(__name__)
 
 
 def train(
@@ -102,7 +89,7 @@ def train(
     step, best_step = 0, -1
     model.train()  # Enable training mode
     ready = time.perf_counter()
-    for batch, cells, _ in islice(endless(training), max_steps):
+    for batch, cells, _ in islice(chain.from_iterable(repeat(training)), max_steps):
         arrived = time.perf_counter()
         waited = arrived - ready
         batch, reconstruction = masked_reconstruction(

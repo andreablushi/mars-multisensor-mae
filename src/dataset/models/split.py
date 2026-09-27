@@ -16,12 +16,12 @@ from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
 from dataset.patches import read_tile_patches
-from logs.console import rich_logger
+from logs.console import console_logger
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
-log = rich_logger(__name__)
+log = console_logger(__name__)
 
 READY = "ready"
 

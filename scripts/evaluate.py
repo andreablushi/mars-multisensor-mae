@@ -24,13 +24,13 @@ from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
 from evaluation.results import RESULTS_FILE, write_tile_distances
 from evaluation.store import read_label_by_tile
-from logs.console import rich_logger
+from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
 EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 
-log = rich_logger(__name__)
+log = console_logger(__name__)
 
 
 def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:

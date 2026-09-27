@@ -18,7 +18,7 @@ from architecture.models import collate
 from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
 from dataset.patches import patch_sizes, read_patch_layout
-from logs.console import rich_logger
+from logs.console import console_logger
 from logs.tracker import start_logging
 from training.train import train
 
@@ -27,7 +27,7 @@ TRAINING_HANDLER = "scripts.train:run_training"
 
 _MODEL = load_platform().publishes["model"]
 
-log = rich_logger(__name__)
+log = console_logger(__name__)
 
 
 @handler(outputs=[_MODEL])
