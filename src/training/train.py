@@ -20,7 +20,7 @@ from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
 from training.loss import csmae_loss
-from training.masking import masked_reconstruction
+from training.step import masked_reconstruction
 from training.validate import validation_terms
 
 BEST_CHECKPOINT = "best.pt"

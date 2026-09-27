@@ -86,6 +86,7 @@ def tile_loader(
     workers: int,
     *,
     shuffle: bool = False,
+    full_grid: bool = False,
 ) -> DataLoader:
     """Return one set of tiles of a build in batches, each tile read whole.
 
@@ -104,12 +105,15 @@ def tile_loader(
         batch_size: How many tiles one step reads.
         workers: How many processes read tiles beside the work.
         shuffle: Whether the tiles are read in a new order every pass.
+        full_grid: Whether to return full tile bounds for evaluation.
 
     Returns:
         loader: The tiles, in batches.
     """
     return DataLoader(
-        DatasetSplit(build, tiles, axes, statistics, sizes, pool, shapes, delay),
+        DatasetSplit(
+            build, tiles, axes, statistics, sizes, pool, shapes, delay, full_grid
+        ),
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=workers,

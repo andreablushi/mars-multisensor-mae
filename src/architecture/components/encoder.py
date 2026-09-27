@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import math
 
+from building.common.layout import Axis
 from torch import Tensor, nn
 
-from architecture.components.channels import by_channel, channel_axis, channel_vectors
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 
+# B = batch, K = patches, D = token channels, P = patch dimensions.
+
 
 class Encoder(nn.Module):
-    """Embed each channel of a patch, place it on the ground, attend over the set.
+    """Embed each patch, place it on the ground, and attend over the set.
 
     Attributes:
-        at: Which axis a patch's channels run along, or None where it holds one.
-        embed: From one channel's ground samples to one token, shared by all.
-        channel: What each channel of this instrument is, one vector each. (C, D)
+        at: The wavelength axis, if the patch has one.
+        embed: From patch samples to a token.
         place: The positional encoding.
         blocks: The transformer.
     """
@@ -42,14 +43,11 @@ class Encoder(nn.Module):
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
-        # Identify which axis index corresponds to sensor channels
-        self.at = channel_axis(axes)
-        # Map one channel's ground samples into the token width
+        self.at = axes.index(Axis.WAVELENGTH) if Axis.WAVELENGTH in axes else None
+        # Map one patch, or the mean CRISM band, into the token width
         self.embed = nn.Linear(
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
-        # One vector per channel, since every crop is laid out on the one fixed grid
-        self.channel = channel_vectors(shape, self.at, dim)  # (C, D)
         # Module for continuous geospatial (metric coordinate) positional embeddings
         self.place = PositionalEncoding(dim, stride)
         # Transformer encoder stack for intra-sensor self-attention
@@ -58,7 +56,6 @@ class Encoder(nn.Module):
     def forward(
         self,
         values: Tensor,
-        valid: Tensor,
         position: Tensor,
         visible: Tensor,
     ) -> Tensor:
@@ -66,21 +63,14 @@ class Encoder(nn.Module):
 
         Args:
             values: The normalised patches. (B, K, *P)
-            valid: Whether each sample of a patch is a measurement. (B, K, *P')
             position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
             visible: Which patches the encoder may read. (B, K)
 
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
-        # Embed each channel's samples and add which channel of the grid it is
-        held = self.embed(by_channel(values, self.at)) + self.channel  # (B, K, C, D)
-        # Mark which channels hold a measurement
-        weight = by_channel(valid, self.at).any(dim=-1).unsqueeze(-1)  # (B, K, C', 1)
-        weight = weight.to(held.dtype)  # (B, K, C', 1)
-        # Pool the channels that hold one into a single patch token
-        tokens = (held * weight).sum(dim=2) / weight.sum(dim=2).clamp(
-            min=1
-        )  # (B, K, D)
+        if self.at is not None:
+            values = values.mean(dim=2 + self.at)
+        tokens = self.embed(values.flatten(2))
         # Place the tokens on the ground and attend over the visible ones
         return self.blocks(tokens + self.place(position), visible)  # (B, K, D)

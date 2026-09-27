@@ -52,44 +52,74 @@ def reconstruction_error(
     return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
 
 
+def umr_loss(prediction: Tensor, tokens: Tokens) -> Tensor:
+    """Return masked reconstruction error from the same instrument.
+
+    Args:
+        prediction: The predicted patches. (B, K, *P)
+        tokens: The instrument's patches and visibility mask.
+
+    Returns:
+        error: Mean squared error over hidden measured patches.
+    """
+    hidden = tokens.present & ~tokens.visible
+    return reconstruction_error(prediction, tokens.values, tokens.valid, hidden)
+
+
+def cmr_loss(
+    reconstruction: Reconstruction, batch: dict[str, Tokens], asked: str
+) -> Tensor:
+    """Return masked reconstruction error from the other instruments.
+
+    Args:
+        reconstruction: The predictions made from each source instrument.
+        batch: The patches and masks of every instrument.
+        asked: The instrument whose patches are reconstructed.
+
+    Returns:
+        error: Mean error across the other instruments, including empty readers.
+    """
+    target = batch[asked]
+    hidden = target.present & ~target.visible
+    errors = []
+    for read, source in batch.items():
+        if read == asked:
+            continue
+        apart = (
+            target.position[:, :, None, :2] - source.position[:, None, :, :2]
+        ).abs()
+        reach = (
+            target.position[:, :, None, 3:5] + source.position[:, None, :, 3:5]
+        ) / 2
+        readable = ((apart <= reach).all(dim=-1) & source.visible[:, None]).any(dim=-1)
+        errors.append(
+            reconstruction_error(
+                reconstruction.predictions[asked, read],
+                target.values,
+                target.valid,
+                hidden & readable,
+            )
+        )
+    return torch.stack(errors).mean() if errors else target.values.new_zeros(())
+
+
 def csmae_loss(
     reconstruction: Reconstruction, batch: dict[str, Tokens]
 ) -> dict[str, Tensor]:
-    """Return every term of the objective, and their sum under "loss".
+    """Return the UMR and CMR terms of the objective and their sum.
 
     Args:
-        reconstruction: What the masked pass predicted, and the grids it read into.
+        reconstruction: What the masked pass predicted.
         batch: What it was handed.
 
     Returns:
         terms: "umr/<sensor>", "cmr/<sensor>", and "loss".
     """
     terms = {}
-    total = torch.zeros((), device=next(iter(batch.values())).values.device)  # ()
+    total = next(iter(batch.values())).values.new_zeros(())
     for asked, tokens in batch.items():
-        hidden = tokens.present & ~tokens.visible  # (B, K)
-        umr = reconstruction_error(
-            reconstruction.predictions[asked, asked],
-            tokens.values,
-            tokens.valid,
-            hidden,
-        )  # ()
-        others = []
-        for read in batch:
-            if read == asked:
-                continue
-            readable = reconstruction.grids[read].occupied.any(
-                dim=1, keepdim=True
-            )  # (B, 1)
-            others.append(
-                reconstruction_error(
-                    reconstruction.predictions[asked, read],
-                    tokens.values,
-                    tokens.valid,
-                    hidden & readable,
-                )
-            )
-        cmr = torch.stack(others).mean() if others else total  # ()
+        umr = umr_loss(reconstruction.predictions[asked, asked], tokens)
+        cmr = cmr_loss(reconstruction, batch, asked)
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
         total = total + umr + cmr

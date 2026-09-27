@@ -1,4 +1,4 @@
-"""Reading one cell out of every patch reaching it, whichever instrument took them."""
+"""Reading volume cells from sensor patches and tile context."""
 
 from __future__ import annotations
 
@@ -11,20 +11,19 @@ from torch.nn import functional
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.grid import Cells, TileGrid
 
+# B = batch, Q = cells, S = source patches, K = instrument patches, D = token channels.
+
 
 class CrossAttentionFusion(nn.Module):
-    """Read each cell out of the patches reaching it, whichever instrument took them.
+    """Read each volume cell from local patches or tile context.
 
-    A cell asks for what was measured over the ground it covers, and every
-    patch whose span reaches that ground answers, so a patch wider than a cell
-    speaks for each of the cells it spans and two patches over the same ground
-    are heard together without either being told the other is there.
+    A cell reads overlapping patches when they exist. Otherwise it reads all
+    visible patches of that instrument in the tile.
 
     Attributes:
-        cell_m: How far a cell runs along the ground, in metres.
         query: What a cell asks with, before it is placed. (D)
         place: The positional encoding, at the cell's own size.
-        attend: The attention from a cell to the patches reaching it.
+        attend: The attention from a cell to visible patches.
         norm: What a cell is normalised by before it is read out.
     """
 
@@ -37,7 +36,6 @@ class CrossAttentionFusion(nn.Module):
             cell_m: How far a cell runs along the ground, in metres.
         """
         super().__init__()
-        self.cell_m = cell_m
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.query, std=0.02)
         self.place = PositionalEncoding(dim, cell_m)
@@ -58,25 +56,32 @@ class CrossAttentionFusion(nn.Module):
             tokens: Each instrument's tokens from the cross-sensor encoder. (B, K, D)
             position: Where each of its patches sits and reaches, in metres. (B, K, 6)
             counted: Which of its tokens count: visible while training, else present.
-            cells: The cells the batch's patches reach, in one order for all of them.
+            cells: Sparse training cells or the full evaluation volume.
             read: Which instruments this grid is built from.
 
         Returns:
-            grid: One vector per cell, of unit length where an instrument reaches it.
+            grid: One unit vector per usable cell.
         """
         placed = cells.position  # (B, Q, 6)
-        centre = placed[..., :2]  # (B, Q, 2)
+        centre = placed[..., :3]  # (B, Q, 3)
         asked = self.query + self.place(placed)  # (B, Q, D)
         held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
         where = torch.cat([position[name] for name in read], dim=1)  # (B, S, 6)
         taken = torch.cat([counted[name] for name in read], dim=1)  # (B, S)
-        # A patch reaches a cell when their extents meet along both ground axes.
-        apart = (centre.unsqueeze(2) - where[:, None, :, :2]).abs()  # (B, Q, S, 2)
-        reach = (where[:, None, :, 3:5] + self.cell_m) / 2  # (B, 1, S, 2)
+        if held.shape[1] == 0:
+            return TileGrid(
+                asked.new_zeros(asked.shape),
+                cells.present & False,
+                cells.offset,
+                placed,
+            )
+        apart = (centre.unsqueeze(2) - where[:, None, :, :3]).abs()  # (B, Q, S, 3)
+        reach = (where[:, None, :, 3:] + placed[:, :, None, 3:]) / 2
         reaching = (apart <= reach).all(dim=-1) & taken.unsqueeze(1)  # (B, Q, S)
-        occupied = reaching.any(dim=-1) & cells.present  # (B, Q)
-        # A cell no patch reaches attends over all of them, and is then thrown away.
-        blocked = ~reaching  # (B, Q, S)
+        occupied = cells.present & taken.any(dim=1, keepdim=True)
+        blocked = torch.where(
+            reaching.any(dim=-1, keepdim=True), ~reaching, ~taken[:, None]
+        )
         blocked[~occupied] = False
         attended, _ = self.attend(
             asked,

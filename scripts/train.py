@@ -54,7 +54,11 @@ def run_training(
         sizes,
         config.dataset.pool,
         shapes,
-        partial(token_batch_padding, cell_m=config.model.cell_m),
+        partial(
+            token_batch_padding,
+            cell_m=config.model.cell_m,
+            delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
+        ),
         config.dataset.split,
         config.dataset.seed,
         config.model.delay,

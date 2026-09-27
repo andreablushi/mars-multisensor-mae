@@ -91,13 +91,30 @@ uv run python scripts/evaluate.py             # the run named in configs/config.
 uv run python scripts/evaluate.py run_name=mae-deep
 ```
 
-The model embeds every labelled tile into its grid of cells, and two tiles are
-compared by a normalised Chamfer distance over those cells: each cell of one is
-matched to the nearest cell of the other and the cost, a cosine distance
-between two unit vectors, is averaged both ways.
+The model embeds every labelled tile into a full east, north and radar-delay
+cell volume. Empty cells read context from measured parts of the same tile.
+Two tiles are compared by a normalised Chamfer distance over those cells: each
+cell of one is matched to the nearest cell of the other and the cost, a cosine
+distance between two unit vectors, is averaged both ways.
 `evaluation.minimal_chamfer_cell_distance` keeps a match near where the cell sits, so the arrangement of a feature counts
 and not only what its places are made of; null matches a cell anywhere in the
 other tile.
+
+## Model and loss
+
+`token_batch_padding` pads each instrument's patches and creates the grid cells.
+Training uses cells reached by patches. Evaluation uses the tile's full ground
+bounds and all 15 radar-delay layers. `CrossSensorMAE.shared_tokens` encodes
+each instrument, `CrossAttentionFusion` fills grid cells from local patches or
+other measured parts of the tile, and each instrument decoder predicts hidden
+patches from one source instrument's grid.
+
+`random_correspondence` chooses hidden patches. `masked_reconstruction` moves
+the batch to the model device and runs it. `patch_targets` normalises each
+target patch to zero mean and unit variance. A zero prediction therefore has
+roughly 1 mean squared error per loss term. `umr_loss` reads the same instrument;
+`cmr_loss` reads other instruments only where their visible patches overlap
+the target on the ground. `csmae_loss` adds those terms across instruments.
 
 What `notebooks/evaluation.ipynb` reads off that distance is retrieval at k of 1, 5, 10 and 20
 (precision, recall and F1, a shared class its relevance), the silhouette

@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
 from training.loss import csmae_loss
-from training.masking import masked_reconstruction
+from training.step import masked_reconstruction
 
 
 def validation_terms(

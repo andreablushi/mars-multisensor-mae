@@ -61,10 +61,16 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         sizes,
         config.dataset.pool,
         shapes,
-        partial(token_batch_padding, cell_m=config.model.cell_m),
+        partial(
+            token_batch_padding,
+            cell_m=config.model.cell_m,
+            delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
+            full_grid=True,
+        ),
         config.model.delay,
         config.training.batch_size,
         stage_workers(EVALUATION_STAGE),
+        full_grid=True,
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(

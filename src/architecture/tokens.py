@@ -11,6 +11,8 @@ from torch.nn.utils.rnn import pad_sequence
 
 from architecture.grid import Cells, tile_cells
 
+# B = batch, K = patches, P = patch dimensions.
+
 
 @dataclass(frozen=True, slots=True)
 class Tokens:
@@ -50,24 +52,28 @@ class Tokens:
 
 
 def token_batch_padding(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]],
     cell_m: float,
+    delay_rows: int,
+    full_grid: bool = False,
 ) -> tuple[dict[str, Tokens], Cells, list[str]]:
     """Return one batch of every instrument's tokens, the cells they reach, and whose.
 
     Args:
-        samples: What one read of each tile holds, and the tile it belongs to.
+        samples: Each tile's patch arrays, identity and optional ground bounds.
         cell_m: How far a cell runs along the ground, in metres.
+        delay_rows: How many radar delay rows a cell spans.
+        full_grid: Whether to fill each tile's full volume at evaluation.
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
-        cells: Every cell those patches reach, in one order for the whole batch.
+        cells: Sparse training cells or full evaluation volumes.
         identities: The tile each read belongs to, in the batch's own order.
     """
     batch = {}
     # Process each instrument/sensor present in the first dataset sample
     for name in samples[0][0]:
-        held = [sample[name] for sample, _ in samples]
+        held = [sample[name] for sample, _, _ in samples]
         # Count number of active patches per sample to find max sequence length K
         counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
@@ -82,4 +88,8 @@ def token_batch_padding(
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         # Instantiate Tokens container (defaulting visible patches to present patches)
         batch[name] = Tokens(**padded, visible=present, present=present)
-    return batch, tile_cells(samples, cell_m), [identity for _, identity in samples]
+    return (
+        batch,
+        tile_cells(samples, cell_m, delay_rows, full_grid),
+        [identity for _, identity, _ in samples],
+    )

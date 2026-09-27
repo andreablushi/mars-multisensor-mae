@@ -14,6 +14,8 @@ from architecture.components.encoder import Encoder
 from architecture.grid import Cells, TileGrid
 from architecture.tokens import Tokens
 
+# B = batch, K = patches, Q = cells, D = token channels, P = patch dimensions.
+
 
 @dataclass(frozen=True, slots=True)
 class Reconstruction:
@@ -21,11 +23,9 @@ class Reconstruction:
 
     Attributes:
         predictions: The predicted patches, by the sensor asked and the sensor read.
-        grids: The grid each instrument alone was read into, keyed as ODE names it.
     """
 
     predictions: dict[tuple[str, str], Tensor]
-    grids: dict[str, TileGrid]
 
 
 class CrossSensorMAE(nn.Module):
@@ -86,7 +86,6 @@ class CrossSensorMAE(nn.Module):
             {
                 name: Decoder(
                     shape,
-                    axes[name],
                     encoder_dim,
                     decoder_dim,
                     decoder_heads,
@@ -121,7 +120,6 @@ class CrossSensorMAE(nn.Module):
             # Process through sensor-specific stem then map to shared latent space
             stem = self.encoders[name](
                 tokens.values,
-                tokens.valid,
                 tokens.position,
                 counted[name],
             )  # (B, K, D)
@@ -179,7 +177,7 @@ class CrossSensorMAE(nn.Module):
             cells: The cells the batch's patches reach.
 
         Returns:
-            reconstruction: The predictions and the grids they were read from.
+            reconstruction: The predictions made from each instrument's grid.
         """
         # Encode visible (unmasked) context tokens for each sensor
         counted = {name: one.visible for name, one in batch.items()}
@@ -202,4 +200,4 @@ class CrossSensorMAE(nn.Module):
                     tokens.position,
                     hidden,
                 )  # (B, K, *P)
-        return Reconstruction(predictions, grids)
+        return Reconstruction(predictions)

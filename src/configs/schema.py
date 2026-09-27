@@ -90,7 +90,7 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        minimal_chamfer_cell_distance: How far, in cells along either axis, a
+        minimal_chamfer_cell_distance: How far, in cells along any axis, a
             cell may be matched from its own offset, or None to match it anywhere
             in the other tile.
     """

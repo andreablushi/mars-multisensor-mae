@@ -6,6 +6,8 @@ from torch import Tensor, nn
 
 from architecture.components.transformer import Transformer
 
+# B = batch, K = patches, D = token channels.
+
 
 class CrossSensorEncoder(nn.Module):
     """Attend over one sensor's tokens alone, on weights shared with every other.

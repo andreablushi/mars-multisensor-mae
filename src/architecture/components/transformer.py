@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from torch import Tensor, nn
 
+# B = batch, N = tokens, D = token channels.
+
 
 class Transformer(nn.Module):
     """Pre-norm transformer blocks stacked, normalised once more at the end."""

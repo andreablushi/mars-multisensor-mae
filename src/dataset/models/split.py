@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
+from common.maths import geodesy
+from common.models.tile import Tile
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
@@ -39,6 +41,7 @@ class DatasetSplit(Dataset):
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
+        full_grid: Whether evaluation needs the whole tile's ground bounds.
         ready: Where the tiles already read are kept, named for all that shapes them.
     """
 
@@ -52,6 +55,7 @@ class DatasetSplit(Dataset):
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
+        full_grid: bool = False,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
@@ -64,6 +68,7 @@ class DatasetSplit(Dataset):
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
+            full_grid: Whether to return the whole tile's ground bounds.
 
         Raises:
             ValueError: When a sensor the model reads has no statistics to scale by.
@@ -77,6 +82,7 @@ class DatasetSplit(Dataset):
         self.pool = pool
         self.shapes = shapes
         self.delay = delay
+        self.full_grid = full_grid
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
@@ -96,7 +102,9 @@ class DatasetSplit(Dataset):
         """
         return len(self.identities)
 
-    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
+    def __getitem__(
+        self, index: int
+    ) -> tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]:
         """Return what one read of a tile holds, and whose it is.
 
         Args:
@@ -105,6 +113,7 @@ class DatasetSplit(Dataset):
         Returns:
             sample: Each sensor's patches: values, valid and position.
             identity: The tile the read belongs to.
+            bounds: The local east and north limits for a full grid, else None.
 
         Raises:
             ValueError: When the tile has no delay to stand on.
@@ -125,36 +134,51 @@ class DatasetSplit(Dataset):
                 identity,
                 time.perf_counter() - started,
             )
-            return sample, identity
-        rows = self.tiles[identity]
-        held = rows.get(self.delay)
-        if not held:
-            raise ValueError(f"{identity} has no {self.delay} to stand on")
-        delays = self.build.read_delays(held)
-        read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
-        sample = {
-            name: patch_arrays(
-                drawn, self.shapes[name], self.axes[name], self.statistics[name]
+        else:
+            rows = self.tiles[identity]
+            held = rows.get(self.delay)
+            if not held:
+                raise ValueError(f"{identity} has no {self.delay} to stand on")
+            delays = self.build.read_delays(held)
+            read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
+            sample = {
+                name: patch_arrays(
+                    drawn, self.shapes[name], self.axes[name], self.statistics[name]
+                )
+                for name, drawn in read.items()
+            }
+            packed = io.BytesIO()
+            np.savez(
+                packed,
+                **{
+                    f"{name}/{key}": array
+                    for name, arrays in sample.items()
+                    for key, array in arrays.items()
+                },
             )
-            for name, drawn in read.items()
-        }
-        packed = io.BytesIO()
-        np.savez(
-            packed,
-            **{
-                f"{name}/{key}": array
-                for name, arrays in sample.items()
-                for key, array in arrays.items()
-            },
-        )
-        self.build.keep(kept, packed.getvalue())
-        log.info(
-            "tile %s read in %.1f s, %.1f MB of it fetched",
-            identity,
-            time.perf_counter() - started,
-            (self.build.fetched_bytes - fetched) / 1e6,
-        )
-        return sample, identity
+            self.build.keep(kept, packed.getvalue())
+            log.info(
+                "tile %s read in %.1f s, %.1f MB of it fetched",
+                identity,
+                time.perf_counter() - started,
+                (self.build.fetched_bytes - fetched) / 1e6,
+            )
+        bounds = None
+        if self.full_grid:
+            held = self.tiles[identity].get(self.delay)
+            if not held:
+                raise ValueError(f"{identity} has no {self.delay} to stand on")
+            described = self.build.read_observation(held[0].path).described
+            box = described["box"]
+            tile = Tile(described["band"], described["column"], **box)
+            lon, lat = geodesy.bbox_ring(**box, step=1.0)
+            east, north = geodesy.geodesic_forward(
+                lon, lat, tile.centre_lon, tile.centre_lat
+            )
+            bounds = np.array(
+                [[east.min(), north.min()], [east.max(), north.max()]], np.float32
+            )
+        return sample, identity, bounds
 
 
 def patch_arrays(

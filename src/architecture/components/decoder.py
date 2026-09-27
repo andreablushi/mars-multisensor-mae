@@ -7,9 +7,10 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.channels import channel_axis, channel_vectors
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
+
+# B = batch, C = cells, K = target patches, D = token channels, P = patch dimensions.
 
 
 class Decoder(nn.Module):
@@ -17,20 +18,16 @@ class Decoder(nn.Module):
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
-        at: Which axis the channels run along, or None where a patch holds one.
-        ground: The shape of one channel of it.
         expand: From the shared width up to the decoder width.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding.
         blocks: The transformer.
-        channel: What each channel of this instrument is, one vector each. (C, D')
-        predict: From a channel's token to its ground samples, shared by all.
+        predict: From a token to every sample of its patch.
     """
 
     def __init__(
         self,
         shape: tuple[int, ...],
-        axes: tuple[str, ...],
         shared: int,
         dim: int,
         heads: int,
@@ -41,7 +38,6 @@ class Decoder(nn.Module):
 
         Args:
             shape: The shape of one patch of the instrument.
-            axes: What each of its axes holds, in that same order.
             shared: The width the cross-sensor encoder hands tokens at.
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
@@ -50,11 +46,6 @@ class Decoder(nn.Module):
         """
         super().__init__()
         self.shape = shape
-        self.at = channel_axis(axes)
-        # Isolate spatial dimensions excluding the channel axis
-        self.ground = tuple(size for at, size in enumerate(shape) if at != self.at)
-        # One vector per channel, since every crop is laid out on the one fixed grid
-        self.channel = channel_vectors(shape, self.at, dim)  # (C, D')
         # Project the cross-sensor encoder width up to the decoder width
         self.expand = nn.Linear(shared, dim)
         # Initialize learnable mask token used as a placeholder for hidden patches
@@ -64,8 +55,8 @@ class Decoder(nn.Module):
         self.place = PositionalEncoding(dim, stride)
         # Decoder Transformer stack for cross-token self-attention
         self.blocks = Transformer(dim, heads, depth)
-        # Map a token back to one channel's flattened ground samples
-        self.predict = nn.Linear(dim, math.prod(self.ground))
+        # Map a token back to its patch samples
+        self.predict = nn.Linear(dim, math.prod(shape))
 
     def forward(
         self,
@@ -99,11 +90,5 @@ class Decoder(nn.Module):
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
         # Run combined sequence through Transformer blocks
         decoded = self.blocks(sequence, attended)  # (B, C + K, D')
-        # Slice reconstructed query tokens and spread each into its own channels
-        held = decoded[:, read.shape[1] :].unsqueeze(2) + self.channel  # (B, K, C, D')
-        # Write the tokens out as samples and unflatten to the patch shape
-        spread = self.predict(held).unflatten(-1, self.ground)  # (B, K, C, *ground)
-        # Move the channel axis back where the patch holds it
-        if self.at is None:
-            return spread.squeeze(2)  # (B, K, *P)
-        return spread.movedim(2, 2 + self.at)  # (B, K, *P)
+        held = decoded[:, read.shape[1] :]
+        return self.predict(held).unflatten(-1, self.shape)
