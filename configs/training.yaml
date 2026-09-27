@@ -10,8 +10,8 @@ warmup_steps: 200
 
 # How often the validation split is read, and how many of those may fail to beat
 # the best before the run stops.
-validate_every: 100
-patience: 25
+validate_every: 500
+patience: 13
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
