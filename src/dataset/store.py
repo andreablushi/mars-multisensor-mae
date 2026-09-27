@@ -165,10 +165,12 @@ class DatasetBuild:
         """
         placed = []
         for record in observations:
+            # Loads specifically the delay plane, which is beside the measured values.
             observation = self.read_observation(record.path, (DELAY_PLANE,))
             measured = observation.measured
             north, east = observation.distance_centre_m()
             rows = observation.beside[DELAY_PLANE]
+            # Unmeasured samples have no delay row.
             placed.append(
                 np.stack([north[measured], east[measured], rows[measured]], axis=1)
             )  # (n, 3)
@@ -207,8 +209,7 @@ class DatasetBuild:
             counts, mean, deviation = (
                 np.asarray(each, dtype=np.float64) for each in held
             )
-            # A band the observation never measured holds no mean and says so with
-            # nan, which its count already tells apart and which would pool to nan.
+            # A band the observation never measured holds no mean
             mean = np.where(counts > 0, mean, 0.0)
             deviation = np.where(counts > 0, deviation, 0.0)
             if not counts.sum() or not np.isfinite([mean, deviation]).all():
