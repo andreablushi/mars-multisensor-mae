@@ -3,7 +3,7 @@
 # A run is counted in steps, so how long a split happens to be settles nothing.
 max_steps: 10000
 # How many tiles one step reads, each carrying every patch of its own.
-batch_size: 3
+batch_size: 6
 learning_rate: 0.00015
 weight_decay: 0.05
 warmup_steps: 200
@@ -11,7 +11,7 @@ warmup_steps: 200
 # How often the validation split is read, and how many of those may fail to beat
 # the best before the run stops.
 validate_every: 500
-patience: 13
+patience: 7
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
