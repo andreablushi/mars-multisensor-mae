@@ -24,6 +24,6 @@ pool:
   CTX: 8
 
 # The shares the tiles are split into, in the code's order: train, validation.
-split: [0.8, 0.2]
+split: [0.95, 0.05]
 
 seed: 42
