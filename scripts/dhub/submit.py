@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 import digitalhub as dh
 
-from config.paths import REPO_ROOT
+from configs.paths import REPO_ROOT
 from dhub import credentials
 from dhub.configs import load_platform
 

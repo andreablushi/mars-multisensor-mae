@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError
 
-from config.paths import RESULTS_ROOT, build_root
+from configs.paths import RESULTS_ROOT, build_root
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform

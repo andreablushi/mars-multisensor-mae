@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
-from config.paths import REPO_ROOT
+from configs.paths import REPO_ROOT
 from logs.console import rich_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint

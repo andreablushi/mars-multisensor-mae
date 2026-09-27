@@ -30,7 +30,7 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = [
     "architecture",
-    "config",
+    "configs",
     "dataset",
     "evaluation",
     "logs",

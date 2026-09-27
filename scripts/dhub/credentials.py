@@ -7,7 +7,7 @@ import os
 from digitalhub.stores.client.base.factory import get_client
 from dotenv import load_dotenv
 
-from config.paths import REPO_ROOT
+from configs.paths import REPO_ROOT
 
 SECRETS = [
     "DHCORE_PERSONAL_ACCESS_TOKEN",

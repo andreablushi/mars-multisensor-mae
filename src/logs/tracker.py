@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
-from config.paths import REPO_ROOT
-from config.schema import Config
+from configs.paths import REPO_ROOT
+from configs.schema import Config
 
 
 def start_logging(config: Config, stage: str, facts: Mapping[str, object]) -> Run:

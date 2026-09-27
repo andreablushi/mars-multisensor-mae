@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from config.paths import CONFIGS_ROOT
+from configs.paths import CONFIGS_ROOT
 
 PLATFORM_CONFIG_PATH = CONFIGS_ROOT / "digitalhub.yaml"
 

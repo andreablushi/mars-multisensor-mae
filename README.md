@@ -54,8 +54,8 @@ knows nothing of where that build came from. A build brought down whole sits
 there and is read off disk:
 
 ```python
-from config.load import load_config
-from config.paths import build_root
+from configs.load import load_config
+from configs.paths import build_root
 from dataset.store import DatasetBuild
 
 config = load_config()
@@ -110,12 +110,12 @@ overall and per class, and the mean distance between each pair of classes.
 by `configs/config.yaml`, which also names the run with `run_name`:
 
 ```python
-from config.load import load_config
+from configs.load import load_config
 
 config = load_config()  # the defaults
 config = load_config(["dataset.patchsize.CTX=512"])  # one value of one
 ```
 
-What comes back is `config.schema.Config`, read under the schema rather than
+What comes back is `configs.schema.Config`, read under the schema rather than
 handed over as a bare mapping, so a key the schema does not declare is an error
 rather than a line that settles nothing.

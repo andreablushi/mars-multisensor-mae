@@ -15,9 +15,9 @@ from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from architecture.models import collate
-from config.load import load_config
-from config.paths import REPO_ROOT, RESULTS_ROOT
-from config.schema import Config
+from configs.load import load_config
+from configs.paths import REPO_ROOT, RESULTS_ROOT
+from configs.schema import Config
 from dataset.loader import read_training_statistics, tile_loader
 from dataset.patches import patch_sizes, read_patch_layout
 from evaluation.evaluate import evaluate_latent_space

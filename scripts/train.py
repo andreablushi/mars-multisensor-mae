@@ -15,7 +15,7 @@ from evaluate import evaluate_checkpoint
 
 from architecture.mae import CrossSensorMAE
 from architecture.models import collate
-from config.load import load_config
+from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
 from dataset.patches import patch_sizes, read_patch_layout
 from logs.console import rich_logger
