@@ -148,7 +148,8 @@ def loaders_by_split(
         loaders: One loader per split, the training one shuffled and the other not.
     """
     by_tile = build.read_observation_metadata_by_tile()
-    statistics = read_training_statistics(build, shares, seed)
+    splits = split_tiles(by_tile, shares, seed)
+    statistics = build.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
     axes = build.read_axes_by_instrument()
     return {
         name: tile_loader(
@@ -165,5 +166,5 @@ def loaders_by_split(
             workers,
             shuffle=name == TRAINING_SPLIT,
         )
-        for name, held in split_tiles(by_tile, shares, seed).items()
+        for name, held in splits.items()
     }

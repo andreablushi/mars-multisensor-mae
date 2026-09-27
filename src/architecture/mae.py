@@ -7,14 +7,12 @@ from dataclasses import dataclass
 
 from torch import Tensor, nn
 
-from architecture.components.crossattention_fusion import (
-    CrossAttentionFusion,
-    cell_positions,
-)
-from architecture.components.crossencoder import CrossSensorEncoder
+from architecture.components.crossattention_fusion import CrossAttentionFusion
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.models import Cells, TileGrid, Tokens
+from architecture.components.transformer import Transformer
+from architecture.grid import Cells, TileGrid
+from architecture.tokens import Tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,9 +76,7 @@ class CrossSensorMAE(nn.Module):
             }
         )
         # Shared backbone projecting all sensor tokens into a common space
-        self.crossencoder = CrossSensorEncoder(
-            encoder_dim, encoder_heads, crossencoder_depth
-        )
+        self.crossencoder = Transformer(encoder_dim, encoder_heads, crossencoder_depth)
         # The one place the instruments meet, each cell read from what reaches it
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
         # Sensor-specific reconstruction heads for target patch recovery
@@ -190,7 +186,7 @@ class CrossSensorMAE(nn.Module):
         grids = {
             name: self.gridded(encoded, batch, counted, cells, [name]) for name in batch
         }
-        placed = cell_positions(cells.offset, self.fusion.cell_m)  # (B, Q, 6)
+        placed = cells.position  # (B, Q, 6)
         predictions = {}
         # Every patch is predicted from the cells one instrument alone was read into,
         # so no instrument ever reads its own patches back out of the grid it asks.

@@ -6,8 +6,9 @@ from dataclasses import replace
 
 import torch
 
+from architecture.grid import Cells
 from architecture.mae import CrossSensorMAE, Reconstruction
-from architecture.models import Cells, Tokens
+from architecture.tokens import Tokens
 
 
 def random_correspondence(

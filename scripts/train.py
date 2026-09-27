@@ -14,7 +14,7 @@ from digitalhub_runtime_python import handler
 from evaluate import evaluate_checkpoint
 
 from architecture.mae import CrossSensorMAE
-from architecture.models import collate
+from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
 from dataset.patches import patch_sizes, read_patch_layout
@@ -54,7 +54,7 @@ def run_training(
         sizes,
         config.dataset.pool,
         shapes,
-        partial(collate, cell_m=config.model.cell_m),
+        partial(token_batch_padding, cell_m=config.model.cell_m),
         config.dataset.split,
         config.dataset.seed,
         config.model.delay,

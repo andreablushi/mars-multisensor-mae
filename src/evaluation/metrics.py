@@ -10,7 +10,7 @@ from sklearn.metrics import silhouette_samples
 from torch import Tensor
 from umap import UMAP
 
-from architecture.models import TileGrid
+from architecture.grid import TileGrid
 
 TOP_K = (1, 5, 10, 20)
 

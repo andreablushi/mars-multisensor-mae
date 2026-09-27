@@ -14,7 +14,7 @@ from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
-from architecture.models import collate
+from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from configs.paths import REPO_ROOT, RESULTS_ROOT
 from configs.schema import Config
@@ -61,7 +61,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         sizes,
         config.dataset.pool,
         shapes,
-        partial(collate, cell_m=config.model.cell_m),
+        partial(token_batch_padding, cell_m=config.model.cell_m),
         config.model.delay,
         config.training.batch_size,
         stage_workers(EVALUATION_STAGE),

@@ -5,30 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import torch
-from building.configs import sharad
 from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.models import Cells, TileGrid
-
-
-def cell_positions(offset: Tensor, cell_m: float) -> Tensor:
-    """Return where each cell sits and how far it reaches, as a patch would say it.
-
-    Args:
-        offset: Which cell each slot stands for, east then north. (B, Q, 2)
-        cell_m: How far a cell runs along the ground, in metres.
-
-    Returns:
-        position: The cell centre and its span, in metres. (B, Q, 6)
-    """
-    centre = (offset + 0.5) * cell_m  # (B, Q, 2)
-    edge = centre.new_zeros(*centre.shape[:-1], 1)  # (B, Q, 1)
-    spans = centre.new_full((*centre.shape[:-1], 2), cell_m)  # (B, Q, 2)
-    # A cell stands on the datum, spans its own width, and reaches no delay.
-    datum = centre.new_full((*centre.shape[:-1], 1), float(sharad.AREOID_ROW))
-    return torch.cat([centre, datum, spans, edge], dim=-1)  # (B, Q, 6)
+from architecture.grid import Cells, TileGrid
 
 
 class CrossAttentionFusion(nn.Module):
@@ -83,7 +64,7 @@ class CrossAttentionFusion(nn.Module):
         Returns:
             grid: One vector per cell, of unit length where an instrument reaches it.
         """
-        placed = cell_positions(cells.offset, self.cell_m)  # (B, Q, 6)
+        placed = cells.position  # (B, Q, 6)
         centre = placed[..., :2]  # (B, Q, 2)
         asked = self.query + self.place(placed)  # (B, Q, D)
         held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
@@ -105,4 +86,6 @@ class CrossAttentionFusion(nn.Module):
             need_weights=False,
         )  # (B, Q, D)
         values = functional.normalize(self.norm(attended), dim=-1)  # (B, Q, D)
-        return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset)
+        return TileGrid(
+            values * occupied.unsqueeze(-1), occupied, cells.offset, cells.position
+        )

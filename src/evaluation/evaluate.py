@@ -5,8 +5,8 @@ from __future__ import annotations
 import torch
 from torch.utils.data import DataLoader
 
+from architecture.grid import TileGrid
 from architecture.mae import CrossSensorMAE
-from architecture.models import TileGrid
 
 
 def evaluate_latent_space(
@@ -32,6 +32,9 @@ def evaluate_latent_space(
             for at, identity in enumerate(identities):
                 # Kept in full precision, since the distances are read in its dtype
                 grids[identity] = TileGrid(
-                    grid.values[at].float(), grid.occupied[at], grid.offset[at]
+                    grid.values[at].float(),
+                    grid.occupied[at],
+                    grid.offset[at],
+                    grid.position[at],
                 )
     return grids

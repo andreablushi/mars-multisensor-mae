@@ -61,7 +61,10 @@ def read_tile_patches(
         held: list[Patch] = []
         for record in rows.get(name, ()):
             lengths = patch_lengths(record.shape, record.axes, size)
-            counts = patch_counts(record.shape, record.axes, size)
+            counts = tuple(
+                length // patch
+                for length, patch in zip(record.shape, lengths, strict=True)
+            )
             if not math.prod(counts):
                 continue
             observation = build.read_observation(record.path)
@@ -137,19 +140,15 @@ def cut_patch(
         delay = float(delays[nearest, 2])
     return Patch(
         instrument=observation.instrument,
-        identifier=observation.identifier,
         values=observation.values[window].copy(),
         valid=valid,
         axes=axes,
-        origin=origin,
         north_m=north_m,
         east_m=east_m,
         delay=delay,
         north_span_m=float(np.ptp(north)),
         east_span_m=float(np.ptp(east)),
         delay_span=delay_span,
-        t_start=record.t_start,
-        t_end=record.t_end,
     )
 
 
@@ -168,27 +167,6 @@ def patch_lengths(
     """
     return tuple(
         patchsize.get(holds, size) for size, holds in zip(shape, axes, strict=True)
-    )
-
-
-def patch_counts(
-    shape: Sequence[int], axes: Sequence[str], patchsize: Mapping[str, int]
-) -> tuple[int, ...]:
-    """Return how many patches fit along each axis of an observation.
-
-    Args:
-        shape: How many samples each axis of the values holds.
-        axes: What each of those axes holds, in that same order.
-        patchsize: How far a patch runs along an axis holding each thing.
-
-    Returns:
-        counts: How many whole patches each axis holds.
-    """
-    return tuple(
-        size // length
-        for size, length in zip(
-            shape, patch_lengths(shape, axes, patchsize), strict=True
-        )
     )
 
 

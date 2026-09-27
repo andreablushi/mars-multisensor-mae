@@ -9,6 +9,8 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
+from architecture.grid import Cells, tile_cells
+
 
 @dataclass(frozen=True, slots=True)
 class Tokens:
@@ -47,51 +49,7 @@ class Tokens:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class Cells:
-    """The cells a batch of tiles is cut into, padded to one count.
-
-    A cell is a square of ground the same size for every tile, so one cell
-    offset stands for the same place whichever tile holds it and two
-    tiles are compared over the offsets they share. How many cells a tile
-    holds is its own, since a patch reaches every cell its span covers.
-
-    Attributes:
-        offset: Which cell each slot stands for, east then north. (B, Q, 2)
-        present: Whether a slot holds a cell rather than padding. (B, Q)
-    """
-
-    offset: Tensor
-    present: Tensor
-
-    def to(self, device: torch.device) -> Cells:
-        """Return the same cells held on one device.
-
-        Args:
-            device: The device to hold them on.
-
-        Returns:
-            cells: Every tensor moved there.
-        """
-        return Cells(self.offset.to(device), self.present.to(device))
-
-
-@dataclass(frozen=True, slots=True)
-class TileGrid:
-    """A batch of tiles as a grid of cells, each standing for the ground it covers.
-
-    Attributes:
-        values: The cell vectors, of unit length where occupied, else zero. (B, Q, D)
-        occupied: Whether an instrument it was built from reaches the cell. (B, Q)
-        offset: Which cell each slot stands for, east then north. (B, Q, 2)
-    """
-
-    values: Tensor
-    occupied: Tensor
-    offset: Tensor
-
-
-def collate(
+def token_batch_padding(
     samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
     cell_m: float,
 ) -> tuple[dict[str, Tokens], Cells, list[str]]:
@@ -124,37 +82,4 @@ def collate(
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         # Instantiate Tokens container (defaulting visible patches to present patches)
         batch[name] = Tokens(**padded, visible=present, present=present)
-    reached = []
-    for sample, _ in samples:
-        placed = np.concatenate(
-            [held["position"] for held in sample.values()]
-        )  # (K, 6)
-        low = np.floor((placed[:, :2] - placed[:, 3:5] / 2) / cell_m)  # (K, 2)
-        high = np.floor((placed[:, :2] + placed[:, 3:5] / 2) / cell_m)  # (K, 2)
-        # A patch reaches every cell between the two corners its span puts it in.
-        spread = [
-            np.stack(
-                np.meshgrid(
-                    np.arange(east, east_end + 1),
-                    np.arange(north, north_end + 1),
-                    indexing="ij",
-                ),
-                axis=-1,
-            ).reshape(-1, 2)
-            for (east, north), (east_end, north_end) in zip(
-                low.astype(np.int64), high.astype(np.int64), strict=True
-            )
-        ]
-        offsets = (
-            np.unique(np.concatenate(spread), axis=0)
-            if spread
-            else np.zeros((0, 2), np.int64)
-        )  # (Q, 2)
-        reached.append(torch.as_tensor(offsets))
-    counts = torch.tensor([len(one) for one in reached])  # (B,)
-    slots = torch.arange(int(counts.max()))  # (Q,)
-    cells = Cells(
-        offset=pad_sequence(reached, batch_first=True),  # (B, Q, 2)
-        present=slots.unsqueeze(0) < counts.unsqueeze(1),  # (B, Q)
-    )
-    return batch, cells, [identity for _, identity in samples]
+    return batch, tile_cells(samples, cell_m), [identity for _, identity in samples]

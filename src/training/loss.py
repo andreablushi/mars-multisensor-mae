@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 
 from architecture.mae import Reconstruction
-from architecture.models import Tokens
+from architecture.tokens import Tokens
 
 
 def patch_targets(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
