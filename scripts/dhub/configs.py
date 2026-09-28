@@ -24,6 +24,7 @@ class Platform:
         python_version: The interpreter the image is built on.
         image_extras: What the platform itself asks for, beyond the training.
         resources: What each stage asks for: profile, cores, GPU, memory and disk.
+        volume: The persistent volume the ready tiles are kept on: name, path, size.
         functions: The function each stage is registered as, by stage.
         publishes: What each stage publishes, by the name a read asks for.
     """
@@ -34,6 +35,7 @@ class Platform:
     python_version: str
     image_extras: list[str]
     resources: dict[str, dict[str, str]]
+    volume: dict[str, str]
     functions: dict[str, str]
     publishes: dict[str, str]
 

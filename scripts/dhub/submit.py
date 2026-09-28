@@ -52,6 +52,7 @@ def submitted(
     # Start the job, told where the clone lands and what the box holds
     asked = platform.resources[stage]
     root = platform.source_root
+    volume = platform.volume
     run = function.run(
         action="job",
         profile=asked["profile"],
@@ -61,13 +62,24 @@ def submitted(
             "mem": asked["memory"],
             "disk": asked["disk"],
         },
+        volumes=[
+            {
+                "volume_type": "persistent_volume_claim",
+                "name": volume["name"],
+                "mount_path": volume["path"],
+                "spec": {"size": volume["size"]},
+            }
+        ],
         secrets=credentials.SECRETS,
         envs=[
             {"name": "PYTHONPATH", "value": f"{root}:{root}/src:{root}/scripts"},
             {"name": "PYTORCH_CUDA_ALLOC_CONF", "value": "expandable_segments:True"},
             *credentials.minting_envs(),
         ],
-        parameters=dict(parameters),
+        parameters={
+            **parameters,
+            "overrides": [*parameters["overrides"], f"dataset.root={volume['path']}"],
+        },
         wait=False,
     )
     print(run.key)

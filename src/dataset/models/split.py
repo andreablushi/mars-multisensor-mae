@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
-import json
-import time
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -26,6 +24,7 @@ if TYPE_CHECKING:
 log = console_logger(__name__)
 
 READY = "ready"
+BOUNDS = "bounds"
 
 
 class DatasetSplit(Dataset):
@@ -41,8 +40,6 @@ class DatasetSplit(Dataset):
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
-        full_grid: Whether evaluation needs the whole tile's ground bounds.
-        ready: Where the tiles already read are kept, named for all that shapes them.
     """
 
     def __init__(
@@ -55,7 +52,6 @@ class DatasetSplit(Dataset):
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
-        full_grid: bool = False,
     ) -> None:
         """Keep what every read needs, and check every instrument can be normalised.
 
@@ -68,7 +64,6 @@ class DatasetSplit(Dataset):
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
-            full_grid: Whether to return the whole tile's ground bounds.
 
         Raises:
             ValueError: When a sensor the model reads has no statistics to scale by.
@@ -82,17 +77,9 @@ class DatasetSplit(Dataset):
         self.pool = pool
         self.shapes = shapes
         self.delay = delay
-        self.full_grid = full_grid
         for name in sizes:
             if name not in statistics:
                 raise ValueError(f"{name} has no finite statistics to normalise by")
-        shaped = hashlib.sha256(
-            json.dumps([sizes, pool, shapes, axes, delay], sort_keys=True).encode()
-        )
-        for name in sorted(sizes):
-            shaped.update(statistics[name]["mean"].tobytes())
-            shaped.update(statistics[name]["deviation"].tobytes())
-        self.ready = f"{READY}/{shaped.hexdigest()[:16]}"
 
     def __len__(self) -> int:
         """Return how many reads the split holds.
@@ -104,7 +91,7 @@ class DatasetSplit(Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]:
+    ) -> tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray]:
         """Return what one read of a tile holds, and whose it is.
 
         Args:
@@ -113,71 +100,84 @@ class DatasetSplit(Dataset):
         Returns:
             sample: Each sensor's patches: values, valid and position.
             identity: The tile the read belongs to.
-            bounds: The local east and north limits for a full grid, else None.
+            bounds: The local east and north limits of the tile. (2, 2)
+        """
+        identity = self.identities[index]
+        held = self.build.root / READY / f"{identity}.npz"
+        data = held.read_bytes() if held.is_file() else self.read_ready_tile(identity)
+        sample = {}
+        with np.load(io.BytesIO(data)) as arrays:
+            for packed in arrays.files:
+                if packed != BOUNDS:
+                    name, key = packed.split("/")
+                    sample.setdefault(name, {})[key] = arrays[packed]
+            return sample, identity, arrays[BOUNDS]
+
+    def read_ready_tile(self, identity: str) -> bytes:
+        """Return one tile cut, scaled and packed, kept under the root on the way.
+
+        Args:
+            identity: The tile to read.
+
+        Returns:
+            data: The packed arrays of every sensor's patches and the tile's bounds.
 
         Raises:
             ValueError: When the tile has no delay to stand on.
         """
-        started = time.perf_counter()
-        fetched = self.build.fetched_bytes
-        identity = self.identities[index]
-        kept = f"{self.ready}/{identity}.npz"
-        if (self.build.root / kept).is_file():
-            sample = {}
-            with np.load(self.build.root / kept) as arrays:
-                for packed in arrays.files:
-                    name, key = packed.split("/")
-                    sample.setdefault(name, {})[key] = arrays[packed]
-            log.info(
-                "tile %s read ready in %.2f s",
-                identity,
-                time.perf_counter() - started,
-            )
-        else:
-            rows = self.tiles[identity]
-            held = rows.get(self.delay)
-            if not held:
-                raise ValueError(f"{identity} has no {self.delay} to stand on")
-            delays, _ = read_surface_delays(self.build, held)
-            read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
-            sample = {
-                name: patch_arrays(
-                    drawn, self.shapes[name], self.axes[name], self.statistics[name]
-                )
+        rows = self.tiles[identity]
+        held = rows.get(self.delay)
+        if not held:
+            raise ValueError(f"{identity} has no {self.delay} to stand on")
+        delays, described = read_surface_delays(self.build, held)
+        read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
+        box = described["box"]
+        tile = Tile(described["band"], described["column"], **box)
+        lon, lat = geodesy.bbox_ring(**box, step=1.0)
+        east, north = geodesy.geodesic_forward(
+            lon, lat, tile.centre_lon, tile.centre_lat
+        )
+        packed = io.BytesIO()
+        np.savez(
+            packed,
+            **{
+                f"{name}/{key}": array
                 for name, drawn in read.items()
-            }
-            packed = io.BytesIO()
-            np.savez(
-                packed,
-                **{
-                    f"{name}/{key}": array
-                    for name, arrays in sample.items()
-                    for key, array in arrays.items()
-                },
-            )
-            self.build.keep(kept, packed.getvalue())
-            log.info(
-                "tile %s read in %.1f s, %.1f MB of it fetched",
-                identity,
-                time.perf_counter() - started,
-                (self.build.fetched_bytes - fetched) / 1e6,
-            )
-        bounds = None
-        if self.full_grid:
-            held = self.tiles[identity].get(self.delay)
-            if not held:
-                raise ValueError(f"{identity} has no {self.delay} to stand on")
-            described = self.build.read_observation(held[0].path).described
-            box = described["box"]
-            tile = Tile(described["band"], described["column"], **box)
-            lon, lat = geodesy.bbox_ring(**box, step=1.0)
-            east, north = geodesy.geodesic_forward(
-                lon, lat, tile.centre_lon, tile.centre_lat
-            )
-            bounds = np.array(
-                [[east.min(), north.min()], [east.max(), north.max()]], np.float32
-            )
-        return sample, identity, bounds
+                for key, array in patch_arrays(
+                    drawn, self.shapes[name], self.axes[name], self.statistics[name]
+                ).items()
+            },
+            **{
+                BOUNDS: np.array(
+                    [[east.min(), north.min()], [east.max(), north.max()]], np.float32
+                )
+            },
+        )
+        self.build.keep(f"{READY}/{identity}.npz", packed.getvalue())
+        return packed.getvalue()
+
+    def keep_every_tile(self, workers: int) -> None:
+        """Keep every tile of the split ready under the root, reading those missing.
+
+        Args:
+            workers: How many tiles are read at once.
+        """
+        missing = [
+            identity
+            for identity in self.identities
+            if not (self.build.root / READY / f"{identity}.npz").is_file()
+        ]
+        log.info(
+            "loading %d of %d tiles into %s", len(missing), len(self), self.build.root
+        )
+
+        def keep_tile(identity: str) -> None:
+            self.read_ready_tile(identity)
+
+        with ThreadPoolExecutor(workers) as pool:
+            for _ in pool.map(keep_tile, missing):
+                pass
+        log.info("loaded %d tiles", len(missing))
 
 
 def patch_arrays(

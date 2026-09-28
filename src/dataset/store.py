@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
-import shutil
 from collections import defaultdict
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -22,8 +22,6 @@ from common.disk import parquet
 
 from dataset.models.observation import Observation
 
-DISK_RESERVE_BYTES = 8 * 1024**3
-
 
 @dataclass(slots=True)
 class DatasetBuild:
@@ -33,13 +31,11 @@ class DatasetBuild:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
         records: What every observation is, once the index is read, else None.
-        fetched_bytes: How much this reader has brought down from the store.
     """
 
     root: Path
     fetch: Callable[[str], bytes]
     records: list[ObservationMetadata] | None = None
-    fetched_bytes: int = 0
 
     def read_object(self, path: str) -> bytes:
         """Return what one object of the build holds, off disk or fetched.
@@ -53,9 +49,7 @@ class DatasetBuild:
         held = self.root / path
         if held.is_file():
             return held.read_bytes()
-        data = self.fetch(path)
-        self.fetched_bytes += len(data)
-        return data
+        return self.fetch(path)
 
     def keep(self, path: str, data: bytes) -> None:
         """Keep one file under the root while the disk has room, else drop it.
@@ -66,11 +60,15 @@ class DatasetBuild:
         """
         held = self.root / path
         held.parent.mkdir(parents=True, exist_ok=True)
-        if shutil.disk_usage(held.parent).free - len(data) > DISK_RESERVE_BYTES:
-            # Written whole then moved, so a reader beside this one finds it finished.
-            temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
+        # Written whole then moved, so a reader beside this one finds it finished.
+        temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
+        try:
             temporary.write_bytes(data)
             temporary.replace(held)
+        except OSError as failed:
+            temporary.unlink(missing_ok=True)
+            if failed.errno != errno.ENOSPC:
+                raise
 
     def read_table(self, path: str, schema: pa.Schema | None = None) -> pa.Table:
         """Return one parquet object of the build, read out of the bytes it holds.

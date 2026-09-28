@@ -72,56 +72,6 @@ def read_training_statistics(
     return build.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
 
 
-def tile_loader(
-    build: DatasetBuild,
-    tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
-    axes: Mapping[str, tuple[str, ...]],
-    statistics: Mapping[str, dict[str, np.ndarray]],
-    sizes: Mapping[str, Mapping[str, int]],
-    pool: Mapping[str, int],
-    shapes: Mapping[str, tuple[int, ...]],
-    collate: Callable,
-    delay: str,
-    batch_size: int,
-    workers: int,
-    *,
-    shuffle: bool = False,
-    full_grid: bool = False,
-) -> DataLoader:
-    """Return one set of tiles of a build in batches, each tile read whole.
-
-    Args:
-        build: The build the tiles are read from.
-        tiles: The index rows of each sensor of each tile, keyed by tile.
-        axes: What each axis of each instrument's values holds, which is the model's
-            own reading of them and not whatever build the tiles came from.
-        statistics: What each sensor's values are scaled by, whatever they were
-            pooled over.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        pool: How many ground samples of a patch each instrument averages into one.
-        shapes: The shape of one patch of each instrument as the model reads it.
-        collate: How one batch of read tiles becomes what the model is handed.
-        delay: The instrument whose rows give every surface patch its delay.
-        batch_size: How many tiles one step reads.
-        workers: How many processes read tiles beside the work.
-        shuffle: Whether the tiles are read in a new order every pass.
-        full_grid: Whether to return full tile bounds for evaluation.
-
-    Returns:
-        loader: The tiles, in batches.
-    """
-    return DataLoader(
-        DatasetSplit(
-            build, tiles, axes, statistics, sizes, pool, shapes, delay, full_grid
-        ),
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=workers,
-        persistent_workers=workers > 0,
-        collate_fn=collate,
-    )
-
-
 def loaders_by_split(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
@@ -155,20 +105,26 @@ def loaders_by_split(
     splits = split_tiles(by_tile, shares, seed)
     statistics = build.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
     axes = build.read_axes_by_instrument()
+    DatasetSplit(
+        build, by_tile, axes, statistics, sizes, pool, shapes, delay
+    ).keep_every_tile(workers)
     return {
-        name: tile_loader(
-            build,
-            {tile: by_tile[tile] for tile in held},
-            axes,
-            statistics,
-            sizes,
-            pool,
-            shapes,
-            collate,
-            delay,
-            batch_size,
-            workers,
+        name: DataLoader(
+            DatasetSplit(
+                build,
+                {tile: by_tile[tile] for tile in held},
+                axes,
+                statistics,
+                sizes,
+                pool,
+                shapes,
+                delay,
+            ),
+            batch_size=batch_size,
             shuffle=name == TRAINING_SPLIT,
+            num_workers=workers,
+            persistent_workers=workers > 0,
+            collate_fn=collate,
         )
         for name, held in splits.items()
     }

@@ -12,13 +12,15 @@ from dhub.configs import stage_workers
 from dhub.publish import publish_results, published_name
 from dhub.store import published_build, published_checkpoint
 from digitalhub_runtime_python import handler
+from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from configs.paths import REPO_ROOT, RESULTS_ROOT
 from configs.schema import Config
-from dataset.loader import read_training_statistics, tile_loader
+from dataset.loader import read_training_statistics
+from dataset.models.split import DatasetSplit
 from dataset.patches import read_patch_layout
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
@@ -53,24 +55,27 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     build = published_build(config.evaluation.build, config.dataset.root)
     classes = read_label_by_tile(build)
     by_tile = build.read_observation_metadata_by_tile()
-    loader = tile_loader(
-        build,
-        {tile: rows for tile, rows in by_tile.items() if tile in classes},
-        axes,
-        statistics,
-        sizes,
-        config.dataset.pool,
-        shapes,
-        partial(
+    workers = stage_workers(EVALUATION_STAGE)
+    loader = DataLoader(
+        DatasetSplit(
+            build,
+            {tile: rows for tile, rows in by_tile.items() if tile in classes},
+            axes,
+            statistics,
+            sizes,
+            config.dataset.pool,
+            shapes,
+            config.model.delay,
+        ),
+        batch_size=config.training.batch_size,
+        num_workers=workers,
+        persistent_workers=workers > 0,
+        collate_fn=partial(
             token_batch_padding,
             cell_m=config.model.cell_m,
             delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
             full_grid=True,
         ),
-        config.model.delay,
-        config.training.batch_size,
-        stage_workers(EVALUATION_STAGE),
-        full_grid=True,
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(

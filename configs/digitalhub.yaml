@@ -33,6 +33,13 @@ resources:
     memory: 32Gi
     disk: 64Gi
 
+# The persistent volume every stage keeps the builds' ready tiles on, mounted as the
+# dataset root, so a tile is fetched from the store once and read from disk after.
+volume:
+  name: mae-tiles
+  path: /volume
+  size: 800Gi
+
 # The function each run is registered as, the project scoping it so it needs no prefix
 functions:
   training: train-mae
