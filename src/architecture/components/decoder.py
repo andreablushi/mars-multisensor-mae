@@ -18,7 +18,7 @@ class Decoder(nn.Module):
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
-        expand: From the shared width up to the decoder width.
+        expand: From the shared width up to the decoder width, at unit scale.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding.
         blocks: The transformer.
@@ -47,7 +47,7 @@ class Decoder(nn.Module):
         super().__init__()
         self.shape = shape
         # Project the cross-sensor encoder width up to the decoder width
-        self.expand = nn.Linear(shared, dim)
+        self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
         # Initialize learnable mask token used as a placeholder for hidden patches
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
