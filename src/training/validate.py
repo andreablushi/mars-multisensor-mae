@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Collection
 
 import torch
 from torch.utils.data import DataLoader
@@ -16,6 +17,7 @@ def validation_terms(
     model: CrossSensorMAE,
     loader: DataLoader,
     mask_ratio: float,
+    unnormalised_patches: Collection[str],
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
@@ -25,6 +27,7 @@ def validation_terms(
         model: The model, which is switched to evaluation.
         loader: The split, in batches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        unnormalised_patches: The instruments whose targets keep their own scale.
         seed: What fixes the masks.
         device: Where the model runs.
 
@@ -43,7 +46,7 @@ def validation_terms(
                 model, batch, cells, mask_ratio, generator, device
             )
             # Compute loss metrics on the masked batch
-            terms = csmae_loss(reconstruction, batch)
+            terms = csmae_loss(reconstruction, batch, unnormalised_patches)
             # Sum each individual loss term for batch averaging later
             for name, value in terms.items():
                 totals[name] += float(value)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Collection
 from itertools import chain, islice, repeat
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def train(
     validate_every: int,
     patience: int,
     mask_ratio: float,
+    unnormalised_patches: Collection[str],
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -57,6 +59,7 @@ def train(
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        unnormalised_patches: The instruments whose targets keep their own scale.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -88,7 +91,11 @@ def train(
     started = time.perf_counter()
     step, best_step = 0, -1
     log_validation(
-        run, 0, validation_terms(model, validation, mask_ratio, seed, device)
+        run,
+        0,
+        validation_terms(
+            model, validation, mask_ratio, unnormalised_patches, seed, device
+        ),
     )
     model.train()  # Enable training mode
     ready = time.perf_counter()
@@ -99,7 +106,7 @@ def train(
             model, batch, cells, mask_ratio, generator, device
         )
         # Compute cross-sensor MAE loss terms
-        terms = csmae_loss(reconstruction, batch)
+        terms = csmae_loss(reconstruction, batch, unnormalised_patches)
         # Backpropagation pass
         optimizer.zero_grad()
         terms["loss"].backward()
@@ -118,7 +125,9 @@ def train(
         )
         if step % validate_every:
             continue
-        metrics = validation_terms(model, validation, mask_ratio, seed, device)
+        metrics = validation_terms(
+            model, validation, mask_ratio, unnormalised_patches, seed, device
+        )
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])

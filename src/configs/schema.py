@@ -70,6 +70,8 @@ class TrainingConfig:
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        unnormalised_patches: The instruments whose targets keep their own scale
+            instead of each patch being normalised by itself.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -81,6 +83,7 @@ class TrainingConfig:
     validate_every: int
     patience: int
     mask_ratio: float
+    unnormalised_patches: list[str]
     checkpoints: str
 
 
