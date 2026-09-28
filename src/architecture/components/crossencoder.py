@@ -27,16 +27,15 @@ class CrossSensorEncoder(nn.Module):
         super().__init__()
         self.blocks = Transformer(dim, heads, depth)
 
-    def forward(self, tokens: Tensor, position: Tensor, visible: Tensor) -> Tensor:
+    def forward(self, tokens: Tensor, visible: Tensor) -> Tensor:
         """Return one instrument's tokens mapped into the space every instrument shares.
 
         Args:
             tokens: The instrument's encoded tokens. (B, K, D)
-            position: Where each of its patches sits and reaches. (B, K, 6)
             visible: Which of them carry a patch the encoder read. (B, K)
 
         Returns:
             tokens: The mapped tokens, meaningful where visible. (B, K, D)
         """
         # Project instrument tokens into the shared space, masking unread patches
-        return self.blocks(tokens, position, visible)  # (B, K, D)
+        return self.blocks(tokens, visible)  # (B, K, D)

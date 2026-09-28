@@ -7,7 +7,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.span_encoding import SpanEncoding
+from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 
 # B = batch, C = cells, K = target patches, D = token channels, P = patch dimensions.
@@ -20,7 +20,7 @@ class Decoder(nn.Module):
         shape: The shape of one patch this decoder predicts.
         expand: From the shared width up to the decoder width, at unit scale.
         mask: The token standing in for a hidden patch. (D')
-        place: The span encoding.
+        place: The positional encoding.
         blocks: The transformer.
         predict: From a token to every sample of its patch.
     """
@@ -49,7 +49,7 @@ class Decoder(nn.Module):
         self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
-        self.place = SpanEncoding(dim, stride)
+        self.place = PositionalEncoding(dim, stride)
         self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, math.prod(shape))
 
@@ -80,7 +80,6 @@ class Decoder(nn.Module):
         asked = self.mask + self.place(position)  # (B, K, D')
         sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
-        placed = torch.cat([context_position, position], dim=1)  # (B, C + K, 6)
-        decoded = self.blocks(sequence, placed, attended)  # (B, C + K, D')
+        decoded = self.blocks(sequence, attended)  # (B, C + K, D')
         held = decoded[:, read.shape[1] :]
         return self.predict(held).unflatten(-1, self.shape)

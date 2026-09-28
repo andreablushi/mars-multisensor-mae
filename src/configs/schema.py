@@ -36,11 +36,11 @@ class ModelConfig:
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
         cell_m: How far a cell of a tile's grid runs along the ground, in metres.
-        encoder_dim: How wide a token is everywhere but the decoders, a multiple of 6.
+        encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
         encoder_heads: How many attention heads every encoder and the fusion run.
         encoder_depth: How many blocks each instrument encoder stacks.
         crossencoder_depth: How many blocks the cross-sensor encoder stacks.
-        decoder_dim: How wide a token is in the decoders, a multiple of 6.
+        decoder_dim: How wide a token is in the decoders, a multiple of 12.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
     """

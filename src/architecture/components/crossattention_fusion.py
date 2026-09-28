@@ -8,8 +8,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
-from architecture.components.attention import Attention
-from architecture.components.span_encoding import SpanEncoding
+from architecture.components.positional_encoding import PositionalEncoding
 from architecture.grid import Cells, TileGrid, overlapping_boxes
 
 # B = batch, Q = cells, S = source patches, K = instrument patches, D = token channels.
@@ -23,7 +22,7 @@ class CrossAttentionFusion(nn.Module):
 
     Attributes:
         query: What a cell asks with, before it is placed. (D)
-        place: The span encoding, at the cell's own size.
+        place: The positional encoding, at the cell's own size.
         attend: The attention from a cell to visible patches.
         norm: What a cell is normalised by before it is read out.
     """
@@ -39,8 +38,8 @@ class CrossAttentionFusion(nn.Module):
         super().__init__()
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.query, std=0.02)
-        self.place = SpanEncoding(dim, cell_m)
-        self.attend = Attention(dim, heads)
+        self.place = PositionalEncoding(dim, cell_m)
+        self.attend = nn.MultiheadAttention(dim, heads, batch_first=True)
         self.norm = nn.LayerNorm(dim)
 
     def forward(
@@ -83,7 +82,13 @@ class CrossAttentionFusion(nn.Module):
             reaching.any(dim=-1, keepdim=True), ~reaching, ~taken[:, None]
         )
         blocked[~occupied] = False
-        attended = self.attend(asked, placed, held, where, ~blocked)  # (B, Q, D)
+        attended, _ = self.attend(
+            asked,
+            held,
+            held,
+            attn_mask=blocked.repeat_interleave(self.attend.num_heads, dim=0),
+            need_weights=False,
+        )  # (B, Q, D)
         values = functional.normalize(self.norm(attended), dim=-1)  # (B, Q, D)
         return TileGrid(
             values * occupied.unsqueeze(-1), occupied, cells.offset, cells.position
