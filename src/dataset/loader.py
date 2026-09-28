@@ -124,6 +124,7 @@ def loaders_by_split(
             shuffle=name == TRAINING_SPLIT,
             num_workers=workers,
             persistent_workers=workers > 0,
+            pin_memory=True,
             collate_fn=collate,
         )
         for name, held in splits.items()

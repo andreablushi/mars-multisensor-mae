@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 import torch
@@ -39,15 +39,22 @@ class Tokens:
             device: The device to hold them on.
 
         Returns:
-            tokens: Every tensor moved there.
+            tokens: Every tensor moved there, copied beside the work when pinned.
         """
         return Tokens(
-            self.values.to(device),
-            self.valid.to(device),
-            self.position.to(device),
-            self.visible.to(device),
-            self.present.to(device),
+            *(
+                getattr(self, one.name).to(device, non_blocking=True)
+                for one in fields(self)
+            )
         )
+
+    def pin_memory(self) -> Tokens:
+        """Return the same tokens in page-locked memory, which the loader copies from.
+
+        Returns:
+            tokens: Every tensor pinned.
+        """
+        return Tokens(*(getattr(self, one.name).pin_memory() for one in fields(self)))
 
 
 def token_batch_padding(

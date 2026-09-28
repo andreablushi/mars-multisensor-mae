@@ -112,6 +112,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         batch_size=config.training.batch_size,
         num_workers=workers,
         persistent_workers=workers > 0,
+        pin_memory=True,
         collate_fn=partial(
             token_batch_padding,
             cell_m=config.model.cell_m,

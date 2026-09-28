@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 import torch
@@ -34,11 +34,22 @@ class Cells:
             device: The device to hold them on.
 
         Returns:
-            cells: Every tensor moved there.
+            cells: Every tensor moved there, copied beside the work when pinned.
         """
         return Cells(
-            self.offset.to(device), self.position.to(device), self.present.to(device)
+            *(
+                getattr(self, one.name).to(device, non_blocking=True)
+                for one in fields(self)
+            )
         )
+
+    def pin_memory(self) -> Cells:
+        """Return the same cells in page-locked memory, which the loader copies from.
+
+        Returns:
+            cells: Every tensor pinned.
+        """
+        return Cells(*(getattr(self, one.name).pin_memory() for one in fields(self)))
 
 
 @dataclass(frozen=True, slots=True)
