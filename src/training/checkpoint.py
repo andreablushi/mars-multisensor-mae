@@ -31,21 +31,16 @@ def save_checkpoint(
     )
 
 
-def load_checkpoint(
-    path: Path, model: nn.Module, optimizer: Optimizer | None = None
-) -> int:
+def load_checkpoint(path: Path, model: nn.Module) -> int:
     """Return how many steps a checkpoint trained for, after loading it.
 
     Args:
         path: Where it was written.
         model: The model to load it into, built the same way.
-        optimizer: The optimizer to load it into, or None to load the model alone.
 
     Returns:
         step: How many steps it had trained for.
     """
     held = torch.load(path, map_location="cpu")
     model.load_state_dict(held["model"])
-    if optimizer is not None:
-        optimizer.load_state_dict(held["optimizer"])
     return held["step"]

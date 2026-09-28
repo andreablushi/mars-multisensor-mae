@@ -3,34 +3,38 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict
 
-import wandb
 from dotenv import load_dotenv
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
+import wandb
 from configs.paths import REPO_ROOT
-from configs.schema import Config
 
 
-def start_logging(config: Config, stage: str, facts: Mapping[str, object]) -> Run:
+def start_logging(
+    config: Mapping[str, object],
+    run_name: str,
+    stage: str,
+    facts: Mapping[str, object],
+) -> Run:
     """Return the tracked run every metric of one stage is logged to.
 
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
+        run_name: What the run is called, which names and groups the tracked run.
         stage: What the stage is called, which tells a training from an evaluation.
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named and grouped by the config's run name so the training and
+        run: The run, named and grouped by the run name so the training and
             the evaluation of one model sit together, its place read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
     run = wandb.init(
-        config=asdict(config),
-        name=config.run_name,
-        group=config.run_name,
+        config=dict(config),
+        name=run_name,
+        group=run_name,
         job_type=stage,
     )
     run.config.update(dict(facts))

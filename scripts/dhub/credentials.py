@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import os
-
 from digitalhub.stores.client.base.factory import get_client
-from dotenv import load_dotenv
-
-from configs.paths import REPO_ROOT
 
 SECRETS = [
     "DHCORE_PERSONAL_ACCESS_TOKEN",
@@ -15,27 +10,6 @@ SECRETS = [
     "WANDB_ENTITY",
     "WANDB_PROJECT",
 ]
-
-MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
-
-
-def minting_envs() -> list[dict[str, str]]:
-    """Return what a job is told so it can mint credentials of its own.
-
-    Returns:
-        told: The authority and the client to ask as, from the environment or the .env.
-
-    Raises:
-        RuntimeError: When either is unset, which a job cannot mint without.
-    """
-    load_dotenv(REPO_ROOT / ".env")
-    told = []
-    for name in MINTED_FROM:
-        value = os.environ.get(name)
-        if not value:
-            raise RuntimeError(f"{name} is unset; see .env.example")
-        told.append({"name": name, "value": value})
-    return told
 
 
 def refresh() -> None:

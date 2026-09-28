@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import argparse
+from dataclasses import asdict
 from functools import partial
 
-import torch
-from dhub import submit
 from dhub.configs import load_platform, stage_workers
 from dhub.publish import publish_checkpoint, published_name
 from dhub.store import published_build
+from dhub.submit import ran_stage
 from digitalhub_runtime_python import handler
-from evaluate import evaluate_checkpoint
+from evaluate import built_model, evaluate_checkpoint
 
-from architecture.mae import CrossSensorMAE
 from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
-from dataset.patches import read_patch_layout
 from logs.console import console_logger
 from logs.tracker import start_logging
 from training.train import train
@@ -46,9 +43,7 @@ def run_training(
     """
     config = load_config(overrides or [])
     build = published_build(config.dataset.build, config.dataset.root)
-    sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
-    shapes, strides, centres_nm = read_patch_layout(build, sizes, config.dataset.pool)
-    axes = build.read_axes_by_instrument()
+    model, device, sizes, shapes, strides = built_model(config, build)
     loaders = loaders_by_split(
         build,
         sizes,
@@ -66,24 +61,10 @@ def run_training(
         stage_workers(TRAINING_STAGE),
     )
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log.info("training on %s", device)
-    model = CrossSensorMAE(
-        shapes,
-        axes,
-        centres_nm,
-        strides,
-        config.model.encoder_dim,
-        config.model.encoder_heads,
-        config.model.encoder_depth,
-        config.model.crossencoder_depth,
-        config.model.decoder_dim,
-        config.model.decoder_heads,
-        config.model.decoder_depth,
-        config.model.cell_m,
-    ).to(device)
     run = start_logging(
-        config,
+        asdict(config),
+        config.run_name,
         TRAINING_STAGE,
         {
             "device": str(device),
@@ -123,37 +104,13 @@ def run_training(
     return published
 
 
-def main() -> int:
-    """Run the training where it was asked for.
-
-    Returns:
-        code: A process exit code, non zero when the image did not build.
-    """
-    parsed = argparse.ArgumentParser(description=__doc__)
-    parsed.add_argument(
-        "--dh", action="store_true", help="submit to DigitalHub instead of running here"
-    )
-    parsed.add_argument("--ref", default="main", help="branch, tag, or commit to run")
-    parsed.add_argument(
-        "--evaluate", action="store_true", help="evaluate the model once trained"
-    )
-    parsed.add_argument(
-        "overrides",
-        nargs="*",
-        help="what to compose the config with, as hydra spells them",
-    )
-    arguments = parsed.parse_args()
-    if arguments.dh:
-        return submit.submitted(
+if __name__ == "__main__":
+    raise SystemExit(
+        ran_stage(
             TRAINING_STAGE,
             TRAINING_HANDLER,
-            arguments.ref,
-            {"overrides": arguments.overrides, "evaluate": arguments.evaluate},
+            run_training,
+            __doc__,
+            {"evaluate": "evaluate the model once trained"},
         )
-    # The platform calls the handler, a run here the function under it.
-    run_training.__wrapped__(overrides=arguments.overrides, evaluate=arguments.evaluate)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    )
