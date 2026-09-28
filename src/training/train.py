@@ -68,7 +68,6 @@ def train(
     Returns:
         best: The checkpoint with the lowest validation loss.
     """
-    # Configure AdamW optimizer with custom hyperparameters
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=learning_rate,
@@ -76,21 +75,19 @@ def train(
         betas=(0.9, 0.95),
     )
 
-    # Schedule function: linear warmup followed by cosine decay
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:
-            return step / max(warmup_steps, 1)  # Warmup phase
+            return step / max(warmup_steps, 1)
         progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))  # Cosine decay phase
+        return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     stopping = EarlyStopping(patience)
-    # Deterministic seed generator
     generator = torch.Generator(device=device).manual_seed(seed)
     best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
     step, best_step = 0, -1
-    model.train()  # Enable training mode
+    model.train()
     ready = time.perf_counter()
     for batch, cells, _ in islice(chain.from_iterable(repeat(training)), max_steps):
         arrived = time.perf_counter()
@@ -98,9 +95,7 @@ def train(
         batch, reconstruction = masked_reconstruction(
             model, batch, cells, mask_ratio, generator, device
         )
-        # Compute cross-sensor MAE loss terms
         terms = csmae_loss(reconstruction, batch, unnormalised_patches)
-        # Backpropagation pass
         optimizer.zero_grad()
         terms["loss"].backward()
         # Stabilize training against exploding gradients
@@ -108,7 +103,7 @@ def train(
         optimizer.step()
         scheduler.step()
         step += 1
-        log_step(run, step, terms)  # Log step-level metrics to experiment tracker
+        log_step(run, step, terms)
         ready = time.perf_counter()
         log.info(
             "step %d waited %.1f s for data, computed in %.1f s",
@@ -125,15 +120,12 @@ def train(
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
         ready = time.perf_counter()
-        # Track early stopping and persist best model weights
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, step)
             best_step = step
-        # Check early stopping patience trigger
         if stopping.stopped:
             log.info("no lower validation loss for %d validations, stopping", patience)
             break
-    # Record final run summary metadata
     log_summary(
         run,
         {

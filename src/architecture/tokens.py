@@ -41,7 +41,6 @@ class Tokens:
         Returns:
             tokens: Every tensor moved there.
         """
-        # Transfer all underlying data and mask tensors to target execution device
         return Tokens(
             self.values.to(device),
             self.valid.to(device),
@@ -71,22 +70,17 @@ def token_batch_padding(
         identities: The tile each read belongs to, in the batch's own order.
     """
     batch = {}
-    # Process each instrument/sensor present in the first dataset sample
     for name in samples[0][0]:
         held = [sample[name] for sample, _, _ in samples]
-        # Count number of active patches per sample to find max sequence length K
         counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
-        # Pad variable-length patch arrays across batch samples to uniform length K
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
             )
             for key in held[0]
         }
-        # Construct boolean mask identifying real patches versus zero-padded slots
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
-        # Instantiate Tokens container (defaulting visible patches to present patches)
         batch[name] = Tokens(**padded, visible=present, present=present)
     return (
         batch,

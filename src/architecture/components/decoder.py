@@ -46,16 +46,11 @@ class Decoder(nn.Module):
         """
         super().__init__()
         self.shape = shape
-        # Project the cross-sensor encoder width up to the decoder width
         self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
-        # Initialize learnable mask token used as a placeholder for hidden patches
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
-        # Continuous geospatial positional encodings
         self.place = PositionalEncoding(dim, stride)
-        # Decoder Transformer stack for cross-token self-attention
         self.blocks = Transformer(dim, heads, depth)
-        # Map a token back to its patch samples
         self.predict = nn.Linear(dim, math.prod(shape))
 
     def forward(
@@ -81,14 +76,10 @@ class Decoder(nn.Module):
         # Guard clause for empty target inputs
         if position.shape[1] == 0:
             return position.new_zeros(position.shape[0], 0, *self.shape)  # (B, 0, *P)
-        # Project visible encoder context tokens and inject spatial coordinates
         read = self.expand(context) + self.place(context_position)  # (B, C, D')
-        # Broadcast mask token across target queries and inject spatial coordinates
         asked = self.mask + self.place(position)  # (B, K, D')
-        # Concatenate context tokens and target mask queries into a unified sequence
         sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
-        # Run combined sequence through Transformer blocks
         decoded = self.blocks(sequence, attended)  # (B, C + K, D')
         held = decoded[:, read.shape[1] :]
         return self.predict(held).unflatten(-1, self.shape)

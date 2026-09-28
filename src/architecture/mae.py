@@ -63,7 +63,6 @@ class CrossSensorMAE(nn.Module):
             cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         """
         super().__init__()
-        # Sensor-specific input projection stems and positional/modality encoders
         self.encoders = nn.ModuleDict(
             {
                 name: Encoder(
@@ -78,13 +77,11 @@ class CrossSensorMAE(nn.Module):
                 for name, shape in shapes.items()
             }
         )
-        # Shared backbone projecting all sensor tokens into a common space
         self.crossencoder = CrossSensorEncoder(
             encoder_dim, encoder_heads, crossencoder_depth
         )
         # The one place the instruments meet, each cell read from what reaches it
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
-        # Sensor-specific reconstruction heads for target patch recovery
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
@@ -120,7 +117,6 @@ class CrossSensorMAE(nn.Module):
                     tokens.values.shape[0], 0, self.dim
                 )  # (B, 0, D)
                 continue
-            # Process through sensor-specific stem then map to shared latent space
             stem = self.encoders[name](
                 tokens.values,
                 tokens.valid,
@@ -168,7 +164,6 @@ class CrossSensorMAE(nn.Module):
         Returns:
             grid: One vector per cell, over every present patch, none hidden.
         """
-        # Extract fully unmasked representations across all present batch sensors
         counted = {name: one.present for name, one in batch.items()}
         encoded = self.shared_tokens(batch, counted)
         return self.gridded(encoded, batch, counted, cells, list(batch))
@@ -183,7 +178,6 @@ class CrossSensorMAE(nn.Module):
         Returns:
             reconstruction: The predictions made from each instrument's grid.
         """
-        # Encode visible (unmasked) context tokens for each sensor
         counted = {name: one.visible for name, one in batch.items()}
         encoded = self.shared_tokens(batch, counted)
         # The grid each instrument makes alone, which is all a decoder ever reads

@@ -56,9 +56,7 @@ class Encoder(nn.Module):
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
         self.channels = ChannelEncoding(dim, centres_nm)
-        # Module for continuous geospatial (metric coordinate) positional embeddings
         self.place = PositionalEncoding(dim, stride)
-        # Transformer encoder stack for intra-sensor self-attention
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(

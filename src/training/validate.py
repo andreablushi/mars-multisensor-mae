@@ -34,22 +34,17 @@ def validation_terms(
     Returns:
         metrics: Every loss term averaged over the batches, on the same mask.
     """
-    model.eval()  # Switch model to evaluation mode (disables dropout/batchnorm updates)
-    # Seed generator for reproducible evaluation masks
+    model.eval()
     generator = torch.Generator(device=device).manual_seed(seed)
-    totals = defaultdict(float)  # Accumulate loss components across batches
+    totals = defaultdict(float)
     batches = 0
-    # Disable gradient calculation to save memory and speed up processing
     with torch.no_grad():
         for batch, cells, _ in loader:
             batch, reconstruction = masked_reconstruction(
                 model, batch, cells, mask_ratio, generator, device
             )
-            # Compute loss metrics on the masked batch
             terms = csmae_loss(reconstruction, batch, unnormalised_patches)
-            # Sum each individual loss term for batch averaging later
             for name, value in terms.items():
                 totals[name] += float(value)
             batches += 1
-    # Return averaged dictionary of all evaluation loss components
     return {name: value / max(batches, 1) for name, value in totals.items()}
