@@ -19,7 +19,7 @@ from configs.load import load_config
 from configs.paths import REPO_ROOT, RESULTS_ROOT
 from configs.schema import Config
 from dataset.loader import read_training_statistics, tile_loader
-from dataset.patches import patch_sizes, read_patch_layout
+from dataset.patches import read_patch_layout
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
 from evaluation.results import RESULTS_FILE, write_tile_distances
@@ -44,7 +44,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     # The model is built and normalised as the training build left it, whichever
     # build the tiles it never read come from.
     trained = published_build(config.dataset.build, config.dataset.root)
-    sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
+    sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
     shapes, strides, centres_nm = read_patch_layout(trained, sizes, config.dataset.pool)
     axes = trained.read_axes_by_instrument()
     statistics = read_training_statistics(

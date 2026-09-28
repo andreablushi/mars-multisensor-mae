@@ -16,12 +16,8 @@ class Observation:
     """One cropped observation, its arrays and what says how to read them.
 
     Attributes:
-        instrument: The instrument that took it, as ODE names it.
-        identifier: What that instrument was asked for.
-        measurement: What the values are called, as the archive publishes them.
         values: The values themselves, in the shape the instrument publishes.
         axes: What each axis of the values holds, in the array's own order.
-        dims: What each axis of every array is called, keyed as it is written.
         measured: Whether each ground sample measures the tile, over ground alone.
         north: How far each sample sits north of the tile centre, as written.
         east: How far it sits eastward, holding the same.
@@ -29,12 +25,8 @@ class Observation:
         described: What the build wrote beside the arrays, which places them.
     """
 
-    instrument: str
-    identifier: str
-    measurement: str
     values: np.ndarray
     axes: tuple[str, ...]
-    dims: dict[str, tuple[str, ...]]
     measured: np.ndarray
     north: np.ndarray
     east: np.ndarray

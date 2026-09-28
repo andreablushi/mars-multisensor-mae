@@ -17,7 +17,7 @@ from common.models.tile import Tile
 from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
-from dataset.patches import read_tile_patches
+from dataset.patches import read_surface_delays, read_tile_patches
 from logs.console import console_logger
 
 if TYPE_CHECKING:
@@ -122,10 +122,9 @@ class DatasetSplit(Dataset):
         fetched = self.build.fetched_bytes
         identity = self.identities[index]
         kept = f"{self.ready}/{identity}.npz"
-        stored = self.build.read_kept(kept)
-        if stored is not None:
+        if (self.build.root / kept).is_file():
             sample = {}
-            with np.load(io.BytesIO(stored)) as arrays:
+            with np.load(self.build.root / kept) as arrays:
                 for packed in arrays.files:
                     name, key = packed.split("/")
                     sample.setdefault(name, {})[key] = arrays[packed]
@@ -139,7 +138,7 @@ class DatasetSplit(Dataset):
             held = rows.get(self.delay)
             if not held:
                 raise ValueError(f"{identity} has no {self.delay} to stand on")
-            delays = self.build.read_delays(held)
+            delays, _ = read_surface_delays(self.build, held)
             read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
             sample = {
                 name: patch_arrays(

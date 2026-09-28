@@ -17,7 +17,7 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
-from dataset.patches import patch_sizes, read_patch_layout
+from dataset.patches import read_patch_layout
 from logs.console import console_logger
 from logs.tracker import start_logging
 from training.train import train
@@ -46,7 +46,7 @@ def run_training(
     """
     config = load_config(overrides or [])
     build = published_build(config.dataset.build, config.dataset.root)
-    sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
+    sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
     shapes, strides, centres_nm = read_patch_layout(build, sizes, config.dataset.pool)
     axes = build.read_axes_by_instrument()
     loaders = loaders_by_split(

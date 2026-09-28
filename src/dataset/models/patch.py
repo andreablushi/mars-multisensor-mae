@@ -12,7 +12,6 @@ class Patch:
     """One patch cut from one observation, and what says where and what it is.
 
     Attributes:
-        instrument: The instrument that took it, as ODE names it.
         values: The patch's own values, in the observation's axis order.
         valid: Whether each sample is a measurement, broadcasting over the values.
         axes: What each axis of the values holds, in that same order.
@@ -26,7 +25,6 @@ class Patch:
             lying on the ground.
     """
 
-    instrument: str
     values: np.ndarray
     valid: np.ndarray
     axes: tuple[str, ...]

@@ -24,9 +24,6 @@ from dataset.models.observation import Observation
 
 DISK_RESERVE_BYTES = 8 * 1024**3
 
-# What MOLA stores beside its heights: the radargram row each of them sounds at.
-DELAY_PLANE = "delay"
-
 
 @dataclass(slots=True)
 class DatasetBuild:
@@ -53,23 +50,12 @@ class DatasetBuild:
         Returns:
             data: The bytes of that object.
         """
-        data = self.read_kept(path)
-        if data is None:
-            data = self.fetch(path)
-            self.fetched_bytes += len(data)
-        return data
-
-    def read_kept(self, path: str) -> bytes | None:
-        """Return what one file kept under the root holds.
-
-        Args:
-            path: Where it sits, relative to the build root.
-
-        Returns:
-            data: Its bytes, or None when it is not kept.
-        """
         held = self.root / path
-        return held.read_bytes() if held.is_file() else None
+        if held.is_file():
+            return held.read_bytes()
+        data = self.fetch(path)
+        self.fetched_bytes += len(data)
+        return data
 
     def keep(self, path: str, data: bytes) -> None:
         """Keep one file under the root while the disk has room, else drop it.
@@ -140,46 +126,16 @@ class DatasetBuild:
         """
         return {name: one.axes for name, one in self.read_row_by_instrument().items()}
 
-    def read_ground_sample_by_instrument(self) -> dict[str, float]:
+    def read_resolution_by_instrument(self) -> dict[str, float]:
         """Return how much ground one sample of each instrument spans, over the build.
 
         Returns:
-            sample_spacing_m: One length per sensor, its median finest ground axis.
+            resolution_m: One length per sensor, its median finest ground axis.
         """
         standing = defaultdict(list)
         for one in self.read_observation_metadata():
             standing[one.instrument].append(min(one.sample_spacing_m))
         return {name: float(np.median(held)) for name, held in standing.items()}
-
-    def read_delays(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
-        """Return the row every sample of the delay instrument sounds at, over a tile.
-
-        Args:
-            observations: The tile's index rows of the instrument carrying the delay.
-
-        Returns:
-            delays: One row per sample: north, east and the delay row. (N, 3)
-
-        Raises:
-            ValueError: When none of them measured anything.
-        """
-        placed = []
-        for record in observations:
-            # Loads specifically the delay plane, which is beside the measured values.
-            observation = self.read_observation(record.path, (DELAY_PLANE,))
-            measured = observation.measured
-            north, east = observation.distance_centre_m()
-            rows = observation.beside[DELAY_PLANE]
-            # Unmeasured samples have no delay row.
-            placed.append(
-                np.stack([north[measured], east[measured], rows[measured]], axis=1)
-            )  # (n, 3)
-        delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
-        if not delays.size:
-            raise ValueError(
-                f"nothing measured over {[one.identity for one in observations]}"
-            )
-        return delays
 
     def read_statistics_by_instrument(
         self, tiles: Collection[str]
@@ -193,7 +149,7 @@ class DatasetBuild:
             statistics: Per sensor, the mean and deviation of its measurements.
         """
         standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
-        spreads: dict[str, list[int]] = {}
+        axes = {}
         for one in self.read_observation_metadata():
             if one.tile not in tiles:
                 continue
@@ -215,27 +171,25 @@ class DatasetBuild:
             if not counts.sum() or not np.isfinite([mean, deviation]).all():
                 continue
             standing[one.instrument].append((counts, mean, deviation))
-            spreads[one.instrument] = [
-                -1 if holds == Axis.WAVELENGTH else 1 for holds in one.axes
-            ]
+            axes[one.instrument] = one.axes
         statistics = {}
         for instrument, held in standing.items():
-            counts = np.sum([one[0] for one in held], axis=0)
-            total = np.maximum(counts, 1.0)
-            mean = np.sum([one[0] * one[1] for one in held], axis=0) / total
-            second = (
-                np.sum([one[0] * (one[2] ** 2 + one[1] ** 2) for one in held], axis=0)
-                / total
-            )
-            deviation = np.sqrt(np.maximum(second - mean**2, 0.0))
+            counts, means, deviations = (np.array(each) for each in zip(*held))
+            total = counts.sum(axis=0)
+            pooled = np.maximum(total, 1.0)
+            mean = (counts * means).sum(axis=0) / pooled
+            variance = (counts * (deviations**2 + (means - mean) ** 2)).sum(axis=0)
+            spread = [
+                -1 if holds == Axis.WAVELENGTH else 1 for holds in axes[instrument]
+            ]
+            shape = spread if total.shape else ()
             # A band nothing ever measured leaves a patch of it where it stands.
-            spread = spreads[instrument] if counts.shape else ()
             statistics[instrument] = {
-                "mean": np.where(counts > 0, mean, 0.0)
-                .reshape(spread)
+                "mean": np.where(total > 0, mean, 0.0)
+                .reshape(shape)
                 .astype(np.float32),
-                "deviation": np.where(counts > 0, deviation, 1.0)
-                .reshape(spread)
+                "deviation": np.where(total > 0, np.sqrt(variance / pooled), 1.0)
+                .reshape(shape)
                 .astype(np.float32),
             }
         return statistics
@@ -259,12 +213,8 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         return Observation(
-            instrument=described["instrument"],
-            identifier=described["identifier"],
-            measurement=described["measurement"],
             values=arrays[described["measurement"]],
             axes=tuple(described["axes"]),
-            dims={name: tuple(held) for name, held in described["dims"].items()},
             measured=arrays[MEASURED],
             north=arrays[NORTH],
             east=arrays[EAST],

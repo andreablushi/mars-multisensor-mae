@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
@@ -13,29 +14,47 @@ from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
-from dataset.per_instrument import pooled_patch, pooled_patch_shape
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
+# What MOLA stores beside its heights: the radargram row each of them sounds at.
+DELAY_PLANE = "delay"
 
-def patch_sizes(
-    instruments: Sequence[str], patchsize: Mapping[str, Mapping[str, int]]
-) -> dict[str, Mapping[str, int]]:
-    """Return how far a patch of each instrument runs along each axis it is cut on.
+
+def read_surface_delays(
+    build: DatasetBuild, observations: Sequence[ObservationMetadata]
+) -> tuple[np.ndarray, dict]:
+    """Return the row every sample of the delay instrument sounds at, over a tile.
 
     Args:
-        instruments: The instruments the model reads, as ODE names them.
-        patchsize: How far a patch runs along an axis holding each thing, by
-            instrument, keyed as ODE names it.
+        build: The published build the observations are read from.
+        observations: The tile's index rows of the instrument carrying the delay.
 
     Returns:
-        sizes: One length per thing an axis holds, per instrument.
+        delays: One row per sample: north, east and the delay row. (N, 3)
+        described: What the build wrote beside the last of them, which places the tile.
 
     Raises:
-        KeyError: When an instrument the model reads has no length written for it.
+        ValueError: When none of them measured anything.
     """
-    return {name: patchsize[name] for name in instruments}
+    placed = []
+    for record in observations:
+        # Loads specifically the delay plane, which is beside the measured values.
+        observation = build.read_observation(record.path, (DELAY_PLANE,))
+        measured = observation.measured
+        north, east = observation.distance_centre_m()
+        rows = observation.beside[DELAY_PLANE]
+        # Unmeasured samples have no delay row.
+        placed.append(
+            np.stack([north[measured], east[measured], rows[measured]], axis=1)
+        )  # (n, 3)
+    delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
+    if not delays.size:
+        raise ValueError(
+            f"nothing measured over {[one.identifier for one in observations]}"
+        )
+    return delays, observation.described
 
 
 def read_tile_patches(
@@ -72,7 +91,9 @@ def read_tile_patches(
             for at in range(math.prod(counts)):
                 patch = cut_patch(observation, record, at, lengths, counts, delays)
                 if patch.valid.any():
-                    held.append(pooled_patch(patch, pool))
+                    held.append(
+                        downsampled_patch(patch, pool[name]) if name in pool else patch
+                    )
         read[name] = held
     return read
 
@@ -140,7 +161,6 @@ def cut_patch(
         )
         delay = float(delays[nearest, 2])
     return Patch(
-        instrument=observation.instrument,
         values=observation.values[window].copy(),
         valid=valid,
         axes=axes,
@@ -153,8 +173,42 @@ def cut_patch(
     )
 
 
+def downsampled_patch(patch: Patch, factor: int) -> Patch:
+    """Return a patch with every run of ground samples averaged into one.
+
+    Args:
+        patch: The patch, as cut from its observation.
+        factor: How many ground samples are averaged into one, along each ground axis.
+
+    Returns:
+        patch: The patch, its unmeasured samples left out of every average.
+    """
+    ground = [at for at, holds in enumerate(patch.axes) if holds == Axis.GROUND]
+
+    def split(shape: Sequence[int]) -> tuple[int, ...]:
+        return tuple(
+            length
+            for at, size in enumerate(shape)
+            for length in ((size // factor, factor) if at in ground else (size,))
+        )
+
+    # Where each ground axis's averaged samples land once it is split in two
+    pooled = tuple(at + order + 1 for order, at in enumerate(ground))
+    valid = patch.valid.reshape(split(patch.valid.shape))
+    weight = np.broadcast_to(valid, split(patch.values.shape)).astype(np.float32)
+    values = np.where(weight > 0, patch.values.reshape(weight.shape), 0.0)
+    return dataclasses.replace(
+        patch,
+        values=values.sum(axis=pooled) / np.maximum(weight.sum(axis=pooled), 1.0),
+        valid=valid.any(axis=pooled),
+    )
+
+
 def patch_lengths(
-    shape: Sequence[int], axes: Sequence[str], patchsize: Mapping[str, int]
+    shape: Sequence[int],
+    axes: Sequence[str],
+    patchsize: Mapping[str, int],
+    factor: int = 1,
 ) -> tuple[int, ...]:
     """Return how far one patch runs along each axis of an observation.
 
@@ -162,12 +216,14 @@ def patch_lengths(
         shape: How many samples each axis of the values holds.
         axes: What each of those axes holds, in that same order.
         patchsize: How far a patch runs along an axis holding each thing.
+        factor: How many ground samples are averaged into one, 1 for the cut itself.
 
     Returns:
         lengths: One length per axis, an axis the patchsize omits taken whole.
     """
     return tuple(
-        patchsize.get(holds, size) for size, holds in zip(shape, axes, strict=True)
+        patchsize.get(holds, size) // (factor if holds == Axis.GROUND else 1)
+        for size, holds in zip(shape, axes, strict=True)
     )
 
 
@@ -191,16 +247,14 @@ def read_patch_layout(
         centres_nm: The wavelength of each sensor's channels, in nm, or None.
     """
     rows = build.read_row_by_instrument()
-    ground = build.read_ground_sample_by_instrument()
+    resolution = build.read_resolution_by_instrument()
     return (
         {
-            name: pooled_patch_shape(
-                patch_lengths(rows[name].shape, rows[name].axes, size),
-                rows[name].axes,
-                pool.get(name, 1),
+            name: patch_lengths(
+                rows[name].shape, rows[name].axes, size, pool.get(name, 1)
             )
             for name, size in sizes.items()
         },
-        {name: size[Axis.GROUND] * ground[name] for name, size in sizes.items()},
+        {name: size[Axis.GROUND] * resolution[name] for name, size in sizes.items()},
         {name: INSTRUMENTS[name].layout.band_centres_nm for name in sizes},
     )
