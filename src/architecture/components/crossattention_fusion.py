@@ -9,7 +9,7 @@ from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.grid import Cells, TileGrid
+from architecture.grid import Cells, TileGrid, overlapping_boxes
 
 # B = batch, Q = cells, S = source patches, K = instrument patches, D = token channels.
 
@@ -63,7 +63,6 @@ class CrossAttentionFusion(nn.Module):
             grid: One unit vector per usable cell.
         """
         placed = cells.position  # (B, Q, 6)
-        centre = placed[..., :3]  # (B, Q, 3)
         asked = self.query + self.place(placed)  # (B, Q, D)
         held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
         where = torch.cat([position[name] for name in read], dim=1)  # (B, S, 6)
@@ -71,13 +70,13 @@ class CrossAttentionFusion(nn.Module):
         if held.shape[1] == 0:
             return TileGrid(
                 asked.new_zeros(asked.shape),
-                cells.present & False,
+                torch.zeros_like(cells.present),
                 cells.offset,
                 placed,
             )
-        apart = (centre.unsqueeze(2) - where[:, None, :, :3]).abs()  # (B, Q, S, 3)
-        reach = (where[:, None, :, 3:] + placed[:, :, None, 3:]) / 2
-        reaching = (apart <= reach).all(dim=-1) & taken.unsqueeze(1)  # (B, Q, S)
+        reaching = (
+            overlapping_boxes(placed[:, :, None], where[:, None], 3) & taken[:, None]
+        )  # (B, Q, S)
         occupied = cells.present & taken.any(dim=1, keepdim=True)
         blocked = torch.where(
             reaching.any(dim=-1, keepdim=True), ~reaching, ~taken[:, None]

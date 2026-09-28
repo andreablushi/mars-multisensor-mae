@@ -58,6 +58,22 @@ class TileGrid:
     position: Tensor
 
 
+def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
+    """Return whether two sets of centred boxes overlap on each of their first axes.
+
+    Args:
+        first: Where each box sits and reaches, broadcastable to the second. (..., 6)
+        second: Where each other box sits and reaches. (..., 6)
+        axes: How many of east, north and delay the boxes are compared along.
+
+    Returns:
+        overlapping: Whether each pair overlaps along every one of those axes.
+    """
+    apart = (first[..., :axes] - second[..., :axes]).abs()
+    reach = (first[..., 3 : 3 + axes] + second[..., 3 : 3 + axes]) / 2
+    return (apart <= reach).all(dim=-1)
+
+
 def tile_cells(
     samples: list[tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]],
     cell_m: float,

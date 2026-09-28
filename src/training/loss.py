@@ -7,6 +7,7 @@ from collections.abc import Collection
 import torch
 from torch import Tensor
 
+from architecture.grid import overlapping_boxes
 from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
@@ -101,13 +102,10 @@ def cmr_loss(
     for read, source in batch.items():
         if read == asked:
             continue
-        apart = (
-            target.position[:, :, None, :2] - source.position[:, None, :, :2]
-        ).abs()
-        reach = (
-            target.position[:, :, None, 3:5] + source.position[:, None, :, 3:5]
-        ) / 2
-        readable = ((apart <= reach).all(dim=-1) & source.visible[:, None]).any(dim=-1)
+        reaching = overlapping_boxes(
+            target.position[:, :, None], source.position[:, None], 2
+        )
+        readable = (reaching & source.visible[:, None]).any(dim=-1)
         errors.append(
             reconstruction_error(
                 reconstruction.predictions[asked, read],
