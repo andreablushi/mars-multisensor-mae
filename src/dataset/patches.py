@@ -150,16 +150,17 @@ def cut_patch(
     if Axis.DELAY in axes:
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
-        rows = np.arange(origin[at], origin[at] + lengths[at])
-        delay = float(rows.mean())
-        delay_span = float(np.ptp(rows))
+        delay = origin[at] + lengths[at] / 2
+        delay_span = float(lengths[at])
     else:
         # A patch on the ground sounds at one row, the one its surface echo lands on.
         delay_span = 0.0
         nearest = np.argmin(
             (delays[:, 0] - north_m) ** 2 + (delays[:, 1] - east_m) ** 2
         )
-        delay = float(delays[nearest, 2])
+        delay = float(delays[nearest, 2]) + 0.5
+    side = lengths[observation.ground_axes[0]]
+    footprint = side / max(side - 1, 1)
     return Patch(
         values=observation.values[window].copy(),
         valid=valid,
@@ -167,8 +168,8 @@ def cut_patch(
         north_m=north_m,
         east_m=east_m,
         delay=delay,
-        north_span_m=float(np.ptp(north)),
-        east_span_m=float(np.ptp(east)),
+        north_span_m=float(np.ptp(north)) * footprint,
+        east_span_m=float(np.ptp(east)) * footprint,
         delay_span=delay_span,
     )
 

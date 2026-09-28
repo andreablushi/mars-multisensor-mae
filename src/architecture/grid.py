@@ -10,6 +10,8 @@ from building.configs import sharad
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
+TOUCH = 1e-3
+
 # B = batch, Q = volume cells, D = feature channels.
 
 
@@ -82,7 +84,7 @@ def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
     """
     apart = (first[..., :axes] - second[..., :axes]).abs()
     reach = (first[..., 3 : 3 + axes] + second[..., 3 : 3 + axes]) / 2
-    return (apart <= reach).all(dim=-1)
+    return (apart < reach * (1 - TOUCH)).all(dim=-1)
 
 
 def tile_cells(
@@ -112,8 +114,8 @@ def tile_cells(
             corners = [((low[0], low[1], 0), (high[0], high[1], depth_cells - 1))]
         else:
             placed = np.concatenate([held["position"] for held in sample.values()])
-            low = np.floor((placed[:, :3] - placed[:, 3:] / 2) / size)
-            high = np.floor((placed[:, :3] + placed[:, 3:] / 2) / size)
+            low = np.floor((placed[:, :3] - placed[:, 3:] / 2) / size + TOUCH)
+            high = np.ceil((placed[:, :3] + placed[:, 3:] / 2) / size - TOUCH) - 1
             corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
         spread = [
             np.stack(
