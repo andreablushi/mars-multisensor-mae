@@ -90,13 +90,6 @@ def train(
     best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
     step, best_step = 0, -1
-    log_validation(
-        run,
-        0,
-        validation_terms(
-            model, validation, mask_ratio, unnormalised_patches, seed, device
-        ),
-    )
     model.train()  # Enable training mode
     ready = time.perf_counter()
     for batch, cells, _ in islice(chain.from_iterable(repeat(training)), max_steps):
