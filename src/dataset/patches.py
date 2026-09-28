@@ -161,6 +161,13 @@ def cut_patch(
         delay = float(delays[nearest, 2]) + 0.5
     side = lengths[observation.ground_axes[0]]
     footprint = side / max(side - 1, 1)
+    spans = (np.ptp(north), np.ptp(east))
+    if north.ndim == 2:
+        down = [np.mean(one[-1] - one[0]) for one in (north, east)]
+        across = [np.mean(one[:, -1] - one[:, 0]) for one in (north, east)]
+        if abs(down[1] * across[0]) > abs(down[0] * across[1]):
+            down, across = across, down
+        spans = (abs(down[0]), abs(across[1]))
     return Patch(
         values=observation.values[window].copy(),
         valid=valid,
@@ -168,8 +175,8 @@ def cut_patch(
         north_m=north_m,
         east_m=east_m,
         delay=delay,
-        north_span_m=float(np.ptp(north)) * footprint,
-        east_span_m=float(np.ptp(east)) * footprint,
+        north_span_m=float(spans[0]) * footprint,
+        east_span_m=float(spans[1]) * footprint,
         delay_span=delay_span,
     )
 

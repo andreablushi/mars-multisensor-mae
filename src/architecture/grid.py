@@ -10,7 +10,7 @@ from building.configs import sharad
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
-TOUCH = 1e-3
+TOUCH = 1e-2
 
 # B = batch, Q = volume cells, D = feature channels.
 
