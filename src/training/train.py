@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Collection
 from itertools import chain, islice, repeat
 from pathlib import Path
 
@@ -40,7 +39,6 @@ def train(
     validate_every: int,
     patience: int,
     mask_ratio: float,
-    unnormalised_patches: Collection[str],
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -59,7 +57,6 @@ def train(
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        unnormalised_patches: The instruments whose targets keep their own scale.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -95,7 +92,7 @@ def train(
         batch, reconstruction = masked_reconstruction(
             model, batch, cells, mask_ratio, generator, device
         )
-        terms = csmae_loss(reconstruction, batch, unnormalised_patches)
+        terms = csmae_loss(reconstruction, batch)
         optimizer.zero_grad()
         terms["loss"].backward()
         # Stabilize training against exploding gradients
@@ -113,9 +110,7 @@ def train(
         )
         if step % validate_every:
             continue
-        metrics = validation_terms(
-            model, validation, mask_ratio, unnormalised_patches, seed, device
-        )
+        metrics = validation_terms(model, validation, mask_ratio, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
