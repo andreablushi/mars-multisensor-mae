@@ -106,22 +106,24 @@ def loaders_by_split(
     splits = split_tiles(by_tile, shares, seed)
     statistics = build.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
     axes = build.read_axes_by_instrument()
-    DatasetSplit(
-        build, by_tile, axes, statistics, sizes, pool, shapes, delay
-    ).keep_every_tile(workers)
+    datasets = {
+        name: DatasetSplit(
+            build,
+            {tile: by_tile[tile] for tile in held},
+            axes,
+            statistics,
+            sizes,
+            pool,
+            shapes,
+            delay,
+        )
+        for name, held in splits.items()
+    }
+    datasets[VALIDATION_SPLIT].keep_every_tile(workers)
     gc.freeze()
     return {
         name: DataLoader(
-            DatasetSplit(
-                build,
-                {tile: by_tile[tile] for tile in held},
-                axes,
-                statistics,
-                sizes,
-                pool,
-                shapes,
-                delay,
-            ),
+            dataset,
             batch_size=batch_size,
             shuffle=name == TRAINING_SPLIT,
             num_workers=workers,
@@ -129,5 +131,5 @@ def loaders_by_split(
             pin_memory=True,
             collate_fn=collate,
         )
-        for name, held in splits.items()
+        for name, dataset in datasets.items()
     }

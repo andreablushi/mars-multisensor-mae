@@ -138,7 +138,7 @@ class DatasetSplit(Dataset):
             lon, lat, tile.centre_lon, tile.centre_lat
         )
         packed = io.BytesIO()
-        np.savez(
+        np.savez_compressed(
             packed,
             **{
                 f"{name}/{key}": array
