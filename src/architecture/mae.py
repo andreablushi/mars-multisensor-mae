@@ -35,6 +35,7 @@ class CrossSensorMAE(nn.Module):
         self,
         shapes: dict[str, tuple[int, ...]],
         axes: dict[str, tuple[str, ...]],
+        centres_nm: dict[str, tuple[float, ...] | None],
         strides: dict[str, float],
         encoder_dim: int,
         encoder_heads: int,
@@ -50,6 +51,7 @@ class CrossSensorMAE(nn.Module):
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
             axes: What each axis of those patches holds, keyed the same way.
+            centres_nm: The wavelength of each channel, in nm, or None without one.
             strides: How far apart two neighbouring patch centres sit, in metres.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder and the fusion run.
@@ -67,6 +69,7 @@ class CrossSensorMAE(nn.Module):
                 name: Encoder(
                     shape,
                     axes[name],
+                    centres_nm[name],
                     encoder_dim,
                     encoder_heads,
                     encoder_depth,
@@ -120,6 +123,7 @@ class CrossSensorMAE(nn.Module):
             # Process through sensor-specific stem then map to shared latent space
             stem = self.encoders[name](
                 tokens.values,
+                tokens.valid,
                 tokens.position,
                 counted[name],
             )  # (B, K, D)

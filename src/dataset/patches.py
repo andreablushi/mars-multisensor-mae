@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import Axis
+from building.dispatcher import INSTRUMENTS
 from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
@@ -174,8 +175,10 @@ def read_patch_layout(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
-) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
-    """Return the shape of one patch of each instrument, and how far two sit apart.
+) -> tuple[
+    dict[str, tuple[int, ...]], dict[str, float], dict[str, tuple[float, ...] | None]
+]:
+    """Return each instrument's patch shape, patch spacing and channel wavelengths.
 
     Args:
         build: The published build the instruments are read from.
@@ -185,6 +188,7 @@ def read_patch_layout(
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
         strides: How far apart two neighbouring patch centres of each sensor sit.
+        centres_nm: The wavelength of each sensor's channels, in nm, or None.
     """
     rows = build.read_row_by_instrument()
     ground = build.read_ground_sample_by_instrument()
@@ -198,4 +202,5 @@ def read_patch_layout(
             for name, size in sizes.items()
         },
         {name: size[Axis.GROUND] * ground[name] for name, size in sizes.items()},
+        {name: INSTRUMENTS[name].layout.band_centres_nm for name in sizes},
     )

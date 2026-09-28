@@ -45,7 +45,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     # build the tiles it never read come from.
     trained = published_build(config.dataset.build, config.dataset.root)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = read_patch_layout(trained, sizes, config.dataset.pool)
+    shapes, strides, centres_nm = read_patch_layout(trained, sizes, config.dataset.pool)
     axes = trained.read_axes_by_instrument()
     statistics = read_training_statistics(
         trained, config.dataset.split, config.dataset.seed
@@ -76,6 +76,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     model = CrossSensorMAE(
         shapes,
         axes,
+        centres_nm,
         strides,
         config.model.encoder_dim,
         config.model.encoder_heads,

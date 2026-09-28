@@ -47,7 +47,7 @@ def run_training(
     config = load_config(overrides or [])
     build = published_build(config.dataset.build, config.dataset.root)
     sizes = patch_sizes(config.model.instruments, config.dataset.patchsize)
-    shapes, strides = read_patch_layout(build, sizes, config.dataset.pool)
+    shapes, strides, centres_nm = read_patch_layout(build, sizes, config.dataset.pool)
     axes = build.read_axes_by_instrument()
     loaders = loaders_by_split(
         build,
@@ -71,6 +71,7 @@ def run_training(
     model = CrossSensorMAE(
         shapes,
         axes,
+        centres_nm,
         strides,
         config.model.encoder_dim,
         config.model.encoder_heads,
