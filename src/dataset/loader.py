@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import math
 import random
 from collections.abc import Callable, Mapping, Sequence
@@ -108,6 +109,7 @@ def loaders_by_split(
     DatasetSplit(
         build, by_tile, axes, statistics, sizes, pool, shapes, delay
     ).keep_every_tile(workers)
+    gc.freeze()
     return {
         name: DataLoader(
             DatasetSplit(
