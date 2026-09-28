@@ -5,8 +5,8 @@
 instruments: [CTX, CRISM, SHARAD]
 delay: MOLA
 
-# How far a cell of a tile's grid runs, which the finest instrument's patch settles.
-cell_m: 2560.0
+# How far a cell of a tile's grid runs, half the finest instrument's patch.
+cell_m: 1280.0
 
 # The instrument encoders, the cross-sensor encoder and the fusion, all one width.
 encoder_dim: 384
@@ -14,7 +14,5 @@ encoder_heads: 6
 encoder_depth: 4
 crossencoder_depth: 2
 
-# The decoders.
+# The decoders, each writing a patch from the cells around it.
 decoder_dim: 192
-decoder_heads: 6
-decoder_depth: 4

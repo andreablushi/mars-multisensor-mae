@@ -42,9 +42,8 @@ class CrossSensorMAE(nn.Module):
         encoder_depth: int,
         crossencoder_depth: int,
         decoder_dim: int,
-        decoder_heads: int,
-        decoder_depth: int,
         cell_m: float,
+        delay_rows: int,
     ) -> None:
         """Build every part for the instruments the model reads.
 
@@ -57,10 +56,9 @@ class CrossSensorMAE(nn.Module):
             encoder_heads: How many attention heads every encoder and the fusion run.
             encoder_depth: How many blocks each instrument encoder stacks.
             crossencoder_depth: How many blocks the cross-sensor encoder stacks.
-            decoder_dim: How wide a token is in the decoders.
-            decoder_heads: How many attention heads the decoders run.
-            decoder_depth: How many blocks each decoder stacks.
+            decoder_dim: How wide a gathered cell is in the decoders.
             cell_m: How far a cell of a tile's grid runs along the ground, in metres.
+            delay_rows: How many radar delay rows a cell of that grid spans.
         """
         super().__init__()
         self.encoders = nn.ModuleDict(
@@ -84,14 +82,7 @@ class CrossSensorMAE(nn.Module):
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
         self.decoders = nn.ModuleDict(
             {
-                name: Decoder(
-                    shape,
-                    encoder_dim,
-                    decoder_dim,
-                    decoder_heads,
-                    decoder_depth,
-                    min(strides[name], cell_m),
-                )
+                name: Decoder(shape, encoder_dim, decoder_dim, cell_m, delay_rows)
                 for name, shape in shapes.items()
             }
         )
@@ -184,18 +175,15 @@ class CrossSensorMAE(nn.Module):
         grids = {
             name: self.gridded(encoded, batch, counted, cells, [name]) for name in batch
         }
-        placed = cells.position  # (B, Q, 6)
         predictions = {}
         # Every patch is predicted from the cells one instrument alone was read into,
         # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
-            hidden = tokens.present & ~tokens.visible  # (B, K)
             for read in batch:
                 predictions[asked, read] = self.decoders[asked](
                     grids[read].values,
-                    placed,
+                    cells.offset,
                     grids[read].occupied,
                     tokens.position,
-                    hidden,
                 )  # (B, K, *P)
         return Reconstruction(predictions)

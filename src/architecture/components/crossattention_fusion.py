@@ -8,7 +8,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
-from architecture.components.positional_encoding import PositionalEncoding
+from architecture.components.span_encoding import SpanEncoding
 from architecture.grid import Cells, TileGrid, overlapping_boxes
 
 # B = batch, Q = cells, S = source patches, K = instrument patches, D = token channels.
@@ -22,7 +22,7 @@ class CrossAttentionFusion(nn.Module):
 
     Attributes:
         query: What a cell asks with, before it is placed. (D)
-        place: The positional encoding, at the cell's own size.
+        place: The span encoding, at the cell's own size.
         attend: The attention from a cell to visible patches.
         norm: What a cell is normalised by before it is read out.
     """
@@ -38,7 +38,7 @@ class CrossAttentionFusion(nn.Module):
         super().__init__()
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.query, std=0.02)
-        self.place = PositionalEncoding(dim, cell_m)
+        self.place = SpanEncoding(dim, cell_m)
         self.attend = nn.MultiheadAttention(dim, heads, batch_first=True)
         self.norm = nn.LayerNorm(dim)
 

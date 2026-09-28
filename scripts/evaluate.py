@@ -71,9 +71,8 @@ def built_model(
         config.model.encoder_depth,
         config.model.crossencoder_depth,
         config.model.decoder_dim,
-        config.model.decoder_heads,
-        config.model.decoder_depth,
         config.model.cell_m,
+        config.dataset.patchsize["SHARAD"]["delay"],
     ).to(device)
     return model, device, sizes, shapes, strides
 

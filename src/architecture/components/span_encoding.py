@@ -1,4 +1,4 @@
-"""Saying where a patch sits and how far it reaches, read as sinusoids."""
+"""Saying how far a patch reaches, read as sinusoids."""
 
 from __future__ import annotations
 
@@ -15,51 +15,52 @@ DELAY_ROWS = (1.0, float(sharad.DELAY_ROWS))
 
 GROUND_LONGEST_M = 64_000.0
 
-COORDINATES = 6
+COORDINATES = 3
 
 
-class PositionalEncoding(nn.Module):
-    """A fixed Fourier encoding of east, north and delay, of the centre and the span.
+class SpanEncoding(nn.Module):
+    """A fixed Fourier encoding of how far a patch reaches east, north and in delay.
 
-    A patch says where it sits and how far it reaches, so a surface tile, which
-    spans ground and no delay, and a sounding column, which spans delay and
-    one track, are told apart without either being named to the model.
+    A surface tile, which spans ground and no delay, and a sounding column, which
+    spans delay and one track, are told apart without either being named to the
+    model. Where a patch sits is left to the grid its cells are read into.
 
     Attributes:
-        periods: What each sinusoid repeats over, from the stride up. (6, D / 12)
+        periods: What each sinusoid repeats over, from the stride up. (3, D / 6)
     """
 
     def __init__(self, dim: int, stride: float) -> None:
         """Lay out the periods for one instrument at one token width.
 
         Args:
-            dim: The token width, a multiple of 12, a cosine and a sine per coordinate.
+            dim: The token width, a multiple of 6, a cosine and a sine per coordinate.
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
         shortest = (stride, stride, DELAY_ROWS[0])
         longest = (GROUND_LONGEST_M, GROUND_LONGEST_M, DELAY_ROWS[1])
-        # Generate logarithmically spaced sinusoid periods for 3D centers and 3D extents
         periods = torch.stack(
             [
                 torch.logspace(
                     math.log10(short), math.log10(long), dim // (2 * COORDINATES)
                 )
-                for short, long in zip(shortest * 2, longest * 2, strict=True)
+                for short, long in zip(shortest, longest, strict=True)
             ]
-        )  # (6, D / 12)
+        )  # (3, D / 6)
         self.register_buffer("periods", periods)
 
     def forward(self, position: Tensor) -> Tensor:
-        """Return the encoding of every position.
+        """Return the encoding of every span.
 
         Args:
             position: The centre east, north and delay, then each span. (B, K, 6)
 
         Returns:
-            encoded: The cosines then sines of each coordinate, side by side. (B, K, D)
+            encoded: The cosines then sines of each span, side by side. (B, K, D)
         """
-        # The phase of each coordinate against each of its periods
-        phase = 2 * math.pi * position.unsqueeze(-1) / self.periods  # (B, K, 6, D/12)
-        encoded = torch.cat([phase.cos(), phase.sin()], dim=-1)  # (B, K, 6, D / 6)
+        # The phase of each span against each of its periods
+        phase = (
+            2 * math.pi * position[..., 3:].unsqueeze(-1) / self.periods
+        )  # (B, K, 3, D/6)
+        encoded = torch.cat([phase.cos(), phase.sin()], dim=-1)  # (B, K, 3, D / 3)
         return encoded.flatten(-2)  # (B, K, D)
