@@ -10,7 +10,7 @@ from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.channel_encoding import ChannelEncoding
-from architecture.components.positional_encoding import PositionalEncoding
+from architecture.components.span_encoding import SpanEncoding
 from architecture.components.transformer import Transformer
 
 # B = batch, K = patches, C = channels, G = channel samples, D = token channels,
@@ -18,13 +18,13 @@ from architecture.components.transformer import Transformer
 
 
 class Encoder(nn.Module):
-    """Embed each patch by channel, place it on the ground, and attend over the set.
+    """Embed each patch by channel, tell it its span, and attend over the set.
 
     Attributes:
         at: The wavelength axis, if the patch has one.
         embed: From one channel's samples to a token.
         channels: The channel encoding.
-        place: The positional encoding.
+        place: The span encoding.
         blocks: The transformer.
     """
 
@@ -56,7 +56,7 @@ class Encoder(nn.Module):
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
         self.channels = ChannelEncoding(dim, centres_nm)
-        self.place = PositionalEncoding(dim, stride)
+        self.place = SpanEncoding(dim, stride)
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(
@@ -87,5 +87,7 @@ class Encoder(nn.Module):
         tokens = functional.gelu(self.channels(self.embed(bands)))  # (B, K, C, D)
         counted = measured.sum(dim=2).clamp(min=1)  # (B, K, 1)
         tokens = (tokens * measured).sum(dim=2) / counted  # (B, K, D)
-        # Place the tokens on the ground and attend over the visible ones
-        return self.blocks(tokens + self.place(position), visible)  # (B, K, D)
+        # Tell the tokens their span and attend over the visible ones
+        return self.blocks(
+            tokens + self.place(position), position, visible
+        )  # (B, K, D)

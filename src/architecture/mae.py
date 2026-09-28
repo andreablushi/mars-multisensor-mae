@@ -123,7 +123,9 @@ class CrossSensorMAE(nn.Module):
                 tokens.position,
                 counted[name],
             )  # (B, K, D)
-            encoded[name] = self.crossencoder(stem, counted[name])  # (B, K, D)
+            encoded[name] = self.crossencoder(
+                stem, tokens.position, counted[name]
+            )  # (B, K, D)
         return encoded
 
     def gridded(
