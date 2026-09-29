@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import digitalhub as dh
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ResponseStreamingError
 
 from configs.paths import RESULTS_ROOT, build_root
 from dataset.store import DatasetBuild
@@ -38,16 +38,15 @@ def published_build(build: str, root: str) -> DatasetBuild:
         nonlocal client
         key = prefix + path
         try:
-            fetched = client.get_object(Bucket=bucket, Key=key)
-        except ClientError:
-            # The store's credentials lapse mid run, and are minted again off the PAT.
+            return client.get_object(Bucket=bucket, Key=key)["Body"].read()
+        except (ClientError, ResponseStreamingError):
+            # The store's credentials lapse and its streams break mid run.
             credentials.refresh()
             client = dh.get_s3_client()
             try:
-                fetched = client.get_object(Bucket=bucket, Key=key)
-            except ClientError as refused:
+                return client.get_object(Bucket=bucket, Key=key)["Body"].read()
+            except (ClientError, ResponseStreamingError) as refused:
                 raise RuntimeError(f"{key}: {refused}") from None
-        return fetched["Body"].read()
 
     return DatasetBuild(root=build_root(build, root), fetch=fetch)
 
