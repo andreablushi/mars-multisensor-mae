@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
-import tomllib
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 
 import digitalhub as dh
 from dotenv import load_dotenv
@@ -16,29 +14,6 @@ from dhub import credentials
 from dhub.configs import load_platform
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
-
-
-def built_image(project: str, names: Iterable[str], environment: str) -> str | None:
-    """Return an image already built for one environment, by any of the functions.
-
-    Args:
-        project: The DigitalHub project the functions are registered in.
-        names: The functions whose versions may hold it.
-        environment: The label a version built for that environment carries.
-
-    Returns:
-        image: The image the newest such version runs on, or None when none does.
-    """
-    for name in names:
-        try:
-            versions = dh.get_function_versions(name, project=project)
-        except Exception:
-            continue
-        newest = sorted(versions, key=lambda one: one.metadata.created, reverse=True)
-        for version in newest:
-            if environment in (version.metadata.labels or []) and version.spec.image:
-                return version.spec.image
-    return None
 
 
 def submitted(
@@ -53,7 +28,7 @@ def submitted(
         parameters: What the handler is called with, keyed by its own arguments.
 
     Returns:
-        code: A process exit code, non zero when the image did not build.
+        code: A process exit code, zero once the job is started.
 
     Raises:
         RuntimeError: When the authority or the client a job mints its credentials
@@ -64,36 +39,16 @@ def submitted(
         if not os.environ.get(name):
             raise RuntimeError(f"{name} is unset; see .env.example")
     platform = load_platform()
-    # The image is built from the repo's own dependencies, so it cannot drift
-    manifest = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    needs = tomllib.loads(manifest)["project"]["dependencies"] + platform.image_extras
-    locked = (REPO_ROOT / "uv.lock").read_bytes()
-    held = [platform.python_version, *needs, hashlib.sha256(locked).hexdigest()]
-    environment = "env-" + hashlib.sha256("\n".join(held).encode()).hexdigest()[:16]
     project = dh.get_or_create_project(platform.project)
-    image = built_image(platform.project, platform.functions.values(), environment)
+    # The job installs the clone's requirements.txt at start, so no image is built
     function = project.new_function(
         name=platform.functions[stage],
         kind="python",
         python_version=platform.python_version,
+        base_image=platform.base_image,
         code_src=f"git+{platform.repository}#{ref}",
         handler=handler,
-        requirements=needs,
-        labels=[environment],
-        image=image,
     )
-
-    # The code is cloned when the job starts, so only a new environment is built
-    if image is None:
-        built = function.run(
-            action="build", profile=platform.resources["build"]["profile"], wait=True
-        )
-        if built.status.state != "COMPLETED":
-            print(f"the image did not build: {built.status.state}")
-            return 1
-        function.refresh()
-    else:
-        print(f"reusing {image}")
 
     # Start the job, told where the clone lands and what the box holds
     asked = platform.resources[stage]
@@ -149,7 +104,7 @@ def ran_stage(
         flags: The switches the handler takes beside its overrides, with their help.
 
     Returns:
-        code: A process exit code, non zero when the image did not build.
+        code: A process exit code, zero once the stage ran or its job started.
     """
     parsed = argparse.ArgumentParser(description=description)
     parsed.add_argument(

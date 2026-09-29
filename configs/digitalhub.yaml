@@ -7,19 +7,16 @@ project: mars-multisensor-features
 repository: https://github.com/andreablushi/mars-multisensor-mae
 source_root: /shared
 
-# The image a job is built on, its extras what the platform itself asks for
+# The interpreter and the platform's own base image a job runs on, which installs
+# requirements.txt from its clone with uv.
 python_version: PYTHON3_13
-image_extras:
-  - digitalhub>=0.15.11,<0.16
-  - digitalhub-runtime-python>=0.15.2,<0.16
+base_image: python:3.13-slim
 
 # Whether every stage queues on the shared pool, which marks each profile -shared.
 shared: true
 
 # What each stage gets: the profile settles the box, its cores are also the workers.
 resources:
-  build:
-    profile: cpu
   training:
     profile: 1xrtxa5000
     cpu: 10
