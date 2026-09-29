@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from building.common.layout import Axis
 from torch import Tensor, nn
+from torch.nn import functional
 
 from architecture.components.channel_encoder import ChannelEncoder
 from architecture.components.positional_encoding import PositionalEncoding
@@ -83,7 +84,7 @@ class Encoder(nn.Module):
             valid = valid.movedim(2 + self.at, -1)
         bands = values.flatten(2, -2).transpose(2, 3)  # (B, K, C, G)
         measured = valid.flatten(2, -2).any(dim=2).unsqueeze(-1)  # (B, K, C, 1)
-        tokens = self.channels(self.embed(bands))  # (B, K, C, D)
+        tokens = functional.gelu(self.channels(self.embed(bands)))  # (B, K, C, D)
         counted = measured.sum(dim=2).clamp(min=1)  # (B, K, 1)
         tokens = (tokens * measured).sum(dim=2) / counted  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
