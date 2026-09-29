@@ -5,19 +5,28 @@ from __future__ import annotations
 import math
 
 import torch
+from building.configs import sharad
+from common.maths import physics
 from torch import Tensor, nn
 
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 
-# B = batch, C = cells, K = target patches, D = token channels, P = patch dimensions.
+# B = batch, C = cells, K = target patches, D = token channels, P = patch dimensions,
+# H = heads, N = tokens.
+
+DELAY_ROW_M = physics.SPEED_OF_LIGHT_M_S * sharad.DELAY_INTERVAL_S / 2
 
 
 class Decoder(nn.Module):
     """Attend over the tokens read and one stand-in per patch asked for, then write it.
 
+    Each head weighs a token less the further it sits, some sharply and some barely.
+
     Attributes:
         shape: The shape of one patch this decoder predicts.
+        cell_m: How far a cell runs along the ground, in metres.
+        slopes: How fast each head's attention falls with distance, per cell. (H)
         expand: From the shared width up to the decoder width, at unit scale.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding.
@@ -33,6 +42,7 @@ class Decoder(nn.Module):
         heads: int,
         depth: int,
         stride: float,
+        cell_m: float,
     ) -> None:
         """Build the decoder for one instrument.
 
@@ -43,15 +53,20 @@ class Decoder(nn.Module):
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
             stride: How far apart two neighbouring patch centres sit, in metres.
+            cell_m: How far a cell runs along the ground, in metres.
         """
         super().__init__()
         self.shape = shape
+        self.cell_m = cell_m
+        self.register_buffer("slopes", torch.logspace(1, -4, heads, base=2))  # (H)
         self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
         self.place = PositionalEncoding(dim, stride)
         self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, math.prod(shape))
+        nn.init.zeros_(self.predict.weight)
+        nn.init.zeros_(self.predict.bias)
 
     def forward(
         self,
@@ -80,6 +95,10 @@ class Decoder(nn.Module):
         asked = self.mask + self.place(position)  # (B, K, D')
         sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
-        decoded = self.blocks(sequence, attended)  # (B, C + K, D')
+        centres = torch.cat([context_position, position], dim=1)[..., :3]  # (B, N, 3)
+        centres = centres * centres.new_tensor([1.0, 1.0, DELAY_ROW_M])  # (B, N, 3)
+        apart = torch.cdist(centres, centres) / self.cell_m  # (B, N, N)
+        bias = -self.slopes[None, :, None, None] * apart[:, None]  # (B, H, N, N)
+        decoded = self.blocks(sequence, attended, bias.to(sequence.dtype))  # (B, N, D')
         held = decoded[:, read.shape[1] :]
         return self.predict(held).unflatten(-1, self.shape)

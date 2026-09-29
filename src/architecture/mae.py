@@ -91,6 +91,7 @@ class CrossSensorMAE(nn.Module):
                     decoder_heads,
                     decoder_depth,
                     min(strides[name], cell_m),
+                    cell_m,
                 )
                 for name, shape in shapes.items()
             }

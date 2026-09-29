@@ -32,12 +32,15 @@ class Transformer(nn.Module):
             block, depth, norm=nn.LayerNorm(dim), enable_nested_tensor=False
         )
 
-    def forward(self, tokens: Tensor, attended: Tensor) -> Tensor:
+    def forward(
+        self, tokens: Tensor, attended: Tensor, bias: Tensor | None = None
+    ) -> Tensor:
         """Return the tokens after attending over the ones that carry something.
 
         Args:
             tokens: The tokens to attend over. (B, N, D)
             attended: Which of them carry something. (B, N)
+            bias: What each head adds to its scores, token to token. (B, H, N, N)
 
         Returns:
             tokens: The attended tokens. (B, N, D)
@@ -46,4 +49,7 @@ class Transformer(nn.Module):
         padding = ~attended  # (B, N)
         # Unmask wholly empty sequences to keep the soft-max from going nan
         padding[padding.all(dim=1)] = False
-        return self.blocks(tokens, src_key_padding_mask=padding)  # (B, N, D)
+        if bias is None:
+            return self.blocks(tokens, src_key_padding_mask=padding)  # (B, N, D)
+        scores = bias.masked_fill(padding[:, None, None, :], float("-inf"))
+        return self.blocks(tokens, mask=scores.flatten(0, 1))  # (B, N, D)

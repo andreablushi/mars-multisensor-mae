@@ -10,47 +10,29 @@ from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
 
-def patch_targets(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
-    """Return each patch centred and scaled by the measured samples of its own.
-
-    Args:
-        values: The patches, as the model was handed them. (B, K, *P)
-        valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
-
-    Returns:
-        target: The patches, each of zero mean and unit deviation. (B, K, *P)
-        counted: Whether each sample is a measurement, spread over them. (B, K, *P)
-    """
-    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
-    over = tuple(range(2, values.dim()))
-    spread = (*values.shape[:2], *([1] * len(over)))
-    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    mean = ((values * counted).sum(dim=over) / samples).reshape(spread)  # (B, K, 1...)
-    variance = ((values - mean) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    deviation = (variance.reshape(spread) + 1e-6).sqrt()  # (B, K, 1...)
-    return (values - mean) / deviation, counted
-
-
 def reconstruction_error(
     prediction: Tensor, values: Tensor, valid: Tensor, weight: Tensor
 ) -> Tensor:
-    """Return how far the predicted patches stand from the true ones.
+    """Return the share of the true patches' energy the prediction misses.
 
     Args:
-        prediction: The predicted patches. (B, K, *P)
+        prediction: The predicted patches, on the instrument's scale. (B, K, *P)
         values: The true ones, as the model was handed them. (B, K, *P)
         valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
         weight: How much each patch counts. (B, K)
 
     Returns:
-        error: The mean squared error over the counted patches, zero where none is.
+        error: The squared error over the counted patches, against the squared
+            values of those same patches, so predicting zero scores 1. Zero where
+            none is counted.
     """
-    target, counted = patch_targets(values, valid)  # (B, K, *P)
+    counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    error = ((prediction - target) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    error = ((prediction - values) ** 2 * counted).sum(dim=over) / samples  # (B, K)
+    energy = (values**2 * counted).sum(dim=over) / samples  # (B, K)
     weight = weight.to(values.dtype)  # (B, K)
-    return (error * weight).sum() / weight.sum().clamp(min=1)  # ()
+    return (error * weight).sum() / (energy * weight).sum().clamp(min=1e-6)  # ()
 
 
 def umr_loss(prediction: Tensor, tokens: Tokens) -> Tensor:
@@ -86,8 +68,13 @@ def cmr_loss(
     for read, source in batch.items():
         if read == asked:
             continue
+        spans_delay = bool((target.position[..., 5] > 0).any()) or bool(
+            (source.position[..., 5] > 0).any()
+        )
         reaching = overlapping_boxes(
-            target.position[:, :, None], source.position[:, None], 2
+            target.position[:, :, None],
+            source.position[:, None],
+            3 if spans_delay else 2,
         )
         readable = (reaching & source.visible[:, None]).any(dim=-1)
         errors.append(
@@ -104,7 +91,7 @@ def cmr_loss(
 def csmae_loss(
     reconstruction: Reconstruction, batch: dict[str, Tokens]
 ) -> dict[str, Tensor]:
-    """Return the UMR and CMR terms of the objective and their sum.
+    """Return the UMR and CMR terms of the objective and their mean.
 
     Args:
         reconstruction: What the masked pass predicted.
@@ -121,5 +108,5 @@ def csmae_loss(
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
         total = total + umr + cmr
-    terms["loss"] = total  # ()
+    terms["loss"] = total / (2 * len(batch))  # ()
     return terms
