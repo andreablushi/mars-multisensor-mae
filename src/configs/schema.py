@@ -93,10 +93,12 @@ class EvaluationConfig:
         minimal_chamfer_cell_distance: How far, in cells along any axis, a
             cell may be matched from its own offset, or None to match it anywhere
             in the other tile.
+        delay_window: The first and last delay cell kept, counted from the surface.
     """
 
     build: str
     minimal_chamfer_cell_distance: int | None
+    delay_window: tuple[int, int]
 
 
 @dataclass
