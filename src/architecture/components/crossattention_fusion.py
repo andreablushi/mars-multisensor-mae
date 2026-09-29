@@ -1,4 +1,4 @@
-"""Reading volume cells from sensor patches and tile context."""
+"""Reading volume cells from the sensor patches covering them."""
 
 from __future__ import annotations
 
@@ -9,21 +9,22 @@ from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.grid import Cells, TileGrid, overlapping_boxes
+from architecture.grid import Cells, TileGrid, covering_indices, overlapping_boxes
 
-# B = batch, Q = cells, S = source patches, K = instrument patches, D = token channels.
+# B = batch, Q = cells, S = source patches, M = covering patches, D = token channels.
+
+CELLS = 4096
 
 
 class CrossAttentionFusion(nn.Module):
-    """Read each volume cell from local patches or tile context.
+    """Read each volume cell from the patches covering it, and nothing else.
 
-    A cell reads overlapping patches when they exist. Otherwise it reads all
-    visible patches of that instrument in the tile.
+    A cell no counted patch covers is left empty.
 
     Attributes:
         query: What a cell asks with, before it is placed. (D)
         place: The positional encoding, at the cell's own size.
-        attend: The attention from a cell to visible patches.
+        attend: The attention from a cell to the patches covering it.
         norm: What a cell is normalised by before it is read out.
     """
 
@@ -63,33 +64,39 @@ class CrossAttentionFusion(nn.Module):
             grid: One unit vector per usable cell.
         """
         placed = cells.position  # (B, Q, 6)
-        asked = self.query + self.place(placed)  # (B, Q, D)
         held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
         where = torch.cat([position[name] for name in read], dim=1)  # (B, S, 6)
         taken = torch.cat([counted[name] for name in read], dim=1)  # (B, S)
         if held.shape[1] == 0:
             return TileGrid(
-                asked.new_zeros(asked.shape),
+                held.new_zeros(*placed.shape[:2], held.shape[-1]),
                 torch.zeros_like(cells.present),
                 cells.offset,
                 placed,
             )
-        reaching = (
-            overlapping_boxes(placed[:, :, None], where[:, None], 3) & taken[:, None]
-        )  # (B, Q, S)
-        occupied = cells.present & taken.any(dim=1, keepdim=True)
-        blocked = torch.where(
-            reaching.any(dim=-1, keepdim=True), ~reaching, ~taken[:, None]
-        )
-        blocked[~occupied] = False
-        attended, _ = self.attend(
-            asked,
-            held,
-            held,
-            attn_mask=blocked.repeat_interleave(self.attend.num_heads, dim=0),
-            need_weights=False,
+        attended, covered = [], []
+        # Cells are read a chunk at a time, so a whole evaluation volume fits
+        for part in placed.split(CELLS, dim=1):
+            reaching = (
+                overlapping_boxes(part[:, :, None], where[:, None], 3) & taken[:, None]
+            )  # (B, q, S)
+            # A cell nothing covers attends anyway, and is emptied below
+            at, chosen, ignored = covering_indices(reaching, held.dtype)  # (B, q, M)
+            picked = held.gather(
+                1, at.flatten(1).unsqueeze(-1).expand(-1, -1, held.shape[-1])
+            ).unflatten(1, at.shape[1:])  # (B, q, M, D)
+            asked = self.query + self.place(part)  # (B, q, D)
+            read_out, _ = self.attend(
+                asked.flatten(0, 1).unsqueeze(1),
+                picked.flatten(0, 1),
+                picked.flatten(0, 1),
+                key_padding_mask=ignored.flatten(0, 1),
+                need_weights=False,
+            )  # (B * q, 1, D)
+            attended.append(read_out.view(*part.shape[:2], -1))  # (B, q, D)
+            covered.append(chosen.any(dim=-1))  # (B, q)
+        occupied = cells.present & torch.cat(covered, dim=1)  # (B, Q)
+        values = functional.normalize(
+            self.norm(torch.cat(attended, dim=1)), dim=-1
         )  # (B, Q, D)
-        values = functional.normalize(self.norm(attended), dim=-1)  # (B, Q, D)
-        return TileGrid(
-            values * occupied.unsqueeze(-1), occupied, cells.offset, cells.position
-        )
+        return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset, placed)

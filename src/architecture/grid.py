@@ -87,6 +87,26 @@ def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
     return (apart < reach * (1 - TOUCH)).all(dim=-1)
 
 
+def covering_indices(
+    covering: Tensor, dtype: torch.dtype
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Return where each row's covering boxes sit, padded to the most any row holds.
+
+    Args:
+        covering: Whether each box covers each other box. (..., S)
+        dtype: What the rows are ranked as, that of the tokens they then gather.
+
+    Returns:
+        at: The index of each covering box, then of padding. (..., M)
+        chosen: Whether each index is a covering box rather than padding. (..., M)
+        ignored: The padding attention skips, none in a row nothing covers. (..., M)
+    """
+    count = max(int(covering.sum(dim=-1).max()), 1)
+    chosen, at = covering.to(dtype).topk(count, dim=-1)  # (..., M)
+    chosen = chosen.bool()  # (..., M)
+    return at, chosen, ~chosen & chosen.any(dim=-1, keepdim=True)
+
+
 def tile_cells(
     samples: list[tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]],
     cell_m: float,

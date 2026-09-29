@@ -92,7 +92,6 @@ class CrossSensorMAE(nn.Module):
                     decoder_heads,
                     decoder_depth,
                     min(strides[name], cell_m),
-                    cell_m,
                 )
                 for name, shape in shapes.items()
             }
@@ -192,9 +191,6 @@ class CrossSensorMAE(nn.Module):
         # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
             hidden = tokens.present & ~tokens.visible  # (B, K)
-            bias = self.decoders[asked].locality(
-                placed, tokens.position
-            )  # (B, H, N, N)
             for read in batch:
                 # Recomputed on the way back, so only one decoder pass is held at once
                 predictions[asked, read] = checkpoint(
@@ -204,7 +200,6 @@ class CrossSensorMAE(nn.Module):
                     grids[read].occupied,
                     tokens.position,
                     hidden,
-                    bias,
                     use_reentrant=False,
                 )  # (B, K, *P)
         return Reconstruction(predictions)

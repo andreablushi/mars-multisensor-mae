@@ -91,7 +91,7 @@ def cmr_loss(
 def csmae_loss(
     reconstruction: Reconstruction, batch: dict[str, Tokens]
 ) -> dict[str, Tensor]:
-    """Return the UMR and CMR terms of the objective and their mean.
+    """Return the UMR and CMR terms of the objective and their sum.
 
     Args:
         reconstruction: What the masked pass predicted.
@@ -108,5 +108,5 @@ def csmae_loss(
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
         total = total + umr + cmr
-    terms["loss"] = total / (2 * len(batch))  # ()
+    terms["loss"] = total  # ()
     return terms
