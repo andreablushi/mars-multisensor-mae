@@ -87,6 +87,7 @@ def token_batch_padding(
             )
             for key in held[0]
         }
+        padded["values"] = padded["values"].float()
         present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
         batch[name] = Tokens(**padded, visible=present, present=present)
     return (
