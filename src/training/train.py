@@ -65,8 +65,11 @@ def train(
     Returns:
         best: The checkpoint with the lowest validation loss.
     """
+    # Biases, norms and learned vectors are not decayed, as MAE leaves them
+    decayed = [one for one in model.parameters() if one.ndim > 1]
+    kept = [one for one in model.parameters() if one.ndim <= 1]
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
         lr=learning_rate,
         weight_decay=weight_decay,
         betas=(0.9, 0.95),
@@ -74,7 +77,7 @@ def train(
 
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:
-            return step / max(warmup_steps, 1)
+            return (step + 1) / warmup_steps
         progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
         return 0.5 * (1 + math.cos(math.pi * progress))
 
@@ -108,7 +111,8 @@ def train(
             waited,
             ready - arrived,
         )
-        if step % validate_every:
+        # The last step is validated too, so a short run still leaves a checkpoint
+        if step % validate_every and step < max_steps:
             continue
         metrics = validation_terms(model, validation, mask_ratio, seed, device)
         model.train()  # Validating switched it to evaluation
