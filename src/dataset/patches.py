@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -63,8 +63,10 @@ def read_tile_patches(
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
     delays: np.ndarray,
+    statistics: Mapping[str, Mapping[str, np.ndarray]],
+    per_observation: Collection[str],
 ) -> dict[str, list[Patch]]:
-    """Return every patch of every observation one tile holds, by instrument.
+    """Return every patch of every observation one tile holds, scaled, by instrument.
 
     Args:
         rows: The tile's index rows of each instrument, keyed as ODE names it.
@@ -72,6 +74,8 @@ def read_tile_patches(
         sizes: How far a patch of each instrument runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         delays: Which delay row the ground sounds at, over the tile. (N, 3)
+        statistics: What each instrument's values run to over the training split.
+        per_observation: The instruments scaled by each observation's own values.
 
     Returns:
         read: The patches of each instrument, none empty, keyed as ODE names it.
@@ -88,12 +92,17 @@ def read_tile_patches(
             if not math.prod(counts):
                 continue
             observation = build.read_observation(record.path)
+            mean, deviation = (
+                (record.value_mean, record.value_std)
+                if name in per_observation
+                else (statistics[name]["mean"], statistics[name]["deviation"])
+            )
             for at in range(math.prod(counts)):
                 patch = cut_patch(observation, record, at, lengths, counts, delays)
                 if patch.valid.any():
-                    held.append(
-                        downsampled_patch(patch, pool[name]) if name in pool else patch
-                    )
+                    if name in pool:
+                        patch = downsampled_patch(patch, pool[name])
+                    held.append(scaled_patch(patch, mean, deviation))
         read[name] = held
     return read
 
@@ -178,6 +187,29 @@ def cut_patch(
         north_span_m=float(spans[0]) * footprint,
         east_span_m=float(spans[1]) * footprint,
         delay_span=delay_span,
+    )
+
+
+def scaled_patch(
+    patch: Patch, mean: float | np.ndarray, deviation: float | np.ndarray
+) -> Patch:
+    """Return a patch centred and scaled, its unmeasured samples set to zero.
+
+    Args:
+        patch: The patch, as cut and pooled.
+        mean: What its values are centred on, broadcasting over them.
+        deviation: What they are then divided by, broadcasting over them.
+
+    Returns:
+        patch: The same patch, its values scaled.
+    """
+    return dataclasses.replace(
+        patch,
+        values=np.where(
+            patch.valid,
+            (patch.values.astype(np.float32) - mean) / np.maximum(deviation, 1e-6),
+            0.0,
+        ),
     )
 
 

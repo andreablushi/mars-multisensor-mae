@@ -82,6 +82,7 @@ def loaders_by_split(
     shares: Sequence[float],
     seed: int,
     delay: str,
+    per_observation: Sequence[str],
     batch_size: int,
     workers: int,
 ) -> dict[str, DataLoader]:
@@ -96,6 +97,7 @@ def loaders_by_split(
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in.
         delay: The instrument whose rows give every surface patch its delay.
+        per_observation: The instruments scaled by each observation's own values.
         batch_size: How many tiles one step reads.
         workers: How many processes read tiles beside the training.
 
@@ -112,6 +114,7 @@ def loaders_by_split(
             {tile: by_tile[tile] for tile in held},
             axes,
             statistics,
+            per_observation,
             sizes,
             pool,
             shapes,

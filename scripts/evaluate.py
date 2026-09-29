@@ -104,6 +104,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
             {tile: rows for tile, rows in by_tile.items() if tile in classes},
             axes,
             statistics,
+            config.dataset.scaled_per_observation,
             sizes,
             config.dataset.pool,
             shapes,

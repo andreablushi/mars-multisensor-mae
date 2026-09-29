@@ -8,11 +8,11 @@ build: training
 root: data/dataset
 
 # How far a patch runs along an axis holding each thing, an axis left out taken
-# whole. A tile is 32 km, and every patch below spans about 2.5 km of its ground,
-# so one patch means the same reach whichever instrument took it.
+# whole. A tile is 32 km: a CTX patch spans about 640 m of its ground, one grid
+# cell, and every other about 2.5 km.
 patchsize:
-  # A scan at about 5 m a pixel, about 144 patches of a tile.
-  CTX: {ground: 512}
+  # A scan at about 5 m a pixel, about 2300 patches of a tile.
+  CTX: {ground: 128}
   # A survey at about 200 m a pixel, its bands kept whole as the channels.
   CRISM: {ground: 12}
   # A sounder walks one line, so its ground is traces and its delay is depth.
@@ -21,8 +21,12 @@ patchsize:
 # How many ground samples of a patch are averaged into one along each ground axis,
 # an instrument left out read whole.
 pool:
-  # 512 samples at about 5 m pooled to 64 at about 40 m.
+  # 128 samples at about 5 m pooled to 16 at about 40 m.
   CTX: 8
+
+# The instruments scaled by each observation's own mean and deviation, since what
+# one of their observations reads depends on how it was exposed.
+scaled_per_observation: [CTX]
 
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.95, 0.05]

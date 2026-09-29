@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
@@ -36,6 +36,7 @@ class DatasetSplit(Dataset):
         identities: The tiles, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
         statistics: What each sensor's values run to over the training split.
+        per_observation: The instruments scaled by each observation's own values.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
@@ -48,6 +49,7 @@ class DatasetSplit(Dataset):
         tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
         axes: Mapping[str, tuple[str, ...]],
         statistics: Mapping[str, dict[str, np.ndarray]],
+        per_observation: Collection[str],
         sizes: Mapping[str, Mapping[str, int]],
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
@@ -60,6 +62,7 @@ class DatasetSplit(Dataset):
             tiles: The index rows of each sensor of each tile, keyed by tile.
             axes: What each axis of each instrument's values holds.
             statistics: What each sensor's values run to over the training split.
+            per_observation: The instruments scaled by each observation's own values.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
@@ -73,6 +76,7 @@ class DatasetSplit(Dataset):
         self.identities = list(tiles)
         self.axes = axes
         self.statistics = statistics
+        self.per_observation = per_observation
         self.sizes = sizes
         self.pool = pool
         self.shapes = shapes
@@ -130,7 +134,15 @@ class DatasetSplit(Dataset):
         if not held:
             raise ValueError(f"{identity} has no {self.delay} to stand on")
         delays, described = read_surface_delays(self.build, held)
-        read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
+        read = read_tile_patches(
+            rows,
+            self.build,
+            self.sizes,
+            self.pool,
+            delays,
+            self.statistics,
+            self.per_observation,
+        )
         box = described["box"]
         tile = Tile(described["band"], described["column"], **box)
         lon, lat = geodesy.bbox_ring(**box, step=1.0)
@@ -144,7 +156,7 @@ class DatasetSplit(Dataset):
                 f"{name}/{key}": array
                 for name, drawn in read.items()
                 for key, array in patch_arrays(
-                    drawn, self.shapes[name], self.axes[name], self.statistics[name]
+                    drawn, self.shapes[name], self.axes[name]
                 ).items()
             },
             **{
@@ -184,7 +196,6 @@ def patch_arrays(
     patches: Sequence[Patch],
     shape: Sequence[int],
     axes: Sequence[str],
-    statistics: Mapping[str, np.ndarray],
 ) -> dict[str, np.ndarray]:
     """Return one instrument's read patches as the arrays a model is handed.
 
@@ -192,7 +203,6 @@ def patch_arrays(
         patches: The patches, all of one instrument.
         shape: The shape of one patch of it as the model reads it.
         axes: What each axis of its values holds.
-        statistics: What its values run to over the training split.
 
     Returns:
         arrays: The patches under "values", "valid" and "position".
@@ -201,17 +211,8 @@ def patch_arrays(
         held if holds in (Axis.GROUND, Axis.WAVELENGTH) else 1
         for held, holds in zip(shape, axes, strict=True)
     )
-    scaled = [
-        np.where(
-            one.valid,
-            (one.values.astype(np.float32) - statistics["mean"])
-            / np.maximum(statistics["deviation"], 1e-6),
-            0.0,
-        )
-        for one in patches
-    ]
     return {
-        "values": stacked(scaled, tuple(shape), np.float32),
+        "values": stacked([one.values for one in patches], tuple(shape), np.float32),
         "valid": stacked([one.valid for one in patches], valid_shape, bool),
         "position": stacked(
             [
