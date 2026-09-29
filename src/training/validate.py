@@ -29,12 +29,12 @@ def validation_terms(
         device: Where the model runs.
 
     Returns:
-        metrics: Every loss term averaged over the batches, on the same mask.
+        metrics: Every loss term averaged over the batches it was measured in.
     """
     model.eval()
     generator = torch.Generator(device=device).manual_seed(seed)
     totals = defaultdict(float)
-    batches = 0
+    counts = defaultdict(int)
     with torch.no_grad():
         for batch, cells, _ in loader:
             batch, reconstruction = masked_reconstruction(
@@ -42,6 +42,7 @@ def validation_terms(
             )
             terms = csmae_loss(reconstruction, batch)
             for name, value in terms.items():
-                totals[name] += float(value)
-            batches += 1
-    return {name: value / max(batches, 1) for name, value in totals.items()}
+                if not value.isnan():
+                    totals[name] += float(value)
+                    counts[name] += 1
+    return {name: totals[name] / counts[name] for name in totals}

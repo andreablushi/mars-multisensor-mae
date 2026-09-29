@@ -23,7 +23,7 @@ def reconstruction_error(
 
     Returns:
         error: The squared error over the counted patches, against the squared
-            values of those same patches, so predicting zero scores 1. Zero where
+            values of those same patches, so predicting zero scores 1. Nan where
             none is counted.
     """
     counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
@@ -32,7 +32,8 @@ def reconstruction_error(
     error = ((prediction - values) ** 2 * counted).sum(dim=over) / samples  # (B, K)
     energy = (values**2 * counted).sum(dim=over) / samples  # (B, K)
     weight = weight.to(values.dtype)  # (B, K)
-    return (error * weight).sum() / (energy * weight).sum().clamp(min=1e-6)  # ()
+    share = (error * weight).sum() / (energy * weight).sum().clamp(min=1e-6)  # ()
+    return share if weight.any() else share.new_tensor(torch.nan)
 
 
 def umr_loss(prediction: Tensor, tokens: Tokens) -> Tensor:
@@ -60,7 +61,7 @@ def cmr_loss(
         asked: The instrument whose patches are reconstructed.
 
     Returns:
-        error: Mean error across the other instruments, including empty readers.
+        error: Mean error across the other instruments that read any, else nan.
     """
     target = batch[asked]
     hidden = target.present & ~target.visible
@@ -85,7 +86,9 @@ def cmr_loss(
                 hidden & readable,
             )
         )
-    return torch.stack(errors).mean() if errors else target.values.new_zeros(())
+    return (
+        torch.stack(errors).nanmean() if errors else target.values.new_tensor(torch.nan)
+    )
 
 
 def csmae_loss(
@@ -107,6 +110,6 @@ def csmae_loss(
         cmr = cmr_loss(reconstruction, batch, asked)
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
-        total = total + umr + cmr
+        total = total + umr.nan_to_num() + cmr.nan_to_num()
     terms["loss"] = total  # ()
     return terms

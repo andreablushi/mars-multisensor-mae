@@ -83,8 +83,11 @@ def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
         overlapping: Whether each pair overlaps along every one of those axes.
     """
     apart = (first[..., :axes] - second[..., :axes]).abs()
-    reach = (first[..., 3 : 3 + axes] + second[..., 3 : 3 + axes]) / 2
-    return (apart < reach * (1 - TOUCH)).all(dim=-1)
+    first_span, second_span = first[..., 3 : 3 + axes], second[..., 3 : 3 + axes]
+    # Only the smaller box is shrunk, so one of no span still lands where it lies
+    smaller = torch.minimum(first_span, second_span)
+    reach = (first_span + second_span) / 2 - TOUCH * smaller
+    return (apart < reach).all(dim=-1)
 
 
 def covering_indices(
@@ -134,8 +137,9 @@ def tile_cells(
             corners = [((low[0], low[1], 0), (high[0], high[1], depth_cells - 1))]
         else:
             placed = np.concatenate([held["position"] for held in sample.values()])
-            low = np.floor((placed[:, :3] - placed[:, 3:] / 2) / size + TOUCH)
-            high = np.ceil((placed[:, :3] + placed[:, 3:] / 2) / size - TOUCH) - 1
+            reach = placed[:, 3:] / 2 - TOUCH * np.minimum(placed[:, 3:], size)
+            low = np.floor((placed[:, :3] - reach) / size)
+            high = np.ceil((placed[:, :3] + reach) / size) - 1
             corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
         spread = [
             np.stack(
