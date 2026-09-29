@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 from collections.abc import Collection, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -12,7 +11,7 @@ from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from common.maths import geodesy
 from common.models.tile import Tile
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 
 from dataset.models.patch import Patch
 from dataset.patches import read_surface_delays, read_tile_patches
@@ -175,20 +174,17 @@ class DatasetSplit(Dataset):
             workers: How many tiles are read at once.
         """
         missing = [
-            identity
-            for identity in self.identities
+            index
+            for index, identity in enumerate(self.identities)
             if not (self.build.root / READY / f"{identity}.npz").is_file()
         ]
         log.info(
             "loading %d of %d tiles into %s", len(missing), len(self), self.build.root
         )
-
-        def keep_tile(identity: str) -> None:
-            self.read_ready_tile(identity)
-
-        with ThreadPoolExecutor(workers) as pool:
-            for _ in pool.map(keep_tile, missing):
-                pass
+        for _ in DataLoader(
+            Subset(self, missing), batch_size=None, num_workers=workers
+        ):
+            pass
         log.info("loaded %d tiles", len(missing))
 
 
