@@ -22,6 +22,7 @@ class Tokens:
         values: The normalised patches, zero where padded. (B, K, *P)
         valid: Whether each sample is a measurement. (B, K, *P')
         position: The patch centre and its span, in metres. (B, K, 6)
+        acquisition: How its observation was taken, nan where unknown. (B, K, 7)
         visible: Whether a slot holds a patch its encoder may read. (B, K)
         present: Whether each slot holds a patch rather than padding. (B, K)
     """
@@ -29,6 +30,7 @@ class Tokens:
     values: Tensor
     valid: Tensor
     position: Tensor
+    acquisition: Tensor
     visible: Tensor
     present: Tensor
 

@@ -23,6 +23,7 @@ class Patch:
         east_span_m: How far it reaches eastward, in metres.
         delay_span: How many rows it reaches across, which is none for a patch
             lying on the ground.
+        acquisition: Its observation's AcquisitionInfo quantities, nan if unknown.
     """
 
     values: np.ndarray
@@ -34,3 +35,4 @@ class Patch:
     north_span_m: float
     east_span_m: float
     delay_span: float
+    acquisition: np.ndarray

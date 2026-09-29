@@ -7,6 +7,7 @@ import math
 import torch
 from torch import Tensor, nn
 
+from architecture.components.acquisition_encoding import AcquisitionEncoding
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.grid import covering_indices, overlapping_boxes
 
@@ -29,6 +30,7 @@ class Decoder(nn.Module):
         expand: From the shared width up to the decoder width, at unit scale.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding of a cell's offset from the patch.
+        acquire: The acquisition encoding of the patch asked for.
         blocks: The transformer, from the patch to its cells.
         predict: From a token to every sample of its patch.
     """
@@ -58,6 +60,7 @@ class Decoder(nn.Module):
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
         self.place = PositionalEncoding(dim, stride)
+        self.acquire = AcquisitionEncoding(dim)
         block = nn.TransformerDecoderLayer(
             dim,
             heads,
@@ -78,6 +81,7 @@ class Decoder(nn.Module):
         context_position: Tensor,
         context_visible: Tensor,
         position: Tensor,
+        acquisition: Tensor,
         hidden: Tensor,
     ) -> Tensor:
         """Return the predicted values of the hidden patches.
@@ -87,6 +91,7 @@ class Decoder(nn.Module):
             context_position: Where each sits and reaches, in metres. (B, C, 6)
             context_visible: Which of them hold anything. (B, C)
             position: Where each patch asked for sits and reaches, in metres. (B, K, 6)
+            acquisition: How each was taken, nan where unknown. (B, K, 7)
             hidden: Which of them to predict. (B, K)
 
         Returns:
@@ -100,9 +105,13 @@ class Decoder(nn.Module):
         asked = position[batch, slot]  # (N, 6)
         # A patch's window is its own box, every span tripled
         window = torch.cat([asked[:, :3], asked[:, 3:] * REACH], dim=-1)  # (N, 6)
+        told = self.mask + self.acquire(acquisition[batch, slot])  # (N, D')
         written = []
-        for part, placed in zip(
-            batch.split(PATCHES), window.split(PATCHES), strict=True
+        for part, placed, query in zip(
+            batch.split(PATCHES),
+            window.split(PATCHES),
+            told.split(PATCHES),
+            strict=True,
         ):
             near = (
                 overlapping_boxes(placed[:, None], context_position[part], 3)
@@ -114,10 +123,11 @@ class Decoder(nn.Module):
                 [around[..., :3] - placed[:, None, :3], around[..., 3:]], dim=-1
             )  # (n, M, 6)
             read = cells[part[:, None], at] + self.place(offset)  # (n, M, D')
-            # A window holding no cell reads zeros, so it writes a learned constant
+            # A window holding no cell reads zeros, so it writes from its query alone
             read = read * chosen.unsqueeze(-1)  # (n, M, D')
-            query = self.mask.expand(len(part), 1, -1)  # (n, 1, D')
-            decoded = self.blocks(query, read, memory_key_padding_mask=ignored)
+            decoded = self.blocks(
+                query.unsqueeze(1), read, memory_key_padding_mask=ignored
+            )  # (n, 1, D')
             written.append(self.predict(decoded[:, 0]))  # (n, prod P)
         prediction[batch, slot] = (
             torch.cat(written).unflatten(-1, self.shape).to(prediction.dtype)

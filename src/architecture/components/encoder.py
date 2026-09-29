@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from building.common.layout import Axis
 from torch import Tensor, nn
 
+from architecture.components.acquisition_encoding import AcquisitionEncoding
 from architecture.components.channel_encoder import ChannelEncoder
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
@@ -24,6 +25,7 @@ class Encoder(nn.Module):
         embed: From one channel's samples to a token.
         channels: The channel encoder.
         place: The positional encoding.
+        acquire: The acquisition encoding.
         blocks: The transformer.
     """
 
@@ -56,6 +58,7 @@ class Encoder(nn.Module):
         )
         self.channels = ChannelEncoder(dim, centres_nm)
         self.place = PositionalEncoding(dim, stride)
+        self.acquire = AcquisitionEncoding(dim)
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(
@@ -63,6 +66,7 @@ class Encoder(nn.Module):
         values: Tensor,
         valid: Tensor,
         position: Tensor,
+        acquisition: Tensor,
         visible: Tensor,
     ) -> Tensor:
         """Return the encoded tokens.
@@ -71,6 +75,7 @@ class Encoder(nn.Module):
             values: The normalised patches. (B, K, *P)
             valid: Whether each sample is a measurement, broadcastable. (B, K, *P')
             position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
+            acquisition: How its observation was taken, nan where unknown. (B, K, 7)
             visible: Which patches the encoder may read. (B, K)
 
         Returns:
@@ -86,5 +91,6 @@ class Encoder(nn.Module):
         tokens = self.channels(self.embed(bands))  # (B, K, C, D)
         counted = measured.sum(dim=2).clamp(min=1)  # (B, K, 1)
         tokens = (tokens * measured).sum(dim=2) / counted  # (B, K, D)
-        # Place the tokens on the ground and attend over the visible ones
-        return self.blocks(tokens + self.place(position), visible)  # (B, K, D)
+        # Place the tokens on the ground, say how they were taken, and attend
+        placed = tokens + self.place(position) + self.acquire(acquisition)  # (B, K, D)
+        return self.blocks(placed, visible)  # (B, K, D)
