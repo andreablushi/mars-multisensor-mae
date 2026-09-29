@@ -5,7 +5,8 @@
 # The build the labelled tiles are read from, published as dataset-<build>.
 build: evaluation
 
-# How far, in cells along east, north and delay, a cell may be matched.
+# How far, in cells along east, north and delay, a cell may be matched, the delay
+# counted from each tile's own surface so no absolute height is compared.
 # A feature is an arrangement of places and not only what those places are made
 # of, so a cell is matched near where it sits. Null matches it anywhere in the
 # other tile, which is the bare token set and keeps no arrangement at all.
