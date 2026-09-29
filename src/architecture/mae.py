@@ -122,7 +122,6 @@ class CrossSensorMAE(nn.Module):
                 tokens.values,
                 tokens.valid,
                 tokens.position,
-                tokens.acquisition,
                 counted[name],
             )  # (B, K, D)
             encoded[name] = self.crossencoder(stem, counted[name])  # (B, K, D)
@@ -200,7 +199,6 @@ class CrossSensorMAE(nn.Module):
                     placed,
                     grids[read].occupied,
                     tokens.position,
-                    tokens.acquisition,
                     hidden,
                     use_reentrant=False,
                 )  # (B, K, *P)

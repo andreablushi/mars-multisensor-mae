@@ -187,7 +187,6 @@ def cut_patch(
         north_span_m=float(spans[0]) * footprint,
         east_span_m=float(spans[1]) * footprint,
         delay_span=delay_span,
-        acquisition=np.array(dataclasses.astuple(record.acquisition), np.float32),
     )
 
 

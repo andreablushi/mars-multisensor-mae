@@ -5,12 +5,10 @@ from __future__ import annotations
 import io
 from collections.abc import Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import fields
 from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import Axis
-from building.metadata.acquisition_info import AcquisitionInfo
 from building.metadata.observation import ObservationMetadata
 from common.maths import geodesy
 from common.models.tile import Tile
@@ -207,7 +205,7 @@ def patch_arrays(
         axes: What each axis of its values holds.
 
     Returns:
-        arrays: The patches under "values", "valid", "position" and "acquisition".
+        arrays: The patches under "values", "valid" and "position".
     """
     valid_shape = tuple(
         held if holds in (Axis.GROUND, Axis.WAVELENGTH) else 1
@@ -232,11 +230,6 @@ def patch_arrays(
                 for one in patches
             ],
             (6,),
-            np.float32,
-        ),
-        "acquisition": stacked(
-            [one.acquisition for one in patches],
-            (len(fields(AcquisitionInfo)),),
             np.float32,
         ),
     }
