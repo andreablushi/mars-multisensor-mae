@@ -1,4 +1,4 @@
-"""Saying which wavelength a channel of a patch measures, read as sinusoids."""
+"""Saying what a sensor is and what each channel of it measures, as one vector."""
 
 from __future__ import annotations
 
@@ -10,18 +10,19 @@ from torch import Tensor, nn
 
 # B = batch, K = patches, C = channels, D = token channels.
 
-SHORTEST_DECADES = 1e-3
+SHORTEST_NM = 6.0
 
-LONGEST_DECADES = 10.0
+LONGEST_NM = 2700.0
 
 
-class ChannelEncoding(nn.Module):
-    """A fixed Fourier encoding of each channel's wavelength, on a log scale.
+class ChannelEncoder(nn.Module):
+    """A learned instrument mark, plus a Fourier encoding of each channel's wavelength.
 
     An instrument without a wavelength axis reads its patch as one channel,
-    encoded as zero.
+    encoded by its mark alone.
 
     Attributes:
+        mark: What the instrument is, the same under every channel of it. (D)
         encoded: The cosines then sines of each channel's wavelength. (C, D)
     """
 
@@ -33,19 +34,21 @@ class ChannelEncoding(nn.Module):
             centres_nm: The wavelength each channel is centred on, in nm, or None.
         """
         super().__init__()
+        self.mark = nn.Parameter(torch.zeros(dim))  # (D)
+        nn.init.normal_(self.mark, std=0.02)
         periods = torch.logspace(
-            math.log10(SHORTEST_DECADES), math.log10(LONGEST_DECADES), dim // 2
+            math.log10(SHORTEST_NM), math.log10(LONGEST_NM), dim // 2
         )  # (D / 2)
         if centres_nm is None:
             encoded = torch.zeros(1, dim)  # (1, D)
         else:
-            decades = torch.tensor(centres_nm, dtype=torch.float64).log10()  # (C)
-            phase = 2 * math.pi * decades.unsqueeze(-1) / periods  # (C, D / 2)
+            centres = torch.tensor(centres_nm, dtype=torch.float64)  # (C)
+            phase = 2 * math.pi * centres.unsqueeze(-1) / periods  # (C, D / 2)
             encoded = torch.cat([phase.cos(), phase.sin()], dim=-1).float()  # (C, D)
         self.register_buffer("encoded", encoded)
 
     def forward(self, tokens: Tensor) -> Tensor:
-        """Return each channel's tokens with its wavelength added.
+        """Return each channel's tokens with its instrument and wavelength added.
 
         Args:
             tokens: One token per channel of each patch. (B, K, C, D)
@@ -53,4 +56,4 @@ class ChannelEncoding(nn.Module):
         Returns:
             tokens: The same tokens, each told its channel. (B, K, C, D)
         """
-        return tokens + self.encoded  # (B, K, C, D)
+        return tokens + self.mark + self.encoded  # (B, K, C, D)

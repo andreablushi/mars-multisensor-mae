@@ -7,9 +7,8 @@ from collections.abc import Sequence
 
 from building.common.layout import Axis
 from torch import Tensor, nn
-from torch.nn import functional
 
-from architecture.components.channel_encoding import ChannelEncoding
+from architecture.components.channel_encoder import ChannelEncoder
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 
@@ -23,7 +22,7 @@ class Encoder(nn.Module):
     Attributes:
         at: The wavelength axis, if the patch has one.
         embed: From one channel's samples to a token.
-        channels: The channel encoding.
+        channels: The channel encoder.
         place: The positional encoding.
         blocks: The transformer.
     """
@@ -55,7 +54,7 @@ class Encoder(nn.Module):
         self.embed = nn.Linear(
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
-        self.channels = ChannelEncoding(dim, centres_nm)
+        self.channels = ChannelEncoder(dim, centres_nm)
         self.place = PositionalEncoding(dim, stride)
         self.blocks = Transformer(dim, heads, depth)
 
@@ -84,7 +83,7 @@ class Encoder(nn.Module):
             valid = valid.movedim(2 + self.at, -1)
         bands = values.flatten(2, -2).transpose(2, 3)  # (B, K, C, G)
         measured = valid.flatten(2, -2).any(dim=2).unsqueeze(-1)  # (B, K, C, 1)
-        tokens = functional.gelu(self.channels(self.embed(bands)))  # (B, K, C, D)
+        tokens = self.channels(self.embed(bands))  # (B, K, C, D)
         counted = measured.sum(dim=2).clamp(min=1)  # (B, K, 1)
         tokens = (tokens * measured).sum(dim=2) / counted  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
