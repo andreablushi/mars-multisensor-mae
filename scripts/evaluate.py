@@ -122,7 +122,11 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
     grids = evaluate_latent_space(
-        model, loader, device, config.dataset.patchsize["SHARAD"]["delay"]
+        model,
+        loader,
+        device,
+        config.dataset.patchsize["SHARAD"]["delay"],
+        config.evaluation.delay_window,
     )
     tiles = sorted(grids)
     distances = chamfer_distances(

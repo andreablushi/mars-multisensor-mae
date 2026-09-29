@@ -11,3 +11,7 @@ build: evaluation
 # of, so a cell is matched near where it sits. Null matches it anywhere in the
 # other tile, which is the bare token set and keeps no arrangement at all.
 minimal_chamfer_cell_distance: 1
+
+# The delay cells each tile is compared over, counted from its surface cell, so
+# every tile holds the same slab: from one cell above the surface to two below it.
+delay_window: [-1, 2]

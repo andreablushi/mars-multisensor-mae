@@ -10,15 +10,20 @@ from architecture.mae import CrossSensorMAE
 
 
 def evaluate_latent_space(
-    model: CrossSensorMAE, loader: DataLoader, device: torch.device, delay_rows: int
+    model: CrossSensorMAE,
+    loader: DataLoader,
+    device: torch.device,
+    delay_rows: int,
+    delay_window: tuple[int, int],
 ) -> dict[str, TileGrid]:
-    """Return the grid standing for every tile of one build, its delay from its surface.
+    """Return the grid of every tile of one build, over a slab around its surface.
 
     Args:
         model: The model, loaded from a checkpoint and on the device.
         loader: The tiles to read, in batches, each tile read whole.
         device: Where the model runs.
         delay_rows: How many radar delay rows a cell spans.
+        delay_window: The first and last delay cell kept, counted from the surface.
 
     Returns:
         grids: One grid per tile, keyed by the tile it stands for.
@@ -46,12 +51,15 @@ def evaluate_latent_space(
             shift = torch.stack(
                 [torch.zeros_like(surface)] * 2 + [surface], dim=-1
             )  # (B, 3)
+            offset = grid.offset - shift[:, None]  # (B, Q, 3)
+            first, last = delay_window
+            slab = (offset[..., 2] >= first) & (offset[..., 2] <= last)  # (B, Q)
             for at, identity in enumerate(identities):
                 # Kept in full precision, since the distances are read in its dtype
                 grids[identity] = TileGrid(
                     grid.values[at].float(),
-                    grid.occupied[at],
-                    grid.offset[at] - shift[at],
+                    grid.occupied[at] & slab[at],
+                    offset[at],
                     grid.position[at],
                 )
     return grids
