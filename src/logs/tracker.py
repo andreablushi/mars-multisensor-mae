@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 
 from dotenv import load_dotenv
@@ -18,7 +19,7 @@ def start_logging(
     stage: str,
     facts: Mapping[str, object],
 ) -> Run:
-    """Return the tracked run every metric of one stage is logged to.
+    """Return the tracked run of one stage, replacing any of its name and stage.
 
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
@@ -31,6 +32,12 @@ def start_logging(
             the evaluation of one model sit together, its place read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
+    for tracked in wandb.Api().runs(
+        f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
+        filters={"display_name": run_name},
+    ):
+        if tracked.job_type == stage:
+            tracked.delete()
     run = wandb.init(
         config=dict(config),
         name=run_name,
