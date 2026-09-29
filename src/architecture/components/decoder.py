@@ -8,12 +8,15 @@ import torch
 from building.configs import sharad
 from common.maths import physics
 from torch import Tensor, nn
+from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
 
 # B = batch, C = cells, K = target patches, D = token channels, P = patch dimensions,
 # H = heads, N = tokens.
+
+ALIGN = 8
 
 DELAY_ROW_M = physics.SPEED_OF_LIGHT_M_S * sharad.DELAY_INTERVAL_S / 2
 
@@ -68,6 +71,29 @@ class Decoder(nn.Module):
         nn.init.zeros_(self.predict.weight)
         nn.init.zeros_(self.predict.bias)
 
+    def locality(self, context_position: Tensor, position: Tensor) -> Tensor:
+        """Return how much each head favours each token over each, by their distance.
+
+        Args:
+            context_position: Where each token read sits and reaches, in m. (B, C, 6)
+            position: Where each patch asked for sits and reaches, in m. (B, K, 6)
+
+        Returns:
+            bias: Over the tokens read then those asked, padded to a multiple of
+                ALIGN so attention reads it without a copy. (B, H, N, N)
+        """
+        centres = torch.cat([context_position, position], dim=1)[..., :3]  # (B, N, 3)
+        centres = centres * centres.new_tensor([1.0, 1.0, DELAY_ROW_M])  # (B, N, 3)
+        centres = functional.pad(centres, (0, 0, 0, -centres.shape[1] % ALIGN))
+        apart = torch.cdist(centres, centres) / self.cell_m  # (B, N, N)
+        bias = -self.slopes[None, :, None, None] * apart[:, None]  # (B, H, N, N)
+        dtype = (
+            torch.get_autocast_dtype(bias.device.type)
+            if torch.is_autocast_enabled(bias.device.type)
+            else bias.dtype
+        )
+        return bias.to(dtype)
+
     def forward(
         self,
         context: Tensor,
@@ -75,6 +101,7 @@ class Decoder(nn.Module):
         context_visible: Tensor,
         position: Tensor,
         hidden: Tensor,
+        bias: Tensor,
     ) -> Tensor:
         """Return the predicted values of the hidden patches.
 
@@ -84,6 +111,7 @@ class Decoder(nn.Module):
             context_visible: Which of them the encoder read. (B, C)
             position: Where each patch asked for sits and reaches, in metres. (B, K, 6)
             hidden: Which of them to predict. (B, K)
+            bias: What `locality` gave for these same positions. (B, H, N, N)
 
         Returns:
             prediction: One patch per slot, meaningful where hidden. (B, K, *P)
@@ -95,10 +123,9 @@ class Decoder(nn.Module):
         asked = self.mask + self.place(position)  # (B, K, D')
         sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
-        centres = torch.cat([context_position, position], dim=1)[..., :3]  # (B, N, 3)
-        centres = centres * centres.new_tensor([1.0, 1.0, DELAY_ROW_M])  # (B, N, 3)
-        apart = torch.cdist(centres, centres) / self.cell_m  # (B, N, N)
-        bias = -self.slopes[None, :, None, None] * apart[:, None]  # (B, H, N, N)
-        decoded = self.blocks(sequence, attended, bias.to(sequence.dtype))  # (B, N, D')
-        held = decoded[:, read.shape[1] :]
+        extra = bias.shape[-1] - sequence.shape[1]
+        sequence = functional.pad(sequence, (0, 0, 0, extra))  # (B, N, D')
+        attended = functional.pad(attended, (0, extra))  # (B, N)
+        decoded = self.blocks(sequence, attended, bias)  # (B, N, D')
+        held = decoded[:, read.shape[1] : read.shape[1] + position.shape[1]]
         return self.predict(held).unflatten(-1, self.shape)

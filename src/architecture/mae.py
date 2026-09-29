@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from architecture.components.crossattention_fusion import CrossAttentionFusion
 from architecture.components.crossencoder import CrossSensorEncoder
@@ -191,12 +192,19 @@ class CrossSensorMAE(nn.Module):
         # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
             hidden = tokens.present & ~tokens.visible  # (B, K)
+            bias = self.decoders[asked].locality(
+                placed, tokens.position
+            )  # (B, H, N, N)
             for read in batch:
-                predictions[asked, read] = self.decoders[asked](
+                # Recomputed on the way back, so only one decoder pass is held at once
+                predictions[asked, read] = checkpoint(
+                    self.decoders[asked],
                     grids[read].values,
                     placed,
                     grids[read].occupied,
                     tokens.position,
                     hidden,
+                    bias,
+                    use_reentrant=False,
                 )  # (B, K, *P)
         return Reconstruction(predictions)
