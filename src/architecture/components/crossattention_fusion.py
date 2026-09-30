@@ -72,7 +72,6 @@ class CrossAttentionFusion(nn.Module):
                 held.new_zeros(*placed.shape[:2], held.shape[-1]),
                 torch.zeros_like(cells.present),
                 cells.offset,
-                placed,
             )
         attended, covered = [], []
         # Cells are read a chunk at a time, so a tile's cells fit in memory
@@ -99,4 +98,4 @@ class CrossAttentionFusion(nn.Module):
         values = functional.normalize(
             self.norm(torch.cat(attended, dim=1)), dim=-1
         )  # (B, Q, D)
-        return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset, placed)
+        return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset)

@@ -55,6 +55,5 @@ def evaluate_latent_space(
                     grid.values[at].float(),
                     grid.occupied[at] & slab[at],
                     offset[at],
-                    grid.position[at],
                 )
     return grids

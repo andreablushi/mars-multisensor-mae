@@ -62,13 +62,11 @@ class TileGrid:
         values: The cell vectors, of unit length where occupied, else zero. (B, Q, D)
         occupied: Whether the cell can read any sensor token in its tile. (B, Q)
         offset: The east, north and delay cell of each slot. (B, Q, 3)
-        position: Ground metres and delay rows for each centre and span. (B, Q, 6)
     """
 
     values: Tensor
     occupied: Tensor
     offset: Tensor
-    position: Tensor
 
 
 def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
