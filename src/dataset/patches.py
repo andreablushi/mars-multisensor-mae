@@ -184,7 +184,7 @@ def scaled_patch(patch: Patch, mean: float, deviation: float) -> Patch:
         patch,
         values=np.where(
             patch.valid,
-            (patch.values.astype(np.float32) - mean) / np.maximum(deviation, 1e-6),
+            (patch.values.astype(np.float32) - mean) / deviation,
             0.0,
         ),
     )

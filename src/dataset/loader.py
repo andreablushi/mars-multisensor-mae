@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gc
-import math
 import random
 from collections.abc import Callable, Mapping, Sequence
 
@@ -48,7 +47,7 @@ def split_tiles(
     for tile in order:
         name = min(
             SPLITS,
-            key=lambda one: placed[one] / wanted[one] if wanted[one] else math.inf,
+            key=lambda one: placed[one] / wanted[one],
         )
         splits[name].append(tile)
         placed[name] += counted[tile]

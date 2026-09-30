@@ -27,9 +27,6 @@ def evaluate_latent_space(
 
     Returns:
         grids: One grid per tile, keyed by the tile it stands for.
-
-    Raises:
-        ValueError: When a tile holds no surface patch to count its delay from.
     """
     model.eval()
     grids = {}
@@ -45,8 +42,6 @@ def evaluate_latent_space(
             ground = present & (placed[..., 5] == 0)  # (B, K)
             rows = placed[..., 2].masked_fill(~ground, torch.nan)  # (B, K)
             rows = rows.nanmedian(dim=1).values  # (B,)
-            if rows.isnan().any():
-                raise ValueError("a tile holding no surface patch has no surface")
             surface = (rows / delay_rows).floor().long()  # (B,)
             shift = torch.stack(
                 [torch.zeros_like(surface)] * 2 + [surface], dim=-1

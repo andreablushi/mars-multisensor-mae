@@ -35,13 +35,8 @@ def chamfer_distances(
 
     Returns:
         distances: The distance between every pair of tiles, in [0, 1]. (T, T)
-
-    Raises:
-        ValueError: When a tile holds no occupied cell to be measured over.
     """
     counts = torch.tensor([int(one.occupied.sum()) for one in grids])  # (T,)
-    if not counts.all():
-        raise ValueError("a tile holding no occupied cell cannot be measured")
     device = grids[0].values.device
     width = int(counts.max())
     values = grids[0].values.new_zeros(len(grids), width, grids[0].values.shape[-1])
@@ -94,7 +89,7 @@ def retrieval_by_tile(
     # A tile is never its own neighbour, so its own column is put out of reach.
     ranked = np.argsort(np.where(itself, np.inf, distances), axis=1)[:, :-1]  # (T, T-1)
     relevant = held[ranked] == held[:, None]  # (T, T-1)
-    total = np.maximum(relevant.sum(axis=1), 1)  # (T,)
+    total = relevant.sum(axis=1)  # (T,)
     scores = {}
     for k in TOP_K:
         taken = relevant[:, :k]  # (T, k)

@@ -146,12 +146,7 @@ def tile_cells(
             ).reshape(-1, 3)
             for (east, north, delay), (east_end, north_end, delay_end) in corners
         ]
-        offsets = (
-            np.unique(np.concatenate(spread), axis=0)
-            if spread
-            else np.zeros((0, 3), np.int64)
-        )
-        reached.append(torch.as_tensor(offsets))
+        reached.append(torch.as_tensor(np.unique(np.concatenate(spread), axis=0)))
     counts = torch.tensor([len(one) for one in reached])
     slots = torch.arange(int(counts.max()))
     offset = pad_sequence(reached, batch_first=True)
