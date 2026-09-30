@@ -63,7 +63,8 @@ class TrainingConfig:
 
     Attributes:
         max_steps: How many steps the run takes, at most.
-        batch_size: How many tiles one step reads.
+        batch_size: How many tiles one pass reads.
+        accumulate: How many passes one step adds its gradients over.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -75,6 +76,7 @@ class TrainingConfig:
 
     max_steps: int
     batch_size: int
+    accumulate: int
     learning_rate: float
     weight_decay: float
     warmup_steps: int

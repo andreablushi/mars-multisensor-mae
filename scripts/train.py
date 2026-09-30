@@ -82,6 +82,7 @@ def run_training(
         training,
         validation,
         config.training.max_steps,
+        config.training.accumulate,
         config.training.learning_rate,
         config.training.weight_decay,
         config.training.warmup_steps,

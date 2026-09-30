@@ -33,6 +33,7 @@ def train(
     training: DataLoader,
     validation: DataLoader,
     max_steps: int,
+    accumulate: int,
     learning_rate: float,
     weight_decay: float,
     warmup_steps: int,
@@ -51,6 +52,7 @@ def train(
         training: The training split, in batches.
         validation: The validation split, in batches.
         max_steps: How many steps the run takes, at most.
+        accumulate: How many batches one step adds its gradients over.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -86,30 +88,39 @@ def train(
     generator = torch.Generator(device=device).manual_seed(seed)
     best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
-    step, best_step = 0, -1
+    batches = chain.from_iterable(repeat(training))
+    best_step = -1
     model.train()
-    ready = time.perf_counter()
-    for batch, cells, _ in islice(chain.from_iterable(repeat(training)), max_steps):
-        arrived = time.perf_counter()
-        waited = arrived - ready
-        batch, reconstruction = masked_reconstruction(
-            model, batch, cells, mask_ratio, generator, device
-        )
-        terms = csmae_loss(reconstruction, batch)
+    for step in range(1, max_steps + 1):
+        began = time.perf_counter()
+        waited = 0.0
+        measured = []
         optimizer.zero_grad()
-        terms["loss"].backward()
+        ready = time.perf_counter()
+        for batch, cells, _ in islice(batches, accumulate):
+            waited += time.perf_counter() - ready
+            batch, reconstruction = masked_reconstruction(
+                model, batch, cells, mask_ratio, generator, device
+            )
+            terms = csmae_loss(reconstruction, batch)
+            (terms["loss"] / accumulate).backward()
+            measured.append({name: value.detach() for name, value in terms.items()})
+            ready = time.perf_counter()
+        # A term an instrument missed in one batch is averaged over the others
+        terms = {
+            name: torch.stack([one[name] for one in measured]).nanmean()
+            for name in measured[0]
+        }
         # Stabilize training against exploding gradients
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         scheduler.step()
-        step += 1
         log_step(run, step, terms)
-        ready = time.perf_counter()
         log.info(
             "step %d waited %.1f s for data, computed in %.1f s",
             step,
             waited,
-            ready - arrived,
+            time.perf_counter() - began - waited,
         )
         # The last step is validated too, so a short run still leaves a checkpoint
         if step % validate_every and step < max_steps:
@@ -118,7 +129,6 @@ def train(
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
-        ready = time.perf_counter()
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, step)
             best_step = step
