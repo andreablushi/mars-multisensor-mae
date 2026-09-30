@@ -99,7 +99,6 @@ def loaders_by_split(
         )
         for name, held in splits.items()
     }
-    datasets[VALIDATION_SPLIT].keep_every_tile(workers)
     gc.freeze()
     return {
         name: DataLoader(

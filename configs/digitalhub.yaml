@@ -30,9 +30,8 @@ resources:
     memory: 32Gi
     disk: 64Gi
 
-# The persistent volume every stage caches the builds' ready tiles on, mounted as the
-# dataset root: the validation tiles are kept before training, every other tile the
-# first time it is read, while the volume has room.
+# The volume a run keeps its ready tiles on, mounted as the dataset root: each tile
+# is kept the first time it is read, and a new run starts it empty.
 volume:
   name: mae-tiles
   path: /volume

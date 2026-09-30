@@ -9,16 +9,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import Dataset
 
 from dataset.models.patch import Patch
 from dataset.patches import read_surface_delays, read_tile_patches
-from logs.console import console_logger
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
-
-log = console_logger(__name__)
 
 READY = "ready"
 
@@ -120,26 +117,6 @@ class DatasetSplit(Dataset):
         )
         self.build.keep(f"{READY}/{identity}.npz", packed.getvalue())
         return packed.getvalue()
-
-    def keep_every_tile(self, workers: int) -> None:
-        """Keep every tile of the split ready under the root, reading those missing.
-
-        Args:
-            workers: How many tiles are read at once.
-        """
-        missing = [
-            index
-            for index, identity in enumerate(self.identities)
-            if not (self.build.root / READY / f"{identity}.npz").is_file()
-        ]
-        log.info(
-            "loading %d of %d tiles into %s", len(missing), len(self), self.build.root
-        )
-        for _ in DataLoader(
-            Subset(self, missing), batch_size=None, num_workers=workers
-        ):
-            pass
-        log.info("loaded %d tiles", len(missing))
 
 
 def patch_arrays(

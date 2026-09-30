@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import errno
 import io
 import json
 import os
@@ -51,7 +50,7 @@ class DatasetBuild:
         return self.fetch(path)
 
     def keep(self, path: str, data: bytes) -> None:
-        """Keep one file under the root while the disk has room, else drop it.
+        """Keep one file under the root.
 
         Args:
             path: Where it goes, relative to the build root.
@@ -61,13 +60,8 @@ class DatasetBuild:
         held.parent.mkdir(parents=True, exist_ok=True)
         # Written whole then moved, so a reader beside this one finds it finished.
         temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
-        try:
-            temporary.write_bytes(data)
-            temporary.replace(held)
-        except OSError as failed:
-            temporary.unlink(missing_ok=True)
-            if failed.errno != errno.ENOSPC:
-                raise
+        temporary.write_bytes(data)
+        temporary.replace(held)
 
     def read_table(self, path: str, schema: pa.Schema | None = None) -> pa.Table:
         """Return one parquet object of the build, read out of the bytes it holds.
