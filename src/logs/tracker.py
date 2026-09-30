@@ -2,35 +2,46 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
-from dataclasses import asdict
 
-import wandb
 from dotenv import load_dotenv
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
-from config.paths import REPO_ROOT
-from config.schema import Config
+import wandb
+from configs.paths import REPO_ROOT
 
 
-def start_logging(config: Config, stage: str, facts: Mapping[str, object]) -> Run:
-    """Return the tracked run every metric of one stage is logged to.
+def start_logging(
+    config: Mapping[str, object],
+    run_name: str,
+    stage: str,
+    facts: Mapping[str, object],
+) -> Run:
+    """Return the tracked run of one stage, replacing any of its name and stage.
 
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
+        run_name: What the run is called, which names and groups the tracked run.
         stage: What the stage is called, which tells a training from an evaluation.
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named and grouped by the config's run name so the training and
+        run: The run, named and grouped by the run name so the training and
             the evaluation of one model sit together, its place read from the .env.
     """
     load_dotenv(REPO_ROOT / ".env")
+    for tracked in wandb.Api().runs(
+        f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
+        filters={"display_name": run_name},
+    ):
+        if tracked.job_type == stage:
+            tracked.delete()
     run = wandb.init(
-        config=asdict(config),
-        name=config.run_name,
-        group=config.run_name,
+        config=dict(config),
+        name=run_name,
+        group=run_name,
         job_type=stage,
     )
     run.config.update(dict(facts))

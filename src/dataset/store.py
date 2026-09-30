@@ -5,9 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
-import shutil
 from collections import defaultdict
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,17 +14,11 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 from building import paths as built
-from building.common.layout import WAVELENGTH
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
 
 from dataset.models.observation import Observation
-
-DISK_RESERVE_BYTES = 8 * 1024**3
-
-# What MOLA stores beside its heights: the radargram row each of them sounds at.
-DELAY_PLANE = "delay"
 
 
 @dataclass(slots=True)
@@ -36,13 +29,11 @@ class DatasetBuild:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
         records: What every observation is, once the index is read, else None.
-        fetched_bytes: How much this reader has brought down from the store.
     """
 
     root: Path
     fetch: Callable[[str], bytes]
     records: list[ObservationMetadata] | None = None
-    fetched_bytes: int = 0
 
     def read_object(self, path: str) -> bytes:
         """Return what one object of the build holds, off disk or fetched.
@@ -53,26 +44,13 @@ class DatasetBuild:
         Returns:
             data: The bytes of that object.
         """
-        data = self.read_kept(path)
-        if data is None:
-            data = self.fetch(path)
-            self.fetched_bytes += len(data)
-        return data
-
-    def read_kept(self, path: str) -> bytes | None:
-        """Return what one file kept under the root holds.
-
-        Args:
-            path: Where it sits, relative to the build root.
-
-        Returns:
-            data: Its bytes, or None when it is not kept.
-        """
         held = self.root / path
-        return held.read_bytes() if held.is_file() else None
+        if held.is_file():
+            return held.read_bytes()
+        return self.fetch(path)
 
     def keep(self, path: str, data: bytes) -> None:
-        """Keep one file under the root while the disk has room, else drop it.
+        """Keep one file under the root.
 
         Args:
             path: Where it goes, relative to the build root.
@@ -80,11 +58,10 @@ class DatasetBuild:
         """
         held = self.root / path
         held.parent.mkdir(parents=True, exist_ok=True)
-        if shutil.disk_usage(held.parent).free - len(data) > DISK_RESERVE_BYTES:
-            # Written whole then moved, so a reader beside this one finds it finished.
-            temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
-            temporary.write_bytes(data)
-            temporary.replace(held)
+        # Written whole then moved, so a reader beside this one finds it finished.
+        temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
+        temporary.write_bytes(data)
+        temporary.replace(held)
 
     def read_table(self, path: str, schema: pa.Schema | None = None) -> pa.Table:
         """Return one parquet object of the build, read out of the bytes it holds.
@@ -140,104 +117,16 @@ class DatasetBuild:
         """
         return {name: one.axes for name, one in self.read_row_by_instrument().items()}
 
-    def read_ground_sample_by_instrument(self) -> dict[str, float]:
+    def read_resolution_by_instrument(self) -> dict[str, float]:
         """Return how much ground one sample of each instrument spans, over the build.
 
         Returns:
-            sample_spacing_m: One length per sensor, its median finest ground axis.
+            resolution_m: One length per sensor, its median finest ground axis.
         """
         standing = defaultdict(list)
         for one in self.read_observation_metadata():
             standing[one.instrument].append(min(one.sample_spacing_m))
         return {name: float(np.median(held)) for name, held in standing.items()}
-
-    def read_delays(self, observations: Sequence[ObservationMetadata]) -> np.ndarray:
-        """Return the row every sample of the delay instrument sounds at, over a tile.
-
-        Args:
-            observations: The tile's index rows of the instrument carrying the delay.
-
-        Returns:
-            delays: One row per sample: north, east and the delay row. (N, 3)
-
-        Raises:
-            ValueError: When none of them measured anything.
-        """
-        placed = []
-        for record in observations:
-            observation = self.read_observation(record.path, (DELAY_PLANE,))
-            measured = observation.measured
-            north, east = observation.distance_centre_m()
-            rows = observation.beside[DELAY_PLANE]
-            placed.append(
-                np.stack([north[measured], east[measured], rows[measured]], axis=1)
-            )  # (n, 3)
-        delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
-        if not delays.size:
-            raise ValueError(
-                f"nothing measured over {[one.identity for one in observations]}"
-            )
-        return delays
-
-    def read_statistics_by_instrument(
-        self, tiles: Collection[str]
-    ) -> dict[str, dict[str, np.ndarray]]:
-        """Return what each instrument's values run to, without reading one observation.
-
-        Args:
-            tiles: The tiles to pool over.
-
-        Returns:
-            statistics: Per sensor, the mean and deviation of its measurements.
-        """
-        standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
-        spreads: dict[str, list[int]] = {}
-        for one in self.read_observation_metadata():
-            if one.tile not in tiles:
-                continue
-            # A spectral instrument is pooled a band at a time, every other whole.
-            held = (
-                (one.band_valid_count, one.band_mean, one.band_std)
-                if WAVELENGTH in one.axes
-                else (one.valid_count, one.value_mean, one.value_std)
-            )
-            # An observation measuring nothing leaves them unset, a sounder nan.
-            if any(each is None for each in held):
-                continue
-            counts, mean, deviation = (
-                np.asarray(each, dtype=np.float64) for each in held
-            )
-            # A band the observation never measured holds no mean and says so with
-            # nan, which its count already tells apart and which would pool to nan.
-            mean = np.where(counts > 0, mean, 0.0)
-            deviation = np.where(counts > 0, deviation, 0.0)
-            if not counts.sum() or not np.isfinite([mean, deviation]).all():
-                continue
-            standing[one.instrument].append((counts, mean, deviation))
-            spreads[one.instrument] = [
-                -1 if holds == WAVELENGTH else 1 for holds in one.axes
-            ]
-        statistics = {}
-        for instrument, held in standing.items():
-            counts = np.sum([one[0] for one in held], axis=0)
-            total = np.maximum(counts, 1.0)
-            mean = np.sum([one[0] * one[1] for one in held], axis=0) / total
-            second = (
-                np.sum([one[0] * (one[2] ** 2 + one[1] ** 2) for one in held], axis=0)
-                / total
-            )
-            deviation = np.sqrt(np.maximum(second - mean**2, 0.0))
-            # A band nothing ever measured leaves a patch of it where it stands.
-            spread = spreads[instrument] if counts.shape else ()
-            statistics[instrument] = {
-                "mean": np.where(counts > 0, mean, 0.0)
-                .reshape(spread)
-                .astype(np.float32),
-                "deviation": np.where(counts > 0, deviation, 1.0)
-                .reshape(spread)
-                .astype(np.float32),
-            }
-        return statistics
 
     def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.
@@ -258,12 +147,8 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         return Observation(
-            instrument=described["instrument"],
-            identifier=described["identifier"],
-            measurement=described["measurement"],
             values=arrays[described["measurement"]],
             axes=tuple(described["axes"]),
-            dims={name: tuple(held) for name, held in described["dims"].items()},
             measured=arrays[MEASURED],
             north=arrays[NORTH],
             east=arrays[EAST],

@@ -15,7 +15,6 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0.3",
     "scikit-learn>=1.8",
-    "rich>=14.0.0",
     "torch>=2.14.0",
     "wandb>=0.22",
     "zarr>=3.3",
@@ -30,7 +29,7 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = [
     "architecture",
-    "config",
+    "configs",
     "dataset",
     "evaluation",
     "logs",

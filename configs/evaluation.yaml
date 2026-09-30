@@ -5,8 +5,13 @@
 # The build the labelled tiles are read from, published as dataset-<build>.
 build: evaluation
 
-# How far, in cells along either axis, a cell may be matched from its own offset.
+# How far, in cells along east, north and delay, a cell may be matched, the delay
+# counted from each tile's own surface so no absolute height is compared.
 # A feature is an arrangement of places and not only what those places are made
 # of, so a cell is matched near where it sits. Null matches it anywhere in the
 # other tile, which is the bare token set and keeps no arrangement at all.
-minimal_chamfer_cell_distance: 1
+minimal_chamfer_cell_distance: 4
+
+# The delay cells each tile is compared over, counted from its surface cell, so
+# every tile holds the same slab: from one cell above the surface to two below it.
+delay_window: [-1, 2]

@@ -1,49 +1,30 @@
-"""Reading one cell out of every patch reaching it, whichever instrument took them."""
+"""Reading cells from the sensor patches covering them."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import torch
-from building.configs import sharad
 from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.models import Cells, TileGrid
+from architecture.grid import Cells, TileGrid, covering_indices, overlapping_boxes
 
+# B = batch, Q = cells, S = source patches, M = covering patches, D = token channels.
 
-def cell_positions(offset: Tensor, cell_m: float) -> Tensor:
-    """Return where each cell sits and how far it reaches, as a patch would say it.
-
-    Args:
-        offset: Which cell each slot stands for, east then north. (B, Q, 2)
-        cell_m: How far a cell runs along the ground, in metres.
-
-    Returns:
-        position: The cell centre and its span, in metres. (B, Q, 6)
-    """
-    centre = (offset + 0.5) * cell_m  # (B, Q, 2)
-    edge = centre.new_zeros(*centre.shape[:-1], 1)  # (B, Q, 1)
-    spans = centre.new_full((*centre.shape[:-1], 2), cell_m)  # (B, Q, 2)
-    # A cell stands on the datum, spans its own width, and reaches no delay.
-    datum = centre.new_full((*centre.shape[:-1], 1), float(sharad.AREOID_ROW))
-    return torch.cat([centre, datum, spans, edge], dim=-1)  # (B, Q, 6)
+CELLS = 4096
 
 
 class CrossAttentionFusion(nn.Module):
-    """Read each cell out of the patches reaching it, whichever instrument took them.
+    """Read each cell from the patches covering it, and nothing else.
 
-    A cell asks for what was measured over the ground it covers, and every
-    patch whose span reaches that ground answers, so a patch wider than a cell
-    speaks for each of the cells it spans and two patches over the same ground
-    are heard together without either being told the other is there.
+    A cell no counted patch covers is left empty.
 
     Attributes:
-        cell_m: How far a cell runs along the ground, in metres.
         query: What a cell asks with, before it is placed. (D)
         place: The positional encoding, at the cell's own size.
-        attend: The attention from a cell to the patches reaching it.
+        attend: The attention from a cell to the patches covering it.
         norm: What a cell is normalised by before it is read out.
     """
 
@@ -56,7 +37,6 @@ class CrossAttentionFusion(nn.Module):
             cell_m: How far a cell runs along the ground, in metres.
         """
         super().__init__()
-        self.cell_m = cell_m
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.query, std=0.02)
         self.place = PositionalEncoding(dim, cell_m)
@@ -77,32 +57,45 @@ class CrossAttentionFusion(nn.Module):
             tokens: Each instrument's tokens from the cross-sensor encoder. (B, K, D)
             position: Where each of its patches sits and reaches, in metres. (B, K, 6)
             counted: Which of its tokens count: visible while training, else present.
-            cells: The cells the batch's patches reach, in one order for all of them.
+            cells: The cells the batch's patches reach.
             read: Which instruments this grid is built from.
 
         Returns:
-            grid: One vector per cell, of unit length where an instrument reaches it.
+            grid: One unit vector per usable cell.
         """
-        placed = cell_positions(cells.offset, self.cell_m)  # (B, Q, 6)
-        centre = placed[..., :2]  # (B, Q, 2)
-        asked = self.query + self.place(placed)  # (B, Q, D)
+        placed = cells.position  # (B, Q, 6)
         held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
         where = torch.cat([position[name] for name in read], dim=1)  # (B, S, 6)
         taken = torch.cat([counted[name] for name in read], dim=1)  # (B, S)
-        # A patch reaches a cell when their extents meet along both ground axes.
-        apart = (centre.unsqueeze(2) - where[:, None, :, :2]).abs()  # (B, Q, S, 2)
-        reach = (where[:, None, :, 3:5] + self.cell_m) / 2  # (B, 1, S, 2)
-        reaching = (apart <= reach).all(dim=-1) & taken.unsqueeze(1)  # (B, Q, S)
-        occupied = reaching.any(dim=-1) & cells.present  # (B, Q)
-        # A cell no patch reaches attends over all of them, and is then thrown away.
-        blocked = ~reaching  # (B, Q, S)
-        blocked[~occupied] = False
-        attended, _ = self.attend(
-            asked,
-            held,
-            held,
-            attn_mask=blocked.repeat_interleave(self.attend.num_heads, dim=0),
-            need_weights=False,
+        if held.shape[1] == 0:
+            return TileGrid(
+                held.new_zeros(*placed.shape[:2], held.shape[-1]),
+                torch.zeros_like(cells.present),
+                cells.offset,
+            )
+        attended, covered = [], []
+        # Cells are read a chunk at a time, so a tile's cells fit in memory
+        for part in placed.split(CELLS, dim=1):
+            reaching = (
+                overlapping_boxes(part[:, :, None], where[:, None], 3) & taken[:, None]
+            )  # (B, q, S)
+            # A cell nothing covers attends anyway, and is emptied below
+            at, chosen, ignored = covering_indices(reaching, held.dtype)  # (B, q, M)
+            picked = held.gather(
+                1, at.flatten(1).unsqueeze(-1).expand(-1, -1, held.shape[-1])
+            ).unflatten(1, at.shape[1:])  # (B, q, M, D)
+            asked = self.query + self.place(part)  # (B, q, D)
+            read_out, _ = self.attend(
+                asked.flatten(0, 1).unsqueeze(1),
+                picked.flatten(0, 1),
+                picked.flatten(0, 1),
+                key_padding_mask=ignored.flatten(0, 1),
+                need_weights=False,
+            )  # (B * q, 1, D)
+            attended.append(read_out.view(*part.shape[:2], -1))  # (B, q, D)
+            covered.append(chosen.any(dim=-1))  # (B, q)
+        occupied = cells.present & torch.cat(covered, dim=1)  # (B, Q)
+        values = functional.normalize(
+            self.norm(torch.cat(attended, dim=1)), dim=-1
         )  # (B, Q, D)
-        values = functional.normalize(self.norm(attended), dim=-1)  # (B, Q, D)
         return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset)

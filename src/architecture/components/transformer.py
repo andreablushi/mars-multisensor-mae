@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from torch import Tensor, nn
 
+# B = batch, N = tokens, D = token channels.
+
 
 class Transformer(nn.Module):
     """Pre-norm transformer blocks stacked, normalised once more at the end."""
@@ -17,7 +19,6 @@ class Transformer(nn.Module):
             depth: How many blocks are stacked.
         """
         super().__init__()
-        # Build pre-norm encoder layer with GELU activation and 4x MLP expansion
         block = nn.TransformerEncoderLayer(
             dim,
             heads,
@@ -27,7 +28,6 @@ class Transformer(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        # Stack depth layers followed by a final LayerNorm wrapper
         self.blocks = nn.TransformerEncoder(
             block, depth, norm=nn.LayerNorm(dim), enable_nested_tensor=False
         )
@@ -46,5 +46,4 @@ class Transformer(nn.Module):
         padding = ~attended  # (B, N)
         # Unmask wholly empty sequences to keep the soft-max from going nan
         padding[padding.all(dim=1)] = False
-        # Execute encoder stack using key padding mask
         return self.blocks(tokens, src_key_padding_mask=padding)  # (B, N, D)

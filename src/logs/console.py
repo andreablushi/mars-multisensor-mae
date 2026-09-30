@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from rich.logging import RichHandler
 
-
-def rich_logger(name: str) -> logging.Logger:
-    """Return a logger writing through rich, the root set up once for every one.
+def console_logger(name: str) -> logging.Logger:
+    """Return a logger writing to the console.
 
     Args:
         name: Whose logger, which is the module's own name.
@@ -18,8 +16,6 @@ def rich_logger(name: str) -> logging.Logger:
     """
     logging.basicConfig(
         level=logging.INFO,
-        format="%(message)s",
-        datefmt="[%X]",
-        handlers=[RichHandler(rich_tracebacks=True)],
+        format="%(levelname)s %(name)s: %(message)s",
     )
     return logging.getLogger(name)

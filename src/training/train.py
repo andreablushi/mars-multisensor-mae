@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from itertools import islice
+from itertools import chain, islice, repeat
 from pathlib import Path
 
 import torch
@@ -14,31 +14,18 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
-from config.paths import REPO_ROOT
-from logs.console import rich_logger
+from configs.paths import REPO_ROOT
+from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
 from training.loss import csmae_loss
-from training.masking import masked_reconstruction
+from training.step import masked_reconstruction
 from training.validate import validation_terms
 
 BEST_CHECKPOINT = "best.pt"
 
-log = rich_logger(__name__)
-
-
-def endless(loader: DataLoader):
-    """Yield the loader's batches over and over, so a run is counted in steps.
-
-    Args:
-        loader: The split to read, in batches.
-
-    Yields:
-        batch: What one step reads, the loader started again once it runs out.
-    """
-    while True:
-        yield from loader
+log = console_logger(__name__)
 
 
 def train(
@@ -46,6 +33,7 @@ def train(
     training: DataLoader,
     validation: DataLoader,
     max_steps: int,
+    accumulate: int,
     learning_rate: float,
     weight_decay: float,
     warmup_steps: int,
@@ -64,6 +52,7 @@ def train(
         training: The training split, in batches.
         validation: The validation split, in batches.
         max_steps: How many steps the run takes, at most.
+        accumulate: How many batches one step adds its gradients over.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -78,70 +67,74 @@ def train(
     Returns:
         best: The checkpoint with the lowest validation loss.
     """
-    # Configure AdamW optimizer with custom hyperparameters
+    # Biases, norms and learned vectors are not decayed, as MAE leaves them
+    decayed = [one for one in model.parameters() if one.ndim > 1]
+    kept = [one for one in model.parameters() if one.ndim <= 1]
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
         lr=learning_rate,
         weight_decay=weight_decay,
         betas=(0.9, 0.95),
     )
 
-    # Schedule function: linear warmup followed by cosine decay
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:
-            return step / max(warmup_steps, 1)  # Warmup phase
+            return (step + 1) / warmup_steps
         progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))  # Cosine decay phase
+        return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     stopping = EarlyStopping(patience)
-    # Deterministic seed generator
     generator = torch.Generator(device=device).manual_seed(seed)
     best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
     started = time.perf_counter()
-    step, best_step = 0, -1
-    model.train()  # Enable training mode
-    ready = time.perf_counter()
-    for batch, cells, _ in islice(endless(training), max_steps):
-        arrived = time.perf_counter()
-        waited = arrived - ready
-        batch, reconstruction = masked_reconstruction(
-            model, batch, cells, mask_ratio, generator, device
-        )
-        # Compute cross-sensor MAE loss terms
-        terms = csmae_loss(reconstruction, batch)
-        # Backpropagation pass
+    batches = chain.from_iterable(repeat(training))
+    best_step = -1
+    model.train()
+    for step in range(1, max_steps + 1):
+        began = time.perf_counter()
+        waited = 0.0
+        measured = []
         optimizer.zero_grad()
-        terms["loss"].backward()
+        ready = time.perf_counter()
+        for batch, cells, _ in islice(batches, accumulate):
+            waited += time.perf_counter() - ready
+            batch, reconstruction = masked_reconstruction(
+                model, batch, cells, mask_ratio, generator, device
+            )
+            terms = csmae_loss(reconstruction, batch)
+            (terms["loss"] / accumulate).backward()
+            measured.append({name: value.detach() for name, value in terms.items()})
+            ready = time.perf_counter()
+        # A term an instrument missed in one batch is averaged over the others
+        terms = {
+            name: torch.stack([one[name] for one in measured]).nanmean()
+            for name in measured[0]
+        }
         # Stabilize training against exploding gradients
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         scheduler.step()
-        step += 1
-        log_step(run, step, terms)  # Log step-level metrics to experiment tracker
-        ready = time.perf_counter()
+        log_step(run, step, terms)
         log.info(
             "step %d waited %.1f s for data, computed in %.1f s",
             step,
             waited,
-            ready - arrived,
+            time.perf_counter() - began - waited,
         )
-        if step % validate_every:
+        # The last step is validated too, so a short run still leaves a checkpoint
+        if step % validate_every and step < max_steps:
             continue
         metrics = validation_terms(model, validation, mask_ratio, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
-        ready = time.perf_counter()
-        # Track early stopping and persist best model weights
         if stopping.improved(metrics["loss"]):
             save_checkpoint(best, model, optimizer, step)
             best_step = step
-        # Check early stopping patience trigger
         if stopping.stopped:
             log.info("no lower validation loss for %d validations, stopping", patience)
             break
-    # Record final run summary metadata
     log_summary(
         run,
         {

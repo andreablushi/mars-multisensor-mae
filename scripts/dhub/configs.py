@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from config.paths import CONFIGS_ROOT
+from configs.paths import CONFIGS_ROOT
 
 PLATFORM_CONFIG_PATH = CONFIGS_ROOT / "digitalhub.yaml"
 
@@ -19,11 +19,12 @@ class Platform:
 
     Attributes:
         project: The project every run and every published model belongs to.
-        repository: The repository the platform clones to build the image.
+        repository: The repository the platform clones when a job starts.
         source_root: Where that clone lands on the job.
-        python_version: The interpreter the image is built on.
-        image_extras: What the platform itself asks for, beyond the training.
+        python_version: The interpreter a job runs on.
+        base_image: The platform's own base image a job runs on.
         resources: What each stage asks for: profile, cores, GPU, memory and disk.
+        volume: The persistent volume the ready tiles are kept on: name, path, size.
         functions: The function each stage is registered as, by stage.
         publishes: What each stage publishes, by the name a read asks for.
     """
@@ -32,8 +33,9 @@ class Platform:
     repository: str
     source_root: str
     python_version: str
-    image_extras: list[str]
+    base_image: str
     resources: dict[str, dict[str, str]]
+    volume: dict[str, str]
     functions: dict[str, str]
     publishes: dict[str, str]
 

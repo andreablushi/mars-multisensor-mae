@@ -10,9 +10,10 @@ from sklearn.metrics import silhouette_samples
 from torch import Tensor
 from umap import UMAP
 
-from architecture.models import TileGrid
+from architecture.grid import TileGrid
 
 TOP_K = (1, 5, 10, 20)
+PAIR_BATCH = 4
 
 
 def chamfer_distances(
@@ -28,23 +29,18 @@ def chamfer_distances(
 
     Args:
         grids: One grid per tile, in the order the distances are wanted.
-        minimal_chamfer_cell_distance: How far, in cells along either axis, a
+        minimal_chamfer_cell_distance: How far, in cells along any axis, a
             cell may be matched from its own offset, or None to match it anywhere
             in the other tile.
 
     Returns:
         distances: The distance between every pair of tiles, in [0, 1]. (T, T)
-
-    Raises:
-        ValueError: When a tile holds no occupied cell to be measured over.
     """
     counts = torch.tensor([int(one.occupied.sum()) for one in grids])  # (T,)
-    if not counts.all():
-        raise ValueError("a tile holding no occupied cell cannot be measured")
     device = grids[0].values.device
     width = int(counts.max())
     values = grids[0].values.new_zeros(len(grids), width, grids[0].values.shape[-1])
-    offsets = values.new_zeros(len(grids), width, 2)
+    offsets = values.new_zeros(len(grids), width, 3)
     for at, grid in enumerate(grids):
         values[at, : counts[at]] = grid.values[grid.occupied]
         offsets[at, : counts[at]] = grid.offset[grid.occupied].to(values.dtype)
@@ -53,26 +49,26 @@ def chamfer_distances(
     distances = values.new_zeros(len(grids), len(grids))
     # Both ways round are the same sum, so only a tile against those after it is read.
     for at in range(len(grids)):
-        rest = slice(at, len(grids))
-        cost = (
-            1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
-        ) / 2  # (R, W, W)
-        matched = held[at].view(1, -1, 1) & held[rest].unsqueeze(1)  # (R, W, W)
-        if minimal_chamfer_cell_distance is not None:
-            # Taken an axis at a time, so no difference is held for both at once.
-            here, there = offsets[at].unbind(-1), offsets[rest].unbind(-1)
-            east = (here[0].view(1, -1, 1) - there[0].unsqueeze(1)).abs()
-            north = (here[1].view(1, -1, 1) - there[1].unsqueeze(1)).abs()
-            matched &= (
-                torch.maximum(east, north) <= minimal_chamfer_cell_distance
-            )  # (R, W, W)
-        cost.masked_fill_(matched.logical_not_(), torch.inf)
-        forward = cost.amin(dim=2).nan_to_num(posinf=1.0)  # (R, W)
-        backward = cost.amin(dim=1).nan_to_num(posinf=1.0)  # (R, W)
-        distances[at, rest] = (
-            (forward * held[at]).sum(-1) / counted[at]
-            + (backward * held[rest]).sum(-1) / counted[rest]
-        ) / 2
+        for start in range(at, len(grids), PAIR_BATCH):
+            rest = slice(start, min(start + PAIR_BATCH, len(grids)))
+            cost = (
+                1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
+            ) / 2  # (R, W, W)
+            matched = held[at].view(1, -1, 1) & held[rest].unsqueeze(1)
+            if minimal_chamfer_cell_distance is not None:
+                for axis in range(3):
+                    apart = (
+                        offsets[at, :, axis][None, :, None]
+                        - offsets[rest, :, axis][:, None]
+                    ).abs()
+                    matched &= apart <= minimal_chamfer_cell_distance
+            cost.masked_fill_(~matched, torch.inf)
+            forward = cost.amin(dim=2).nan_to_num(posinf=1.0)
+            backward = cost.amin(dim=1).nan_to_num(posinf=1.0)
+            distances[at, rest] = (
+                (forward * held[at]).sum(-1) / counted[at]
+                + (backward * held[rest]).sum(-1) / counted[rest]
+            ) / 2
     return (distances + distances.T).fill_diagonal_(0.0)
 
 
@@ -93,7 +89,7 @@ def retrieval_by_tile(
     # A tile is never its own neighbour, so its own column is put out of reach.
     ranked = np.argsort(np.where(itself, np.inf, distances), axis=1)[:, :-1]  # (T, T-1)
     relevant = held[ranked] == held[:, None]  # (T, T-1)
-    total = np.maximum(relevant.sum(axis=1), 1)  # (T,)
+    total = relevant.sum(axis=1)  # (T,)
     scores = {}
     for k in TOP_K:
         taken = relevant[:, :k]  # (T, k)

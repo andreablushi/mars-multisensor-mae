@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
 from training.loss import csmae_loss
-from training.masking import masked_reconstruction
+from training.step import masked_reconstruction
 
 
 def validation_terms(
@@ -29,24 +29,20 @@ def validation_terms(
         device: Where the model runs.
 
     Returns:
-        metrics: Every loss term averaged over the batches, on the same mask.
+        metrics: Every loss term averaged over the batches it was measured in.
     """
-    model.eval()  # Switch model to evaluation mode (disables dropout/batchnorm updates)
-    # Seed generator for reproducible evaluation masks
+    model.eval()
     generator = torch.Generator(device=device).manual_seed(seed)
-    totals = defaultdict(float)  # Accumulate loss components across batches
-    batches = 0
-    # Disable gradient calculation to save memory and speed up processing
+    totals = defaultdict(float)
+    counts = defaultdict(int)
     with torch.no_grad():
         for batch, cells, _ in loader:
             batch, reconstruction = masked_reconstruction(
                 model, batch, cells, mask_ratio, generator, device
             )
-            # Compute loss metrics on the masked batch
             terms = csmae_loss(reconstruction, batch)
-            # Sum each individual loss term for batch averaging later
             for name, value in terms.items():
-                totals[name] += float(value)
-            batches += 1
-    # Return averaged dictionary of all evaluation loss components
-    return {name: value / max(batches, 1) for name, value in totals.items()}
+                if not value.isnan():
+                    totals[name] += float(value)
+                    counts[name] += 1
+    return {name: totals[name] / counts[name] for name in totals}

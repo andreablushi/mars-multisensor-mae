@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from config.paths import CONFIGS_ROOT
-from config.schema import Config
+from configs.paths import CONFIGS_ROOT
+from configs.schema import Config
 
 
 def load_config(overrides: Sequence[str] = ()) -> Config:

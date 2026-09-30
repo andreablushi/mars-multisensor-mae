@@ -6,15 +6,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
-from architecture.components.crossattention_fusion import (
-    CrossAttentionFusion,
-    cell_positions,
-)
+from architecture.components.crossattention_fusion import CrossAttentionFusion
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.models import Cells, TileGrid, Tokens
+from architecture.grid import Cells, TileGrid
+from architecture.tokens import Tokens
+
+# B = batch, K = patches, Q = cells, D = token channels, P = patch dimensions.
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,11 +24,9 @@ class Reconstruction:
 
     Attributes:
         predictions: The predicted patches, by the sensor asked and the sensor read.
-        grids: The grid each instrument alone was read into, keyed as ODE names it.
     """
 
     predictions: dict[tuple[str, str], Tensor]
-    grids: dict[str, TileGrid]
 
 
 class CrossSensorMAE(nn.Module):
@@ -37,6 +36,7 @@ class CrossSensorMAE(nn.Module):
         self,
         shapes: dict[str, tuple[int, ...]],
         axes: dict[str, tuple[str, ...]],
+        centres_nm: dict[str, tuple[float, ...] | None],
         strides: dict[str, float],
         encoder_dim: int,
         encoder_heads: int,
@@ -52,6 +52,7 @@ class CrossSensorMAE(nn.Module):
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
             axes: What each axis of those patches holds, keyed the same way.
+            centres_nm: The wavelength of each channel, in nm, or None without one.
             strides: How far apart two neighbouring patch centres sit, in metres.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder and the fusion run.
@@ -63,12 +64,12 @@ class CrossSensorMAE(nn.Module):
             cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         """
         super().__init__()
-        # Sensor-specific input projection stems and positional/modality encoders
         self.encoders = nn.ModuleDict(
             {
                 name: Encoder(
                     shape,
                     axes[name],
+                    centres_nm[name],
                     encoder_dim,
                     encoder_heads,
                     encoder_depth,
@@ -77,18 +78,15 @@ class CrossSensorMAE(nn.Module):
                 for name, shape in shapes.items()
             }
         )
-        # Shared backbone projecting all sensor tokens into a common space
         self.crossencoder = CrossSensorEncoder(
             encoder_dim, encoder_heads, crossencoder_depth
         )
         # The one place the instruments meet, each cell read from what reaches it
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
-        # Sensor-specific reconstruction heads for target patch recovery
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
                     shape,
-                    axes[name],
                     encoder_dim,
                     decoder_dim,
                     decoder_heads,
@@ -120,7 +118,6 @@ class CrossSensorMAE(nn.Module):
                     tokens.values.shape[0], 0, self.dim
                 )  # (B, 0, D)
                 continue
-            # Process through sensor-specific stem then map to shared latent space
             stem = self.encoders[name](
                 tokens.values,
                 tokens.valid,
@@ -168,7 +165,6 @@ class CrossSensorMAE(nn.Module):
         Returns:
             grid: One vector per cell, over every present patch, none hidden.
         """
-        # Extract fully unmasked representations across all present batch sensors
         counted = {name: one.present for name, one in batch.items()}
         encoded = self.shared_tokens(batch, counted)
         return self.gridded(encoded, batch, counted, cells, list(batch))
@@ -181,27 +177,29 @@ class CrossSensorMAE(nn.Module):
             cells: The cells the batch's patches reach.
 
         Returns:
-            reconstruction: The predictions and the grids they were read from.
+            reconstruction: The predictions made from each instrument's grid.
         """
-        # Encode visible (unmasked) context tokens for each sensor
         counted = {name: one.visible for name, one in batch.items()}
         encoded = self.shared_tokens(batch, counted)
         # The grid each instrument makes alone, which is all a decoder ever reads
         grids = {
             name: self.gridded(encoded, batch, counted, cells, [name]) for name in batch
         }
-        placed = cell_positions(cells.offset, self.fusion.cell_m)  # (B, Q, 6)
+        placed = cells.position  # (B, Q, 6)
         predictions = {}
         # Every patch is predicted from the cells one instrument alone was read into,
         # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
             hidden = tokens.present & ~tokens.visible  # (B, K)
             for read in batch:
-                predictions[asked, read] = self.decoders[asked](
+                # Recomputed on the way back, so only one decoder pass is held at once
+                predictions[asked, read] = checkpoint(
+                    self.decoders[asked],
                     grids[read].values,
                     placed,
                     grids[read].occupied,
                     tokens.position,
                     hidden,
+                    use_reentrant=False,
                 )  # (B, K, *P)
-        return Reconstruction(predictions, grids)
+        return Reconstruction(predictions)

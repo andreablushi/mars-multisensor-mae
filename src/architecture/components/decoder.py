@@ -1,4 +1,4 @@
-"""Writing a sensor's hidden patches back out of tokens, whichever sensor read them."""
+"""Writing a sensor's hidden patches back out of the cells around them."""
 
 from __future__ import annotations
 
@@ -7,30 +7,35 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.channels import channel_axis, channel_vectors
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.components.transformer import Transformer
+from architecture.grid import covering_indices, overlapping_boxes
+
+# B = batch, C = cells, K = target patches, N = hidden patches, M = window cells,
+# D = token channels, P = patch dimensions.
+
+PATCHES = 1024
+
+REACH = 3.0
 
 
 class Decoder(nn.Module):
-    """Attend over the tokens read and one stand-in per patch asked for, then write it.
+    """Let each hidden patch attend over the cells around it, then write it.
+
+    A patch reads the occupied cells within one patch of its own size on every
+    side, each placed by where it sits against the patch.
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
-        at: Which axis the channels run along, or None where a patch holds one.
-        ground: The shape of one channel of it.
-        expand: From the shared width up to the decoder width.
+        expand: From the shared width up to the decoder width, at unit scale.
         mask: The token standing in for a hidden patch. (D')
-        place: The positional encoding.
-        blocks: The transformer.
-        channel: What each channel of this instrument is, one vector each. (C, D')
-        predict: From a channel's token to its ground samples, shared by all.
+        place: The positional encoding of a cell's offset from the patch.
+        blocks: The transformer, from the patch to its cells.
+        predict: From a token to every sample of its patch.
     """
 
     def __init__(
         self,
         shape: tuple[int, ...],
-        axes: tuple[str, ...],
         shared: int,
         dim: int,
         heads: int,
@@ -41,7 +46,6 @@ class Decoder(nn.Module):
 
         Args:
             shape: The shape of one patch of the instrument.
-            axes: What each of its axes holds, in that same order.
             shared: The width the cross-sensor encoder hands tokens at.
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
@@ -50,22 +54,23 @@ class Decoder(nn.Module):
         """
         super().__init__()
         self.shape = shape
-        self.at = channel_axis(axes)
-        # Isolate spatial dimensions excluding the channel axis
-        self.ground = tuple(size for at, size in enumerate(shape) if at != self.at)
-        # One vector per channel, since every crop is laid out on the one fixed grid
-        self.channel = channel_vectors(shape, self.at, dim)  # (C, D')
-        # Project the cross-sensor encoder width up to the decoder width
-        self.expand = nn.Linear(shared, dim)
-        # Initialize learnable mask token used as a placeholder for hidden patches
+        self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         nn.init.normal_(self.mask, std=0.02)
-        # Continuous geospatial positional encodings
         self.place = PositionalEncoding(dim, stride)
-        # Decoder Transformer stack for cross-token self-attention
-        self.blocks = Transformer(dim, heads, depth)
-        # Map a token back to one channel's flattened ground samples
-        self.predict = nn.Linear(dim, math.prod(self.ground))
+        block = nn.TransformerDecoderLayer(
+            dim,
+            heads,
+            4 * dim,
+            dropout=0.0,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.blocks = nn.TransformerDecoder(block, depth, norm=nn.LayerNorm(dim))
+        self.predict = nn.Linear(dim, math.prod(shape))
+        nn.init.zeros_(self.predict.weight)
+        nn.init.zeros_(self.predict.bias)
 
     def forward(
         self,
@@ -78,32 +83,43 @@ class Decoder(nn.Module):
         """Return the predicted values of the hidden patches.
 
         Args:
-            context: The shared tokens the prediction reads, of any sensor. (B, C, D)
+            context: The cells the prediction reads, of any sensor. (B, C, D)
             context_position: Where each sits and reaches, in metres. (B, C, 6)
-            context_visible: Which of them the encoder read. (B, C)
+            context_visible: Which of them hold anything. (B, C)
             position: Where each patch asked for sits and reaches, in metres. (B, K, 6)
             hidden: Which of them to predict. (B, K)
 
         Returns:
             prediction: One patch per slot, meaningful where hidden. (B, K, *P)
         """
-        # Guard clause for empty target inputs
-        if position.shape[1] == 0:
-            return position.new_zeros(position.shape[0], 0, *self.shape)  # (B, 0, *P)
-        # Project visible encoder context tokens and inject spatial coordinates
-        read = self.expand(context) + self.place(context_position)  # (B, C, D')
-        # Broadcast mask token across target queries and inject spatial coordinates
-        asked = self.mask + self.place(position)  # (B, K, D')
-        # Concatenate context tokens and target mask queries into a unified sequence
-        sequence = torch.cat([read, asked], dim=1)  # (B, C + K, D')
-        attended = torch.cat([context_visible, hidden], dim=1)  # (B, C + K)
-        # Run combined sequence through Transformer blocks
-        decoded = self.blocks(sequence, attended)  # (B, C + K, D')
-        # Slice reconstructed query tokens and spread each into its own channels
-        held = decoded[:, read.shape[1] :].unsqueeze(2) + self.channel  # (B, K, C, D')
-        # Write the tokens out as samples and unflatten to the patch shape
-        spread = self.predict(held).unflatten(-1, self.ground)  # (B, K, C, *ground)
-        # Move the channel axis back where the patch holds it
-        if self.at is None:
-            return spread.squeeze(2)  # (B, K, *P)
-        return spread.movedim(2, 2 + self.at)  # (B, K, *P)
+        prediction = position.new_zeros(*position.shape[:2], *self.shape)
+        batch, slot = hidden.nonzero(as_tuple=True)  # (N,), (N,)
+        if not len(batch):
+            return prediction  # (B, K, *P)
+        cells = self.expand(context)  # (B, C, D')
+        asked = position[batch, slot]  # (N, 6)
+        # A patch's window is its own box, every span tripled
+        window = torch.cat([asked[:, :3], asked[:, 3:] * REACH], dim=-1)  # (N, 6)
+        written = []
+        for part, placed in zip(
+            batch.split(PATCHES), window.split(PATCHES), strict=True
+        ):
+            near = (
+                overlapping_boxes(placed[:, None], context_position[part], 3)
+                & context_visible[part]
+            )  # (n, C)
+            at, chosen, ignored = covering_indices(near, cells.dtype)  # (n, M)
+            around = context_position[part[:, None], at]  # (n, M, 6)
+            offset = torch.cat(
+                [around[..., :3] - placed[:, None, :3], around[..., 3:]], dim=-1
+            )  # (n, M, 6)
+            read = cells[part[:, None], at] + self.place(offset)  # (n, M, D')
+            # A window holding no cell reads zeros, so it writes a learned constant
+            read = read * chosen.unsqueeze(-1)  # (n, M, D')
+            query = self.mask.expand(len(part), 1, -1)  # (n, 1, D')
+            decoded = self.blocks(query, read, memory_key_padding_mask=ignored)
+            written.append(self.predict(decoded[:, 0]))  # (n, prod P)
+        prediction[batch, slot] = (
+            torch.cat(written).unflatten(-1, self.shape).to(prediction.dtype)
+        )
+        return prediction  # (B, K, *P)

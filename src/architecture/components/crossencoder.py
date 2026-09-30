@@ -6,6 +6,8 @@ from torch import Tensor, nn
 
 from architecture.components.transformer import Transformer
 
+# B = batch, K = patches, D = token channels.
+
 
 class CrossSensorEncoder(nn.Module):
     """Attend over one sensor's tokens alone, on weights shared with every other.
@@ -23,7 +25,6 @@ class CrossSensorEncoder(nn.Module):
             depth: How many blocks are stacked.
         """
         super().__init__()
-        # Shared Transformer encoder stack operating across all sensor modalities
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(self, tokens: Tensor, visible: Tensor) -> Tensor:

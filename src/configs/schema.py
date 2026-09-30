@@ -63,7 +63,8 @@ class TrainingConfig:
 
     Attributes:
         max_steps: How many steps the run takes, at most.
-        batch_size: How many tiles one step reads.
+        batch_size: How many tiles one pass reads.
+        accumulate: How many passes one step adds its gradients over.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -75,6 +76,7 @@ class TrainingConfig:
 
     max_steps: int
     batch_size: int
+    accumulate: int
     learning_rate: float
     weight_decay: float
     warmup_steps: int
@@ -90,13 +92,15 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        minimal_chamfer_cell_distance: How far, in cells along either axis, a
+        minimal_chamfer_cell_distance: How far, in cells along any axis, a
             cell may be matched from its own offset, or None to match it anywhere
             in the other tile.
+        delay_window: The first and last delay cell kept, counted from the surface.
     """
 
     build: str
     minimal_chamfer_cell_distance: int | None
+    delay_window: tuple[int, int]
 
 
 @dataclass
