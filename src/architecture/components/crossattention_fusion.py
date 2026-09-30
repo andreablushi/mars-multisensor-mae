@@ -1,4 +1,4 @@
-"""Reading volume cells from the sensor patches covering them."""
+"""Reading cells from the sensor patches covering them."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ CELLS = 4096
 
 
 class CrossAttentionFusion(nn.Module):
-    """Read each volume cell from the patches covering it, and nothing else.
+    """Read each cell from the patches covering it, and nothing else.
 
     A cell no counted patch covers is left empty.
 
@@ -57,7 +57,7 @@ class CrossAttentionFusion(nn.Module):
             tokens: Each instrument's tokens from the cross-sensor encoder. (B, K, D)
             position: Where each of its patches sits and reaches, in metres. (B, K, 6)
             counted: Which of its tokens count: visible while training, else present.
-            cells: Sparse training cells or the full evaluation volume.
+            cells: The cells the batch's patches reach.
             read: Which instruments this grid is built from.
 
         Returns:
@@ -75,7 +75,7 @@ class CrossAttentionFusion(nn.Module):
                 placed,
             )
         attended, covered = [], []
-        # Cells are read a chunk at a time, so a whole evaluation volume fits
+        # Cells are read a chunk at a time, so a tile's cells fit in memory
         for part in placed.split(CELLS, dim=1):
             reaching = (
                 overlapping_boxes(part[:, :, None], where[:, None], 3) & taken[:, None]

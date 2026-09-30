@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 def read_surface_delays(
     build: DatasetBuild, observations: Sequence[ObservationMetadata]
-) -> tuple[np.ndarray, dict]:
+) -> np.ndarray:
     """Return the row every sample of the delay instrument sounds at, over a tile.
 
     Args:
@@ -30,7 +30,6 @@ def read_surface_delays(
 
     Returns:
         delays: One row per sample: north, east and the delay row. (N, 3)
-        described: What the build wrote beside the last of them, which places the tile.
     """
     placed = []
     for record in observations:
@@ -43,8 +42,7 @@ def read_surface_delays(
         placed.append(
             np.stack([north[measured], east[measured], rows[measured]], axis=1)
         )  # (n, 3)
-    delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
-    return delays, observation.described
+    return np.concatenate(placed).astype(np.float64)  # (N, 3)
 
 
 def read_tile_patches(

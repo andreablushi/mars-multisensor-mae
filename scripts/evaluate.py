@@ -112,7 +112,6 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
             token_batch_padding,
             cell_m=config.model.cell_m,
             delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
-            full_grid=True,
         ),
     )
     steps = load_checkpoint(checkpoint, model)

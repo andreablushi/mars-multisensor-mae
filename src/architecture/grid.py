@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 TOUCH = 1e-2
 
-# B = batch, Q = volume cells, D = feature channels.
+# B = batch, Q = cells, D = feature channels.
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,18 +111,16 @@ def covering_indices(
 
 
 def tile_cells(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]],
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
     cell_m: float,
     delay_rows: int,
-    full_grid: bool = False,
 ) -> Cells:
-    """Return patch cells or the complete volume of each tile in a batch.
+    """Return the cells the patches of each tile in a batch reach.
 
     Args:
-        samples: The patch arrays, identity and optional metre bounds of each tile.
+        samples: The patch arrays and identity of each tile.
         cell_m: How far a cell runs along either ground axis, in metres.
         delay_rows: How many radar delay rows a cell spans.
-        full_grid: Whether to fill every cell within each tile's bounds.
 
     Returns:
         cells: The tile cells, padded across the batch.
@@ -130,17 +128,12 @@ def tile_cells(
     reached = []
     depth_cells = (sharad.DELAY_ROWS + delay_rows - 1) // delay_rows
     size = np.array([cell_m, cell_m, delay_rows])
-    for sample, _, bounds in samples:
-        if full_grid:
-            low = np.floor(bounds[0] / cell_m).astype(np.int64)
-            high = np.floor(bounds[1] / cell_m).astype(np.int64)
-            corners = [((low[0], low[1], 0), (high[0], high[1], depth_cells - 1))]
-        else:
-            placed = np.concatenate([held["position"] for held in sample.values()])
-            reach = placed[:, 3:] / 2 - TOUCH * np.minimum(placed[:, 3:], size)
-            low = np.floor((placed[:, :3] - reach) / size)
-            high = np.ceil((placed[:, :3] + reach) / size) - 1
-            corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
+    for sample, _ in samples:
+        placed = np.concatenate([held["position"] for held in sample.values()])
+        reach = placed[:, 3:] / 2 - TOUCH * np.minimum(placed[:, 3:], size)
+        low = np.floor((placed[:, :3] - reach) / size)
+        high = np.ceil((placed[:, :3] + reach) / size) - 1
+        corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
         spread = [
             np.stack(
                 np.meshgrid(

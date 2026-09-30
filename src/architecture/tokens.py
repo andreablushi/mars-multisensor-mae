@@ -58,27 +58,25 @@ class Tokens:
 
 
 def token_batch_padding(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray | None]],
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
     cell_m: float,
     delay_rows: int,
-    full_grid: bool = False,
 ) -> tuple[dict[str, Tokens], Cells, list[str]]:
     """Return one batch of every instrument's tokens, the cells they reach, and whose.
 
     Args:
-        samples: Each tile's patch arrays, identity and optional ground bounds.
+        samples: Each tile's patch arrays and identity.
         cell_m: How far a cell runs along the ground, in metres.
         delay_rows: How many radar delay rows a cell spans.
-        full_grid: Whether to fill each tile's full volume at evaluation.
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
-        cells: Sparse training cells or full evaluation volumes.
+        cells: The cells the batch's patches reach.
         identities: The tile each read belongs to, in the batch's own order.
     """
     batch = {}
     for name in samples[0][0]:
-        held = [sample[name] for sample, _, _ in samples]
+        held = [sample[name] for sample, _ in samples]
         counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
         slots = torch.arange(int(counts.max()))  # (K,)
         padded = {
@@ -92,6 +90,6 @@ def token_batch_padding(
         batch[name] = Tokens(**padded, visible=present, present=present)
     return (
         batch,
-        tile_cells(samples, cell_m, delay_rows, full_grid),
-        [identity for _, identity, _ in samples],
+        tile_cells(samples, cell_m, delay_rows),
+        [identity for _, identity in samples],
     )

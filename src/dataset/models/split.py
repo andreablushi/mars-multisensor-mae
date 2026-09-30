@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
-from common.maths import geodesy
-from common.models.tile import Tile
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from dataset.models.patch import Patch
@@ -23,7 +21,6 @@ if TYPE_CHECKING:
 log = console_logger(__name__)
 
 READY = "ready"
-BOUNDS = "bounds"
 
 
 class DatasetSplit(Dataset):
@@ -78,9 +75,7 @@ class DatasetSplit(Dataset):
         """
         return len(self.identities)
 
-    def __getitem__(
-        self, index: int
-    ) -> tuple[dict[str, dict[str, np.ndarray]], str, np.ndarray]:
+    def __getitem__(self, index: int) -> tuple[dict[str, dict[str, np.ndarray]], str]:
         """Return what one read of a tile holds, and whose it is.
 
         Args:
@@ -89,7 +84,6 @@ class DatasetSplit(Dataset):
         Returns:
             sample: Each sensor's patches: values, valid and position.
             identity: The tile the read belongs to.
-            bounds: The local east and north limits of the tile. (2, 2)
         """
         identity = self.identities[index]
         held = self.build.root / READY / f"{identity}.npz"
@@ -97,10 +91,9 @@ class DatasetSplit(Dataset):
         sample = {}
         with np.load(io.BytesIO(data)) as arrays:
             for packed in arrays.files:
-                if packed != BOUNDS:
-                    name, key = packed.split("/")
-                    sample.setdefault(name, {})[key] = arrays[packed]
-            return sample, identity, arrays[BOUNDS]
+                name, key = packed.split("/")
+                sample.setdefault(name, {})[key] = arrays[packed]
+        return sample, identity
 
     def read_ready_tile(self, identity: str) -> bytes:
         """Return one tile cut, scaled and packed, kept under the root on the way.
@@ -109,17 +102,11 @@ class DatasetSplit(Dataset):
             identity: The tile to read.
 
         Returns:
-            data: The packed arrays of every sensor's patches and the tile's bounds.
+            data: The packed arrays of every sensor's patches.
         """
         rows = self.tiles[identity]
-        delays, described = read_surface_delays(self.build, rows[self.delay])
+        delays = read_surface_delays(self.build, rows[self.delay])
         read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
-        box = described["box"]
-        tile = Tile(described["band"], described["column"], **box)
-        lon, lat = geodesy.bbox_ring(**box, step=1.0)
-        east, north = geodesy.geodesic_forward(
-            lon, lat, tile.centre_lon, tile.centre_lat
-        )
         packed = io.BytesIO()
         np.savez_compressed(
             packed,
@@ -129,11 +116,6 @@ class DatasetSplit(Dataset):
                 for key, array in patch_arrays(
                     drawn, self.shapes[name], self.axes[name]
                 ).items()
-            },
-            **{
-                BOUNDS: np.array(
-                    [[east.min(), north.min()], [east.max(), north.max()]], np.float32
-                )
             },
         )
         self.build.keep(f"{READY}/{identity}.npz", packed.getvalue())
