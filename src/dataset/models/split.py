@@ -93,7 +93,7 @@ class DatasetSplit(Dataset):
         return sample, identity
 
     def read_ready_tile(self, identity: str) -> bytes:
-        """Return one tile cut, scaled and packed, kept under the root on the way.
+        """Return one tile cut and packed, kept under the root on the way.
 
         Args:
             identity: The tile to read.

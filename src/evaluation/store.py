@@ -20,5 +20,5 @@ def read_label_by_tile(build: DatasetBuild) -> dict[str, str]:
         classes: The class each tile earned, keyed by the tile it was drawn for.
     """
     held = build.read_table(labelled.LABELS_NAME, LABELS)
-    labels = [parquet.build(Label, row) for row in held.to_pylist()]
+    labels = [parquet.built_row(Label, row) for row in held.to_pylist()]
     return {one.tile: one.label for one in labels}

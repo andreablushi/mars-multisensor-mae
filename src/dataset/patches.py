@@ -9,14 +9,66 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import Axis
-from building.dispatcher import INSTRUMENTS
 from building.metadata.observation import ObservationMetadata
+from building.models.instrument import INSTRUMENTS
+from building.preprocessing.common import geometry, relative_positioning
+from building.preprocessing.common.models.position import Position
+from building.preprocessing.common.store import STORED
+from common.maths.geodesy import SPHEROID, PolarGrid
+from common.models.tile import Tile
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
+
+
+def metres_from_centre(
+    observation: Observation, taken: tuple[slice, ...] = ()
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return how far north and east of its tile centre every sample one cut keeps sits.
+
+    Args:
+        observation: The stored observation the cut is taken of.
+        taken: What the cut keeps of each ground axis, empty for every sample.
+
+    Returns:
+        north: The ground metres north of the centre, one per sample kept.
+        east: The ground metres east of it, in the same frame.
+    """
+    described = observation.described
+    separable = described["separable"]
+    north, east = observation.north, observation.east
+    if taken:
+        north, east = (
+            (north[taken[0]], east[taken[1]])
+            if separable
+            else (north[taken], east[taken])
+        )
+    grid = described["polar"]
+    position = Position(
+        north, east, separable, None if grid is None else PolarGrid(*grid)
+    )
+    frame = Tile(described["band"], described["column"], **described["box"])
+    northing = np.empty(position.sizes, dtype=STORED)
+    easting = np.empty(position.sizes, dtype=STORED)
+    for block in geometry.line_blocks(position.sizes):
+        lon, lat = relative_positioning.position_degrees(position, frame, block)
+        lon, lat = np.broadcast_arrays(
+            np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
+        )
+        # The geodesic each sample stands at, on the spheroid rather than a sphere.
+        azimuth, _, span = SPHEROID.inv(
+            np.full(lon.shape, frame.centre_lon),
+            np.full(lon.shape, frame.centre_lat),
+            lon,
+            lat,
+        )
+        bearing = np.radians(azimuth)
+        easting[block] = span * np.sin(bearing)
+        northing[block] = span * np.cos(bearing)
+    return northing, easting
 
 
 def read_surface_delays(
@@ -36,7 +88,7 @@ def read_surface_delays(
         # Loads specifically the delay plane, which is beside the measured values.
         observation = build.read_observation(record.path, ("delay",))
         measured = observation.measured
-        north, east = observation.distance_centre_m()
+        north, east = metres_from_centre(observation)
         rows = observation.beside["delay"]
         # Unmeasured samples have no delay row.
         placed.append(
@@ -52,7 +104,7 @@ def read_tile_patches(
     pool: Mapping[str, int],
     delays: np.ndarray,
 ) -> dict[str, list[Patch]]:
-    """Return every patch of every observation one tile holds, scaled, by instrument.
+    """Return every patch of every observation one tile holds, by instrument.
 
     Args:
         rows: The tile's index rows of each instrument, keyed as ODE names it.
@@ -79,9 +131,7 @@ def read_tile_patches(
                 if patch.valid.any():
                     if name in pool:
                         patch = downsampled_patch(patch, pool[name])
-                    held.append(
-                        scaled_patch(patch, record.value_mean, record.value_std)
-                    )
+                    held.append(patch)
         read[name] = held
     return read
 
@@ -121,8 +171,8 @@ def cut_patch(
     corners = tuple(
         slice(one.start, one.stop, one.stop - one.start - 1 or 1) for one in taken
     )
-    north, east = observation.distance_centre_m(
-        corners if observation.described["separable"] else taken
+    north, east = metres_from_centre(
+        observation, corners if observation.described["separable"] else taken
     )
     north_m, east_m = float(np.mean(north)), float(np.mean(east))
     ground_shape = tuple(
@@ -169,27 +219,6 @@ def cut_patch(
     )
 
 
-def scaled_patch(patch: Patch, mean: float, deviation: float) -> Patch:
-    """Return a patch centred and scaled, its unmeasured samples set to zero.
-
-    Args:
-        patch: The patch, as cut and pooled.
-        mean: What its values are centred on, its observation's own.
-        deviation: What they are then divided by, its observation's own.
-
-    Returns:
-        patch: The same patch, its values scaled.
-    """
-    return dataclasses.replace(
-        patch,
-        values=np.where(
-            patch.valid,
-            (patch.values.astype(np.float32) - mean) / deviation,
-            0.0,
-        ),
-    )
-
-
 def downsampled_patch(patch: Patch, factor: int) -> Patch:
     """Return a patch with every run of ground samples averaged into one.
 
@@ -213,7 +242,7 @@ def downsampled_patch(patch: Patch, factor: int) -> Patch:
     pooled = tuple(at + order + 1 for order, at in enumerate(ground))
     valid = patch.valid.reshape(split(patch.valid.shape))
     weight = np.broadcast_to(valid, split(patch.values.shape)).astype(np.float32)
-    values = np.where(weight > 0, patch.values.reshape(weight.shape), 0.0)
+    values = patch.values.reshape(weight.shape)
     return dataclasses.replace(
         patch,
         values=values.sum(axis=pooled) / np.maximum(weight.sum(axis=pooled), 1.0),

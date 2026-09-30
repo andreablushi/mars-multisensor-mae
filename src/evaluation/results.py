@@ -3,21 +3,31 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pyarrow as pa
 from common.disk import parquet
 
 RESULTS_FILE = "results.parquet"
 
-RESULTS_SCHEMA = pa.schema(
-    [
-        ("tile", pa.string()),
-        ("label", pa.string()),
-        ("distances", pa.list_(pa.float64())),
-    ]
-)
+
+@dataclass(frozen=True, slots=True)
+class TileDistances:
+    """One labelled tile, its class and its distance to every tile.
+
+    Attributes:
+        tile: The tile.
+        label: The class it earned.
+        distances: Its distance to every tile, in row order.
+    """
+
+    tile: str
+    label: str
+    distances: tuple[float, ...]
+
+
+RESULTS_SCHEMA = parquet.schema_of(TileDistances)
 
 
 def write_tile_distances(
@@ -35,12 +45,11 @@ def write_tile_distances(
         distances: The distance between every pair of tiles. (T, T)
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    parquet.write(
-        {
-            "tile": list(tiles),
-            "label": [classes[tile] for tile in tiles],
-            "distances": distances.tolist(),
-        },
+    parquet.write_rows(
+        [
+            TileDistances(tile, classes[tile], tuple(row))
+            for tile, row in zip(tiles, distances.tolist(), strict=True)
+        ],
         RESULTS_SCHEMA,
         path,
     )

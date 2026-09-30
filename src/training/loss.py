@@ -13,27 +13,24 @@ from architecture.tokens import Tokens
 def reconstruction_error(
     prediction: Tensor, values: Tensor, valid: Tensor, weight: Tensor
 ) -> Tensor:
-    """Return the share of the true patches' energy the prediction misses.
+    """Return the mean squared error over the counted patches.
 
     Args:
-        prediction: The predicted patches, on the instrument's scale. (B, K, *P)
+        prediction: The predicted patches, on the dataset's scale. (B, K, *P)
         values: The true ones, as the model was handed them. (B, K, *P)
         valid: Whether each sample is a measurement, broadcastable to them. (B, K, *P')
         weight: How much each patch counts. (B, K)
 
     Returns:
-        error: The squared error over the counted patches, against the squared
-            values of those same patches, so predicting zero scores 1. Nan where
-            none is counted.
+        error: Each counted patch's mean squared error over its measured samples,
+            averaged over the patches by weight. Nan where none is counted.
     """
     counted = valid.to(values.dtype).expand_as(values)  # (B, K, *P)
     over = tuple(range(2, values.dim()))
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - values) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    energy = (values**2 * counted).sum(dim=over) / samples  # (B, K)
     weight = weight.to(values.dtype)  # (B, K)
-    share = (error * weight).sum() / (energy * weight).sum().clamp(min=1e-6)  # ()
-    return share if weight.any() else share.new_tensor(torch.nan)
+    return (error * weight).sum() / weight.sum()  # ()
 
 
 def umr_loss(prediction: Tensor, tokens: Tokens) -> Tensor:
