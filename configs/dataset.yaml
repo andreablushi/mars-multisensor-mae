@@ -24,10 +24,6 @@ pool:
   # 128 samples at about 5 m pooled to 16 at about 40 m.
   CTX: 8
 
-# The instruments scaled by each observation's own mean and deviation, since what
-# one of their observations reads depends on how it was exposed.
-scaled_per_observation: [CTX]
-
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.95, 0.05]
 

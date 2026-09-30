@@ -7,7 +7,7 @@ import io
 import json
 import os
 from collections import defaultdict
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,7 +15,6 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 from building import paths as built
-from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
@@ -134,63 +133,6 @@ class DatasetBuild:
         for one in self.read_observation_metadata():
             standing[one.instrument].append(min(one.sample_spacing_m))
         return {name: float(np.median(held)) for name, held in standing.items()}
-
-    def read_statistics_by_instrument(
-        self, tiles: Collection[str]
-    ) -> dict[str, dict[str, np.ndarray]]:
-        """Return what each instrument's values run to, without reading one observation.
-
-        Args:
-            tiles: The tiles to pool over.
-
-        Returns:
-            statistics: Per sensor, the mean and deviation of its measurements.
-        """
-        standing: dict[str, list[tuple[np.ndarray, ...]]] = defaultdict(list)
-        axes = {}
-        for one in self.read_observation_metadata():
-            if one.tile not in tiles:
-                continue
-            # A spectral instrument is pooled a band at a time, every other whole.
-            held = (
-                (one.band_valid_count, one.band_mean, one.band_std)
-                if Axis.WAVELENGTH in one.axes
-                else (one.valid_count, one.value_mean, one.value_std)
-            )
-            # An observation measuring nothing leaves them unset, a sounder nan.
-            if any(each is None for each in held):
-                continue
-            counts, mean, deviation = (
-                np.asarray(each, dtype=np.float64) for each in held
-            )
-            # A band the observation never measured holds no mean
-            mean = np.where(counts > 0, mean, 0.0)
-            deviation = np.where(counts > 0, deviation, 0.0)
-            if not counts.sum() or not np.isfinite([mean, deviation]).all():
-                continue
-            standing[one.instrument].append((counts, mean, deviation))
-            axes[one.instrument] = one.axes
-        statistics = {}
-        for instrument, held in standing.items():
-            counts, means, deviations = (np.array(each) for each in zip(*held))
-            total = counts.sum(axis=0)
-            pooled = np.maximum(total, 1.0)
-            mean = (counts * means).sum(axis=0) / pooled
-            variance = (counts * (deviations**2 + (means - mean) ** 2)).sum(axis=0)
-            spread = [
-                -1 if holds == Axis.WAVELENGTH else 1 for holds in axes[instrument]
-            ]
-            shape = spread if total.shape else ()
-            # A band nothing ever measured leaves a patch of it where it stands.
-            statistics[instrument] = {
-                "mean": np.where(total > 0, mean, 0.0)
-                .reshape(shape)
-                .astype(np.float32),
-                "deviation": np.where(total > 0, np.sqrt(variance / pooled), 1.0)
-                .reshape(shape)
-                .astype(np.float32),
-            }
-        return statistics
 
     def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.

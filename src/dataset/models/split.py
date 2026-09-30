@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -34,8 +34,6 @@ class DatasetSplit(Dataset):
         tiles: The index rows of each sensor of each tile, keyed by tile.
         identities: The tiles, in the order the split holds them.
         axes: What each axis of each instrument's values holds.
-        statistics: What each sensor's values run to over the training split.
-        per_observation: The instruments scaled by each observation's own values.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
@@ -47,42 +45,30 @@ class DatasetSplit(Dataset):
         build: DatasetBuild,
         tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
         axes: Mapping[str, tuple[str, ...]],
-        statistics: Mapping[str, dict[str, np.ndarray]],
-        per_observation: Collection[str],
         sizes: Mapping[str, Mapping[str, int]],
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
     ) -> None:
-        """Keep what every read needs, and check every instrument can be normalised.
+        """Keep what every read needs.
 
         Args:
             build: The build the tiles are read from.
             tiles: The index rows of each sensor of each tile, keyed by tile.
             axes: What each axis of each instrument's values holds.
-            statistics: What each sensor's values run to over the training split.
-            per_observation: The instruments scaled by each observation's own values.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
-
-        Raises:
-            ValueError: When a sensor the model reads has no statistics to scale by.
         """
         self.build = build
         self.tiles = tiles
         self.identities = list(tiles)
         self.axes = axes
-        self.statistics = statistics
-        self.per_observation = per_observation
         self.sizes = sizes
         self.pool = pool
         self.shapes = shapes
         self.delay = delay
-        for name in sizes:
-            if name not in statistics:
-                raise ValueError(f"{name} has no finite statistics to normalise by")
 
     def __len__(self) -> int:
         """Return how many reads the split holds.
@@ -127,15 +113,7 @@ class DatasetSplit(Dataset):
         """
         rows = self.tiles[identity]
         delays, described = read_surface_delays(self.build, rows[self.delay])
-        read = read_tile_patches(
-            rows,
-            self.build,
-            self.sizes,
-            self.pool,
-            delays,
-            self.statistics,
-            self.per_observation,
-        )
+        read = read_tile_patches(rows, self.build, self.sizes, self.pool, delays)
         box = described["box"]
         tile = Tile(described["band"], described["column"], **box)
         lon, lat = geodesy.bbox_ring(**box, step=1.0)

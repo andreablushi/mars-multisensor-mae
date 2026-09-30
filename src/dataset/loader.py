@@ -7,7 +7,6 @@ import math
 import random
 from collections.abc import Callable, Mapping, Sequence
 
-import numpy as np
 from building.metadata.observation import ObservationMetadata
 from torch.utils.data import DataLoader
 
@@ -56,23 +55,6 @@ def split_tiles(
     return splits
 
 
-def read_training_statistics(
-    build: DatasetBuild, shares: Sequence[float], seed: int
-) -> dict[str, dict[str, np.ndarray]]:
-    """Return what each instrument's values run to over the training split alone.
-
-    Args:
-        build: The build the split is cut from.
-        shares: The share of the observations each split holds, in the code's order.
-        seed: What fixes which split a tile falls in.
-
-    Returns:
-        statistics: Per sensor, the mean and deviation of its measurements.
-    """
-    splits = split_tiles(build.read_observation_metadata_by_tile(), shares, seed)
-    return build.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
-
-
 def loaders_by_split(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
@@ -82,7 +64,6 @@ def loaders_by_split(
     shares: Sequence[float],
     seed: int,
     delay: str,
-    per_observation: Sequence[str],
     batch_size: int,
     workers: int,
 ) -> dict[str, DataLoader]:
@@ -97,7 +78,6 @@ def loaders_by_split(
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in.
         delay: The instrument whose rows give every surface patch its delay.
-        per_observation: The instruments scaled by each observation's own values.
         batch_size: How many tiles one step reads.
         workers: How many processes read tiles beside the training.
 
@@ -106,15 +86,12 @@ def loaders_by_split(
     """
     by_tile = build.read_observation_metadata_by_tile()
     splits = split_tiles(by_tile, shares, seed)
-    statistics = build.read_statistics_by_instrument(set(splits[TRAINING_SPLIT]))
     axes = build.read_axes_by_instrument()
     datasets = {
         name: DatasetSplit(
             build,
             {tile: by_tile[tile] for tile in held},
             axes,
-            statistics,
-            per_observation,
             sizes,
             pool,
             shapes,

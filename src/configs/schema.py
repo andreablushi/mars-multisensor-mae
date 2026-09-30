@@ -16,8 +16,6 @@ class DatasetConfig:
             instrument, an axis it omits taken whole.
         pool: How many ground samples of a patch are averaged into one, by
             instrument, one left out read whole.
-        scaled_per_observation: The instruments scaled by each observation's own
-            mean and deviation rather than the training split's.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -26,7 +24,6 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
-    scaled_per_observation: list[str]
     split: list[float]
     seed: int
 

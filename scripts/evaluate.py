@@ -19,7 +19,6 @@ from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from configs.paths import REPO_ROOT, RESULTS_ROOT
 from configs.schema import Config
-from dataset.loader import read_training_statistics
 from dataset.models.split import DatasetSplit
 from dataset.patches import read_patch_layout
 from dataset.store import DatasetBuild
@@ -86,14 +85,11 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         checkpoint: The checkpoint to measure, on this machine.
         project: The DigitalHub project the results are published in, or None here.
     """
-    # The model is built and normalised as the training build left it, whichever
-    # build the tiles it never read come from.
+    # The model is built as the training build left it, whichever build the tiles
+    # it never read come from.
     trained = published_build(config.dataset.build, config.dataset.root)
     model, device, sizes, shapes, _ = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
-    statistics = read_training_statistics(
-        trained, config.dataset.split, config.dataset.seed
-    )
     build = published_build(config.evaluation.build, config.dataset.root)
     classes = read_label_by_tile(build)
     by_tile = build.read_observation_metadata_by_tile()
@@ -103,8 +99,6 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
             build,
             {tile: rows for tile, rows in by_tile.items() if tile in classes},
             axes,
-            statistics,
-            config.dataset.scaled_per_observation,
             sizes,
             config.dataset.pool,
             shapes,
