@@ -18,9 +18,6 @@ from dataset.models.patch import Patch
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
-# What MOLA stores beside its heights: the radargram row each of them sounds at.
-DELAY_PLANE = "delay"
-
 
 def read_surface_delays(
     build: DatasetBuild, observations: Sequence[ObservationMetadata]
@@ -34,26 +31,19 @@ def read_surface_delays(
     Returns:
         delays: One row per sample: north, east and the delay row. (N, 3)
         described: What the build wrote beside the last of them, which places the tile.
-
-    Raises:
-        ValueError: When none of them measured anything.
     """
     placed = []
     for record in observations:
         # Loads specifically the delay plane, which is beside the measured values.
-        observation = build.read_observation(record.path, (DELAY_PLANE,))
+        observation = build.read_observation(record.path, ("delay",))
         measured = observation.measured
         north, east = observation.distance_centre_m()
-        rows = observation.beside[DELAY_PLANE]
+        rows = observation.beside["delay"]
         # Unmeasured samples have no delay row.
         placed.append(
             np.stack([north[measured], east[measured], rows[measured]], axis=1)
         )  # (n, 3)
     delays = np.concatenate(placed).astype(np.float64)  # (N, 3)
-    if not delays.size:
-        raise ValueError(
-            f"nothing measured over {[one.identifier for one in observations]}"
-        )
     return delays, observation.described
 
 
@@ -89,8 +79,6 @@ def read_tile_patches(
                 length // patch
                 for length, patch in zip(record.shape, lengths, strict=True)
             )
-            if not math.prod(counts):
-                continue
             observation = build.read_observation(record.path)
             mean, deviation = (
                 (record.value_mean, record.value_std)

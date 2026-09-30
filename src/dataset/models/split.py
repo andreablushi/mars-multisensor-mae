@@ -124,15 +124,9 @@ class DatasetSplit(Dataset):
 
         Returns:
             data: The packed arrays of every sensor's patches and the tile's bounds.
-
-        Raises:
-            ValueError: When the tile has no delay to stand on.
         """
         rows = self.tiles[identity]
-        held = rows.get(self.delay)
-        if not held:
-            raise ValueError(f"{identity} has no {self.delay} to stand on")
-        delays, described = read_surface_delays(self.build, held)
+        delays, described = read_surface_delays(self.build, rows[self.delay])
         read = read_tile_patches(
             rows,
             self.build,
