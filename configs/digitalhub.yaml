@@ -35,7 +35,7 @@ resources:
 volume:
   name: mae-tiles
   path: /volume
-  size: 270Gi
+  size: 400Gi
 
 # The function each run is registered as, the project scoping it so it needs no prefix
 functions:
