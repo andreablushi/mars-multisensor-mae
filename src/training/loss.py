@@ -30,6 +30,8 @@ def reconstruction_error(
     samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
     error = ((prediction - values) ** 2 * counted).sum(dim=over) / samples  # (B, K)
     weight = weight.to(values.dtype)  # (B, K)
+    if not weight.any():
+        return error.new_tensor(torch.nan)  # ()
     return (error * weight).sum() / weight.sum()  # ()
 
 
