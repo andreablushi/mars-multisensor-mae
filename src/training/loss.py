@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import torch
 from torch import Tensor
 
@@ -10,115 +12,98 @@ from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
 
-def reconstruction_error(
-    prediction: Tensor, values: Tensor, measured: Tensor, weight: Tensor
-) -> Tensor:
-    """Return the mean squared error over the counted patches.
+def term_weights(
+    batch: dict[str, Tokens], visible: dict[str, Tensor], hidden: dict[str, Tensor]
+) -> dict[tuple[str, str], Tensor]:
+    """Return which patches each term reconstructs, before the model reads any.
 
     Args:
-        prediction: The predicted patches, on the dataset's scale. (B, K, *P)
-        values: The true ones, as the model was handed them. (B, K, *P)
-        measured: Whether each sample is a measurement, broadcastable. (B, K, *P')
-        weight: How much each patch counts. (B, K)
+        batch: Each instrument's patches over the batch.
+        visible: Which patches each encoder reads. (B, K)
+        hidden: Which patches are predicted. (B, K)
 
     Returns:
-        error: Each counted patch's mean squared error over its measured samples,
-            averaged over the patches by weight. Nan where none is counted.
+        weights: Per instrument asked and instrument read, the hidden patches it
+            counts: all of them from itself, those another reaches from it. (B, K)
     """
-    counted = measured.to(values.dtype).expand_as(values)  # (B, K, *P)
-    over = tuple(range(2, values.dim()))
-    samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-    error = ((prediction - values) ** 2 * counted).sum(dim=over) / samples  # (B, K)
-    weight = weight.to(values.dtype)  # (B, K)
-    if not weight.any():
-        return error.new_tensor(torch.nan)  # ()
-    return (error * weight).sum() / weight.sum()  # ()
+    weights = {}
+    for asked, target in batch.items():
+        weights[asked, asked] = hidden[asked]
+        for read, source in batch.items():
+            if read == asked:
+                continue
+            spans_delay = bool((target.position[..., 5] > 0).any()) or bool(
+                (source.position[..., 5] > 0).any()
+            )
+            reaching = overlapping_boxes(
+                target.position[:, :, None],
+                source.position[:, None],
+                3 if spans_delay else 2,
+            )
+            readable = (reaching & visible[read][:, None]).any(dim=-1)  # (B, K)
+            weights[asked, read] = hidden[asked] & readable  # (B, K)
+    return weights
 
 
-def umr_loss(prediction: Tensor, tokens: Tokens, hidden: Tensor) -> Tensor:
-    """Return masked reconstruction error from the same instrument.
-
-    Args:
-        prediction: The predicted patches. (B, K, *P)
-        tokens: The instrument's patches.
-        hidden: Which of them were predicted. (B, K)
-
-    Returns:
-        error: Mean squared error over hidden measured patches.
-    """
-    return reconstruction_error(prediction, tokens.values, tokens.measured, hidden)
-
-
-def cmr_loss(
+def reconstruction_sums(
     reconstruction: Reconstruction,
     batch: dict[str, Tokens],
-    visible: dict[str, Tensor],
-    hidden: dict[str, Tensor],
-    asked: str,
-) -> Tensor:
-    """Return masked reconstruction error from the other instruments.
+    weights: Mapping[tuple[str, str], Tensor],
+) -> dict[tuple[str, str], Tensor]:
+    """Return each term's squared error, summed over the patches it counts.
 
     Args:
         reconstruction: The predictions made from each source instrument.
-        batch: The patches and masks of every instrument.
-        visible: Which patches each encoder read. (B, K)
-        hidden: Which patches were predicted. (B, K)
-        asked: The instrument whose patches are reconstructed.
+        batch: Each instrument's patches over the batch.
+        weights: The patches each term counts. (B, K)
 
     Returns:
-        error: Mean error across the other instruments that read any, else nan.
+        sums: Per term, every counted patch's mean squared error over its measured
+            samples, added up. ()
     """
-    target = batch[asked]
-    errors = []
-    for read, source in batch.items():
-        if read == asked:
-            continue
-        spans_delay = bool((target.position[..., 5] > 0).any()) or bool(
-            (source.position[..., 5] > 0).any()
-        )
-        reaching = overlapping_boxes(
-            target.position[:, :, None],
-            source.position[:, None],
-            3 if spans_delay else 2,
-        )
-        readable = (reaching & visible[read][:, None]).any(dim=-1)
-        errors.append(
-            reconstruction_error(
-                reconstruction.predictions[asked, read],
-                target.values,
-                target.measured,
-                hidden[asked] & readable,
-            )
-        )
-    return (
-        torch.stack(errors).nanmean() if errors else target.values.new_tensor(torch.nan)
-    )
+    sums = {}
+    for (asked, read), weight in weights.items():
+        tokens = batch[asked]
+        counted = tokens.measured.to(tokens.values.dtype).expand_as(tokens.values)
+        over = tuple(range(2, tokens.values.dim()))
+        samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
+        error = (reconstruction.predictions[asked, read] - tokens.values) ** 2
+        error = (error * counted).sum(dim=over) / samples  # (B, K)
+        sums[asked, read] = (error * weight.to(error.dtype)).sum()  # ()
+    return sums
 
 
-def csmae_loss(
-    reconstruction: Reconstruction,
-    batch: dict[str, Tokens],
-    visible: dict[str, Tensor],
-    hidden: dict[str, Tensor],
+def pooled_terms(
+    sums: Mapping[tuple[str, str], Tensor], counts: Mapping[tuple[str, str], float]
 ) -> dict[str, Tensor]:
     """Return the UMR and CMR terms of the objective and their sum.
 
     Args:
-        reconstruction: What the masked pass predicted.
-        batch: What it was handed.
-        visible: Which patches each encoder read. (B, K)
-        hidden: Which patches were predicted. (B, K)
+        sums: Each term's squared error summed over the patches it counts. ()
+        counts: How many patches each term counts, over every pass pooled.
 
     Returns:
-        terms: "umr/<sensor>", "cmr/<sensor>", and "loss".
+        terms: "umr/<sensor>", "cmr/<sensor>" and "loss", a term counting no patch
+            nan and left out of the loss.
     """
+    held = next(iter(sums.values()))
+    nan = torch.full((), torch.nan, device=held.device)
     terms = {}
-    total = next(iter(batch.values())).values.new_zeros(())
-    for asked, tokens in batch.items():
-        umr = umr_loss(reconstruction.predictions[asked, asked], tokens, hidden[asked])
-        cmr = cmr_loss(reconstruction, batch, visible, hidden, asked)
-        terms[f"umr/{asked}"] = umr
-        terms[f"cmr/{asked}"] = cmr
-        total = total + umr.nan_to_num() + cmr.nan_to_num()
-    terms["loss"] = total  # ()
+    loss = held.new_zeros(())
+    for asked in dict.fromkeys(asked for asked, _ in sums):
+        umr = nan
+        if counts[asked, asked]:
+            umr = sums[asked, asked] / counts[asked, asked]
+            loss = loss + umr
+        reads = [
+            sums[asked, read] / counts[asked, read]
+            for one, read in sums
+            if one == asked and read != asked and counts[asked, read]
+        ]
+        cmr = nan
+        if reads:
+            cmr = torch.stack(reads).mean()
+            loss = loss + cmr
+        terms[f"umr/{asked}"], terms[f"cmr/{asked}"] = umr, cmr
+    terms["loss"] = loss
     return terms

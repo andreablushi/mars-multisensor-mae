@@ -8,7 +8,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from training.step import reconstruction_terms
+from training.loss import pooled_terms
+from training.step import device_batch, drawn_masks, masked_sums
 
 
 def validation_terms(
@@ -28,19 +29,18 @@ def validation_terms(
         device: Where the model runs.
 
     Returns:
-        metrics: Every loss term averaged over the batches it was measured in.
+        metrics: Every loss term over the whole split, as if it were one batch.
     """
     model.eval()
     generator = torch.Generator(device=device).manual_seed(seed)
-    totals = defaultdict(float)
-    counts = defaultdict(int)
+    sums, counts = defaultdict(float), defaultdict(float)
     with torch.no_grad():
         for batch, cells, _ in loader:
-            terms = reconstruction_terms(
-                model, batch, cells, mask_ratio, generator, device
-            )
-            for name, value in terms.items():
-                if not value.isnan():
-                    totals[name] += float(value)
-                    counts[name] += 1
-    return {name: totals[name] / counts[name] for name in totals}
+            batch, cells = device_batch(batch, cells, device)
+            visible, hidden, drawn = drawn_masks(batch, mask_ratio, generator)
+            for term, count in drawn.items():
+                counts[term] += count
+            held = masked_sums(model, batch, cells, visible, hidden)
+            for term, value in held.items():
+                sums[term] += value
+    return {name: float(value) for name, value in pooled_terms(sums, counts).items()}

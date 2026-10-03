@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections import defaultdict
 from itertools import chain, islice, repeat
 from pathlib import Path
 
@@ -19,7 +20,8 @@ from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
-from training.step import reconstruction_terms
+from training.loss import pooled_terms
+from training.step import device_batch, drawn_masks, masked_sums
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -49,7 +51,8 @@ def train(
         training: The training split, in batches.
         validation: The validation split, in batches.
         max_steps: How many steps the run takes, at most.
-        accumulate: How many batches one step adds its gradients over.
+        accumulate: How many batches one step adds its gradients over, pooled
+            so the step equals one batch of all their tiles.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -90,23 +93,24 @@ def train(
     model.train()
     for step in range(1, max_steps + 1):
         began = time.perf_counter()
-        waited = 0.0
-        measured = []
+        passes = list(islice(batches, accumulate))
+        waited = time.perf_counter() - began
         optimizer.zero_grad()
-        ready = time.perf_counter()
-        for batch, cells, _ in islice(batches, accumulate):
-            waited += time.perf_counter() - ready
-            terms = reconstruction_terms(
-                model, batch, cells, mask_ratio, generator, device
-            )
-            (terms["loss"] / accumulate).backward()
-            measured.append({name: value.detach() for name, value in terms.items()})
-            ready = time.perf_counter()
-        # A term an instrument missed in one batch is averaged over the others
-        terms = {
-            name: torch.stack([one[name] for one in measured]).nanmean()
-            for name in measured[0]
-        }
+        drawn, counts = [], defaultdict(float)
+        for batch, cells, _ in passes:
+            batch, _ = device_batch(batch, cells, device)
+            visible, hidden, held = drawn_masks(batch, mask_ratio, generator)
+            drawn.append((visible, hidden))
+            for term, count in held.items():
+                counts[term] += count
+        sums = defaultdict(float)
+        for (batch, cells, _), (visible, hidden) in zip(passes, drawn, strict=True):
+            batch, cells = device_batch(batch, cells, device)
+            held = masked_sums(model, batch, cells, visible, hidden)
+            pooled_terms(held, counts)["loss"].backward()
+            for term, value in held.items():
+                sums[term] += value.detach()
+        terms = pooled_terms(sums, counts)
         # Stabilize training against exploding gradients
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
