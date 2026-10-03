@@ -35,18 +35,17 @@ def reconstruction_error(
     return (error * weight).sum() / weight.sum()  # ()
 
 
-def umr_loss(prediction: Tensor, tokens: Tokens, visible: Tensor) -> Tensor:
+def umr_loss(prediction: Tensor, tokens: Tokens, hidden: Tensor) -> Tensor:
     """Return masked reconstruction error from the same instrument.
 
     Args:
         prediction: The predicted patches. (B, K, *P)
         tokens: The instrument's patches.
-        visible: Which of them its encoder read. (B, K)
+        hidden: Which of them were predicted. (B, K)
 
     Returns:
         error: Mean squared error over hidden measured patches.
     """
-    hidden = tokens.measured_slots & ~visible
     return reconstruction_error(prediction, tokens.values, tokens.measured, hidden)
 
 
@@ -54,6 +53,7 @@ def cmr_loss(
     reconstruction: Reconstruction,
     batch: dict[str, Tokens],
     visible: dict[str, Tensor],
+    hidden: dict[str, Tensor],
     asked: str,
 ) -> Tensor:
     """Return masked reconstruction error from the other instruments.
@@ -62,13 +62,13 @@ def cmr_loss(
         reconstruction: The predictions made from each source instrument.
         batch: The patches and masks of every instrument.
         visible: Which patches each encoder read. (B, K)
+        hidden: Which patches were predicted. (B, K)
         asked: The instrument whose patches are reconstructed.
 
     Returns:
         error: Mean error across the other instruments that read any, else nan.
     """
     target = batch[asked]
-    hidden = target.measured_slots & ~visible[asked]
     errors = []
     for read, source in batch.items():
         if read == asked:
@@ -87,7 +87,7 @@ def cmr_loss(
                 reconstruction.predictions[asked, read],
                 target.values,
                 target.measured,
-                hidden & readable,
+                hidden[asked] & readable,
             )
         )
     return (
@@ -99,6 +99,7 @@ def csmae_loss(
     reconstruction: Reconstruction,
     batch: dict[str, Tokens],
     visible: dict[str, Tensor],
+    hidden: dict[str, Tensor],
 ) -> dict[str, Tensor]:
     """Return the UMR and CMR terms of the objective and their sum.
 
@@ -106,6 +107,7 @@ def csmae_loss(
         reconstruction: What the masked pass predicted.
         batch: What it was handed.
         visible: Which patches each encoder read. (B, K)
+        hidden: Which patches were predicted. (B, K)
 
     Returns:
         terms: "umr/<sensor>", "cmr/<sensor>", and "loss".
@@ -113,8 +115,8 @@ def csmae_loss(
     terms = {}
     total = next(iter(batch.values())).values.new_zeros(())
     for asked, tokens in batch.items():
-        umr = umr_loss(reconstruction.predictions[asked, asked], tokens, visible[asked])
-        cmr = cmr_loss(reconstruction, batch, visible, asked)
+        umr = umr_loss(reconstruction.predictions[asked, asked], tokens, hidden[asked])
+        cmr = cmr_loss(reconstruction, batch, visible, hidden, asked)
         terms[f"umr/{asked}"] = umr
         terms[f"cmr/{asked}"] = cmr
         total = total + umr.nan_to_num() + cmr.nan_to_num()

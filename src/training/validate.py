@@ -8,8 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from training.loss import csmae_loss
-from training.step import masked_reconstruction
+from training.step import reconstruction_terms
 
 
 def validation_terms(
@@ -37,10 +36,9 @@ def validation_terms(
     counts = defaultdict(int)
     with torch.no_grad():
         for batch, cells, _ in loader:
-            batch, visible, reconstruction = masked_reconstruction(
+            terms = reconstruction_terms(
                 model, batch, cells, mask_ratio, generator, device
             )
-            terms = csmae_loss(reconstruction, batch, visible)
             for name, value in terms.items():
                 if not value.isnan():
                     totals[name] += float(value)

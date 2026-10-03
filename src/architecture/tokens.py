@@ -21,13 +21,11 @@ class Tokens(NamedTuple):
         values: The normalised patches, zero where padded. (B, K, *P)
         measured: Whether each sample is a measurement, false over padding. (B, K, *P')
         position: The patch centre and its span, in metres. (B, K, 6)
-        measured_slots: Whether a slot holds a patch rather than padding. (B, K)
     """
 
     values: Tensor
     measured: Tensor
     position: Tensor
-    measured_slots: Tensor
 
 
 def token_batch_padding(
@@ -50,8 +48,6 @@ def token_batch_padding(
     batch = {}
     for name in samples[0][0]:
         held = [sample[name] for sample, _ in samples]
-        counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
-        slots = torch.arange(int(counts.max()))  # (K,)
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
@@ -59,8 +55,7 @@ def token_batch_padding(
             for key in held[0]
         }
         padded["values"] = padded["values"].float()
-        measured_slots = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
-        batch[name] = Tokens(**padded, measured_slots=measured_slots)
+        batch[name] = Tokens(**padded)
     return (
         batch,
         tile_cells(samples, cell_m, delay_rows),

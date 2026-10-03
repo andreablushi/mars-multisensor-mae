@@ -19,8 +19,7 @@ from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
-from training.loss import csmae_loss
-from training.step import masked_reconstruction
+from training.step import reconstruction_terms
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -97,10 +96,9 @@ def train(
         ready = time.perf_counter()
         for batch, cells, _ in islice(batches, accumulate):
             waited += time.perf_counter() - ready
-            batch, visible, reconstruction = masked_reconstruction(
+            terms = reconstruction_terms(
                 model, batch, cells, mask_ratio, generator, device
             )
-            terms = csmae_loss(reconstruction, batch, visible)
             (terms["loss"] / accumulate).backward()
             measured.append({name: value.detach() for name, value in terms.items()})
             ready = time.perf_counter()

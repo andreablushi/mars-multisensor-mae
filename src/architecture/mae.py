@@ -140,7 +140,7 @@ class CrossSensorMAE(nn.Module):
         Args:
             encoded: Each instrument's shared tokens. (B, K, D)
             batch: Each instrument's patches over the batch.
-            counted: Which of its tokens count: visible while training, else measured.
+            counted: Which of its tokens count: visible while training, else present.
             cells: The cells the batch's patches reach.
             read: Which instruments the grid is built from.
 
@@ -155,28 +155,35 @@ class CrossSensorMAE(nn.Module):
             read,
         )
 
-    def embed(self, batch: dict[str, Tokens], cells: Cells) -> TileGrid:
+    def embed(
+        self, batch: dict[str, Tokens], present: dict[str, Tensor], cells: Cells
+    ) -> TileGrid:
         """Return the grid standing for each tile, over every instrument it holds.
 
         Args:
             batch: Each instrument's patches over the batch.
+            present: Which slots hold a patch rather than padding. (B, K)
             cells: The cells the batch's patches reach.
 
         Returns:
-            grid: One vector per cell, over every measured patch, none hidden.
+            grid: One vector per cell, over every patch, none hidden.
         """
-        counted = {name: one.measured_slots for name, one in batch.items()}
-        encoded = self.shared_tokens(batch, counted)
-        return self.gridded(encoded, batch, counted, cells, list(batch))
+        encoded = self.shared_tokens(batch, present)
+        return self.gridded(encoded, batch, present, cells, list(batch))
 
     def forward(
-        self, batch: dict[str, Tokens], visible: dict[str, Tensor], cells: Cells
+        self,
+        batch: dict[str, Tokens],
+        visible: dict[str, Tensor],
+        hidden: dict[str, Tensor],
+        cells: Cells,
     ) -> Reconstruction:
         """Return every instrument's hidden patches, predicted from every instrument.
 
         Args:
             batch: Each instrument's patches over the batch.
-            visible: Which patches each encoder may read, the rest hidden. (B, K)
+            visible: Which patches each encoder may read. (B, K)
+            hidden: Which patches are predicted, none of them padding. (B, K)
             cells: The cells the batch's patches reach.
 
         Returns:
@@ -192,7 +199,6 @@ class CrossSensorMAE(nn.Module):
         # Every patch is predicted from the cells one instrument alone was read into,
         # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
-            hidden = tokens.measured_slots & ~visible[asked]  # (B, K)
             for read in batch:
                 # Recomputed on the way back, so only one decoder pass is held at once
                 predictions[asked, read] = checkpoint(
@@ -201,7 +207,7 @@ class CrossSensorMAE(nn.Module):
                     placed,
                     grids[read].occupied,
                     tokens.position,
-                    hidden,
+                    hidden[asked],
                     use_reentrant=False,
                 )  # (B, K, *P)
         return Reconstruction(predictions)
