@@ -8,7 +8,6 @@ import torch
 from torch import Tensor
 
 from architecture.grid import overlapping_boxes
-from architecture.mae import Reconstruction
 from architecture.tokens import Tokens
 
 
@@ -46,14 +45,14 @@ def term_weights(
 
 
 def reconstruction_sums(
-    reconstruction: Reconstruction,
+    predictions: Mapping[tuple[str, str], Tensor],
     batch: dict[str, Tokens],
     weights: Mapping[tuple[str, str], Tensor],
 ) -> dict[tuple[str, str], Tensor]:
     """Return each term's squared error, summed over the patches it counts.
 
     Args:
-        reconstruction: The predictions made from each source instrument.
+        predictions: The predicted patches, by the instrument asked and the one read.
         batch: Each instrument's patches over the batch.
         weights: The patches each term counts. (B, K)
 
@@ -67,7 +66,7 @@ def reconstruction_sums(
         counted = tokens.measured.to(tokens.values.dtype).expand_as(tokens.values)
         over = tuple(range(2, tokens.values.dim()))
         samples = counted.sum(dim=over).clamp(min=1)  # (B, K)
-        error = (reconstruction.predictions[asked, read] - tokens.values) ** 2
+        error = (predictions[asked, read] - tokens.values) ** 2
         error = (error * counted).sum(dim=over) / samples  # (B, K)
         sums[asked, read] = (error * weight.to(error.dtype)).sum()  # ()
     return sums

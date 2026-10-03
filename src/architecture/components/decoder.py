@@ -7,8 +7,8 @@ import math
 import torch
 from torch import Tensor, nn
 
+from architecture.components.neighbourhood import neighbourhoods
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.grid import covering_indices, overlapping_boxes
 
 # B = batch, C = cells, K = target patches, N = hidden patches, M = window cells,
 # D = token channels, P = patch dimensions.
@@ -53,11 +53,17 @@ class Decoder(nn.Module):
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
+        # The shape of one patch, which the output is unflattened to
         self.shape = shape
+        # Bring cells from the shared width to the decoder width, normalised
         self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
+        # One learned token standing in for every hidden patch
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
+        # Start the mask token small, as transformer embeddings are
         nn.init.normal_(self.mask, std=0.02)
+        # Encode a cell's offset from the patch, at the instrument's patch spacing
         self.place = PositionalEncoding(dim, stride)
+        # One pre-norm decoder block: the patch attends to itself, then to its cells
         block = nn.TransformerDecoderLayer(
             dim,
             heads,
@@ -67,8 +73,11 @@ class Decoder(nn.Module):
             batch_first=True,
             norm_first=True,
         )
+        # Stack the blocks and normalise once more at the end
         self.blocks = nn.TransformerDecoder(block, depth, norm=nn.LayerNorm(dim))
+        # Write every sample of the patch from its token
         self.predict = nn.Linear(dim, math.prod(shape))
+        # Start by predicting zero, the dataset's mean after standardisation
         nn.init.zeros_(self.predict.weight)
         nn.init.zeros_(self.predict.bias)
 
@@ -92,34 +101,44 @@ class Decoder(nn.Module):
         Returns:
             prediction: One patch per slot, meaningful where hidden. (B, K, *P)
         """
+        # Every slot starts at zero, and only hidden ones are written
         prediction = position.new_zeros(*position.shape[:2], *self.shape)
-        batch, slot = hidden.nonzero(as_tuple=True)  # (N,), (N,)
-        if not len(batch):
+        # The tile and slot of every hidden patch
+        tiles, slot = hidden.nonzero(as_tuple=True)  # (N,), (N,)
+        # With nothing hidden there is nothing to write
+        if not len(tiles):
             return prediction  # (B, K, *P)
+        # The cells at the decoder width
         cells = self.expand(context)  # (B, C, D')
-        asked = position[batch, slot]  # (N, 6)
+        # Where each hidden patch sits and reaches
+        asked = position[tiles, slot]  # (N, 6)
         # A patch's window is its own box, every span tripled
         window = torch.cat([asked[:, :3], asked[:, 3:] * REACH], dim=-1)  # (N, 6)
         written = []
-        for part, placed in zip(
-            batch.split(PATCHES), window.split(PATCHES), strict=True
+        # Read the hidden patches a chunk at a time, so their windows fit in memory
+        for rows, at, chosen, ignored in neighbourhoods(
+            window, tiles, context_position, context_visible, PATCHES
         ):
-            near = (
-                overlapping_boxes(placed[:, None], context_position[part], 3)
-                & context_visible[part]
-            )  # (n, C)
-            at, chosen, ignored = covering_indices(near, cells.dtype)  # (n, M)
-            around = context_position[part[:, None], at]  # (n, M, 6)
+            # The tile each patch of the chunk belongs to, as a column
+            tile = tiles[rows, None]  # (n, 1)
+            # Where each cell in a patch's window sits and reaches
+            around = context_position[tile, at]  # (n, M, 6)
+            # Each cell's centre relative to the patch's, beside its own spans
             offset = torch.cat(
-                [around[..., :3] - placed[:, None, :3], around[..., 3:]], dim=-1
+                [around[..., :3] - window[rows, None, :3], around[..., 3:]], dim=-1
             )  # (n, M, 6)
-            read = cells[part[:, None], at] + self.place(offset)  # (n, M, D')
+            # Each cell's vector, placed by its offset from the patch
+            read = cells[tile, at] + self.place(offset)  # (n, M, D')
             # A window holding no cell reads zeros, so it writes a learned constant
             read = read * chosen.unsqueeze(-1)  # (n, M, D')
-            query = self.mask.expand(len(part), 1, -1)  # (n, 1, D')
+            # Every hidden patch asks with the same mask token
+            query = self.mask.expand(len(tile), 1, -1)  # (n, 1, D')
+            # The patch attends over the cells of its window, padding skipped
             decoded = self.blocks(query, read, memory_key_padding_mask=ignored)
+            # Write every sample of each patch from its decoded token
             written.append(self.predict(decoded[:, 0]))  # (n, prod P)
-        prediction[batch, slot] = (
+        # Put the written patches back into their slots, in the patch's own shape
+        prediction[tiles, slot] = (
             torch.cat(written).unflatten(-1, self.shape).to(prediction.dtype)
         )
         return prediction  # (B, K, *P)

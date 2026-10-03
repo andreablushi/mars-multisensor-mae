@@ -86,7 +86,5 @@ def masked_sums(
         sums: Per instrument asked and instrument read, the summed error. ()
     """
     with torch.autocast(cells.offset.device.type, dtype=torch.bfloat16):
-        reconstruction = model(batch, visible, hidden, cells)
-    return reconstruction_sums(
-        reconstruction, batch, term_weights(batch, visible, hidden)
-    )
+        predictions = model(batch, visible, hidden, cells)
+    return reconstruction_sums(predictions, batch, term_weights(batch, visible, hidden))
