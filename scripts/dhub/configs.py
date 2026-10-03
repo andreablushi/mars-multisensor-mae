@@ -15,29 +15,24 @@ PLATFORM_CONFIG_PATH = CONFIGS_ROOT / "digitalhub.yaml"
 
 @dataclass(frozen=True, slots=True)
 class Platform:
-    """What a run submitted to DigitalHub is given, and what it publishes.
+    """What a run submitted to DigitalHub is given.
 
     Attributes:
         project: The project every run and every published model belongs to.
         repository: The repository the platform clones when a job starts.
-        source_root: Where that clone lands on the job.
         python_version: The interpreter a job runs on.
         base_image: The platform's own base image a job runs on.
-        resources: What each stage asks for: profile, cores, GPU, memory and disk.
-        volume: The persistent volume the ready tiles are kept on: name, path, size.
-        functions: The function each stage is registered as, by stage.
-        publishes: What each stage publishes, by the name a read asks for.
+        stages: What each stage is registered as and gets: function, profile and
+            resources.
+        volume: The volume a run keeps its ready tiles on, as the platform takes it.
     """
 
     project: str
     repository: str
-    source_root: str
     python_version: str
     base_image: str
-    resources: dict[str, dict[str, str]]
-    volume: dict[str, str]
-    functions: dict[str, str]
-    publishes: dict[str, str]
+    stages: dict[str, dict]
+    volume: dict
 
 
 @lru_cache(maxsize=1)
@@ -50,14 +45,7 @@ def load_platform(path: Path = PLATFORM_CONFIG_PATH) -> Platform:
     Returns:
         platform: The settled choices for the submission.
     """
-    config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    pool = "-shared" if config.pop("shared") else ""
-    asked = {
-        stage: {key: str(value) for key, value in one.items()}
-        | {"profile": f"{one['profile']}{pool}"}
-        for stage, one in config["resources"].items()
-    }
-    return Platform(**config | {"resources": asked})
+    return Platform(**yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
 def stage_workers(stage: str) -> int:
@@ -69,4 +57,4 @@ def stage_workers(stage: str) -> int:
     Returns:
         workers: Those cores, which a run here reads as a run on the platform does.
     """
-    return int(load_platform().resources[stage]["cpu"])
+    return int(load_platform().stages[stage]["resources"]["cpu"])

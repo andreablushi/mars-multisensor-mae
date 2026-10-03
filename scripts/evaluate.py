@@ -10,7 +10,7 @@ import torch
 from dhub.configs import stage_workers
 from dhub.publish import publish_results, published_name
 from dhub.store import published_build, published_checkpoint
-from dhub.submit import ran_stage
+from dhub.submit import run_stage
 from digitalhub_runtime_python import handler
 from torch.utils.data import DataLoader
 
@@ -149,6 +149,4 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        ran_stage(EVALUATION_STAGE, EVALUATION_HANDLER, run_evaluation, __doc__)
-    )
+    run_stage(EVALUATION_STAGE, EVALUATION_HANDLER, run_evaluation, __doc__)

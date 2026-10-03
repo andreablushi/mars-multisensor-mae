@@ -12,6 +12,7 @@ from configs.paths import RESULTS_ROOT, build_root
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform
+from dhub.publish import published_name
 from evaluation.results import RESULTS_FILE
 
 
@@ -25,10 +26,10 @@ def published_build(build: str, root: str) -> DatasetBuild:
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
     """
-    platform = load_platform()
-    project = dh.get_or_create_project(platform.project)
-    name = f"{platform.publishes['dataset']}-{build}"
-    published = urlparse(project.get_artifact(name).spec.path)
+    project = dh.get_or_create_project(load_platform().project)
+    published = urlparse(
+        project.get_artifact(published_name("dataset", build)).spec.path
+    )
     bucket = published.netloc
     prefix = published.path.lstrip("/").rstrip("/") + "/"
     client = dh.get_s3_client()
@@ -55,7 +56,7 @@ def published_checkpoint(name: str, destination: Path) -> Path:
     """Return where one published model landed on this machine, fetched again each time.
 
     Args:
-        name: What it was published as, or one version's key, the name meaning latest.
+        name: What it was published as, the name meaning its latest version.
         destination: The file to write it to, whose directory is made if it is missing.
 
     Returns:
@@ -74,9 +75,8 @@ def fetched_results() -> list[Path]:
         paths: One results file per run fetched, none where it was already here.
     """
     credentials.refresh()
-    platform = load_platform()
-    project = dh.get_or_create_project(platform.project)
-    prefix = f"{platform.publishes['results']}-"
+    project = dh.get_or_create_project(load_platform().project)
+    prefix = published_name("results", "")
     paths = []
     for artifact in project.list_artifacts():
         held = RESULTS_ROOT / artifact.name.removeprefix(prefix) / RESULTS_FILE

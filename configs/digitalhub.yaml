@@ -1,49 +1,32 @@
-# What a run submitted to DigitalHub is given, and what it publishes.
+# What a run submitted to DigitalHub is given.
 
 # The project every run and every published model belongs to.
 project: mars-multisensor-features
 
-# The repository the platform clones, and where that clone lands on the job.
+# The repository a job clones when it starts.
 repository: https://github.com/andreablushi/mars-multisensor-mae
-source_root: /shared
 
 # The interpreter and the platform's own base image a job runs on, which installs
 # requirements.txt from its clone with uv.
 python_version: PYTHON3_13
 base_image: python:3.13-slim
 
-# Whether every stage queues on the shared pool, which marks each profile -shared.
-shared: true
-
-# What each stage gets: the profile settles the box, its cores are also the workers.
-resources:
+# What each stage is registered as and gets: a -shared profile queues on the shared
+# pool, and the cores are also the workers reading tiles.
+stages:
   training:
-    profile: 1xrtxa5000
-    cpu: 10
-    gpu: 1
-    memory: 48Gi
-    disk: 64Gi
+    function: train-mae
+    profile: 1xrtxa5000-shared
+    resources: {cpu: "10", gpu: "1", mem: 48Gi, disk: 64Gi}
   evaluation:
-    profile: 1xrtxa5000
-    cpu: 8
-    gpu: 1
-    memory: 32Gi
-    disk: 64Gi
+    function: evaluate-mae
+    profile: 1xrtxa5000-shared
+    resources: {cpu: "8", gpu: "1", mem: 32Gi, disk: 64Gi}
 
-# The volume a run keeps its ready tiles on, mounted as the dataset root: each tile
-# is kept the first time it is read, and a new run starts it empty.
+# The volume a run keeps its ready tiles on, mounted as the dataset root: a new one per
+# run, so it starts empty and keeps each tile the first time it is read.
 volume:
+  volume_type: persistent_volume_claim
   name: mae-tiles
-  path: /volume
-  size: 400Gi
-
-# The function each run is registered as, the project scoping it so it needs no prefix
-functions:
-  training: train-mae
-  evaluation: evaluate-mae
-
-# What each stage publishes, and what it reads that the dataset repository published.
-publishes:
-  dataset: dataset
-  model: model
-  results: results
+  mount_path: /volume
+  spec: {size: 400Gi}
