@@ -60,7 +60,7 @@ def loaders_by_split(
     shares: Sequence[float],
     seed: int,
     delay: str,
-    batch_size: int,
+    memory_batch_size: int,
     workers: int,
 ) -> dict[str, DataLoader]:
     """Return every split of a build in batches, whole tiles at a time.
@@ -74,7 +74,7 @@ def loaders_by_split(
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in.
         delay: The instrument whose rows give every surface patch its delay.
-        batch_size: How many tiles one step reads.
+        memory_batch_size: How many tiles one pass holds in memory.
         workers: How many processes read tiles beside the training.
 
     Returns:
@@ -92,7 +92,7 @@ def loaders_by_split(
             shapes,
             delay,
             cell_m,
-            batch_size,
+            memory_batch_size,
             workers,
             name == TRAINING_SPLIT,
         )
@@ -109,7 +109,7 @@ def tile_loader(
     shapes: Mapping[str, tuple[int, ...]],
     delay: str,
     cell_m: float,
-    batch_size: int,
+    memory_batch_size: int,
     workers: int,
     shuffle: bool,
 ) -> DataLoader:
@@ -124,7 +124,7 @@ def tile_loader(
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
         cell_m: How far a cell of a tile's grid runs along the ground, in metres.
-        batch_size: How many tiles one batch holds.
+        memory_batch_size: How many tiles one batch holds in memory.
         workers: How many processes read tiles beside the model.
         shuffle: Whether the tiles come in a new order every pass.
 
@@ -134,7 +134,7 @@ def tile_loader(
     gc.freeze()
     return DataLoader(
         list(tiles),
-        batch_size=batch_size,
+        batch_size=memory_batch_size,
         shuffle=shuffle,
         num_workers=workers,
         persistent_workers=workers > 0,

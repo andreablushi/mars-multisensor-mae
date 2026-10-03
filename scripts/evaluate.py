@@ -98,7 +98,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         shapes,
         config.model.delay,
         config.model.cell_m,
-        config.training.batch_size,
+        config.training.memory_batch_size,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
     )
