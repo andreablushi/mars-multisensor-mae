@@ -34,17 +34,25 @@ class ChannelEncoder(nn.Module):
             centres_nm: The wavelength each channel is centred on, in nm, or None.
         """
         super().__init__()
+        # One learned vector saying which instrument a token comes from
         self.mark = nn.Parameter(torch.zeros(dim))  # (D)
+        # Start the mark small, as transformer embeddings are
         nn.init.normal_(self.mark, std=0.02)
+        # Wavelength periods spaced evenly in log, from the shortest to the longest
         periods = torch.logspace(
             math.log10(SHORTEST_NM), math.log10(LONGEST_NM), dim // 2
         )  # (D / 2)
+        # An instrument with no wavelengths has one channel, encoded as zeros
         if centres_nm is None:
             encoded = torch.zeros(1, dim)  # (1, D)
         else:
+            # Each channel's centre wavelength, in double precision for the phases
             centres = torch.tensor(centres_nm, dtype=torch.float64)  # (C)
+            # The phase of each wavelength against each period
             phase = 2 * math.pi * centres.unsqueeze(-1) / periods  # (C, D / 2)
+            # Cosines then sines of those phases, one vector per channel
             encoded = torch.cat([phase.cos(), phase.sin()], dim=-1).float()  # (C, D)
+        # Kept with the model and moved with it, but never trained
         self.register_buffer("encoded", encoded)
 
     def forward(self, tokens: Tensor) -> Tensor:
@@ -56,4 +64,5 @@ class ChannelEncoder(nn.Module):
         Returns:
             tokens: The same tokens, each told its channel. (B, K, C, D)
         """
+        # Add the instrument mark and each channel's wavelength encoding
         return tokens + self.mark + self.encoded  # (B, K, C, D)

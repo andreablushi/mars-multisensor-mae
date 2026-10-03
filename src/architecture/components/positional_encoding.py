@@ -37,7 +37,9 @@ class PositionalEncoding(nn.Module):
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
+        # The shortest periods: the patch spacing on the ground, one row in delay
         shortest = (stride, stride, DELAY_ROWS[0])
+        # The longest: twice a tile on the ground, the whole radargram window in delay
         longest = (GROUND_LONGEST_M, GROUND_LONGEST_M, DELAY_ROWS[1])
         # Generate logarithmically spaced sinusoid periods for 3D centers and 3D extents
         periods = torch.stack(
@@ -48,6 +50,7 @@ class PositionalEncoding(nn.Module):
                 for short, long in zip(shortest * 2, longest * 2, strict=True)
             ]
         )  # (6, D / 12)
+        # Kept with the model and moved with it, but never trained
         self.register_buffer("periods", periods)
 
     def forward(self, position: Tensor) -> Tensor:
@@ -61,5 +64,7 @@ class PositionalEncoding(nn.Module):
         """
         # The phase of each coordinate against each of its periods
         phase = 2 * math.pi * position.unsqueeze(-1) / self.periods  # (B, K, 6, D/12)
+        # Cosines then sines of every phase
         encoded = torch.cat([phase.cos(), phase.sin()], dim=-1)  # (B, K, 6, D / 6)
+        # All six coordinates side by side, one vector per position
         return encoded.flatten(-2)  # (B, K, D)

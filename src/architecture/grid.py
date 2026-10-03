@@ -55,11 +55,15 @@ def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
     Returns:
         overlapping: Whether each pair overlaps along every one of those axes.
     """
+    # How far apart the two centres are along each axis compared
     apart = (first[..., :axes] - second[..., :axes]).abs()
+    # How far each box reaches along those axes
     first_span, second_span = first[..., 3 : 3 + axes], second[..., 3 : 3 + axes]
     # Only the smaller box is shrunk, so one of no span still lands where it lies
     smaller = torch.minimum(first_span, second_span)
+    # Two boxes overlap when their centres are closer than half their spans added
     reach = (first_span + second_span) / 2 - TOUCH * smaller
+    # Only an overlap along every axis compared counts
     return (apart < reach).all(dim=-1)
 
 
@@ -77,8 +81,11 @@ def covering_indices(
         chosen: Whether each index is a covering box rather than padding. (..., M)
         ignored: The padding attention skips, none in a row nothing covers. (..., M)
     """
+    # The most covering boxes any row has, at least one so no row is empty
     count = max(int(covering.sum(dim=-1).max()), 1)
+    # Each row's covering boxes first, then padding, with their indices
     chosen, at = covering.to(dtype).topk(count, dim=-1)  # (..., M)
+    # Which of those are real covering boxes
     chosen = chosen.bool()  # (..., M)
     return at, chosen, ~chosen & chosen.any(dim=-1, keepdim=True)
 
@@ -97,12 +104,19 @@ def tile_cells(
         cells: Each cell's "offset", its east, north and delay cell (Q, 3), and its
             "position", ground metres and delay rows for its centre and span. (Q, 6)
     """
+    # How many delay cells the radargram window holds, the last one partial
     depth_cells = (sharad.DELAY_ROWS + delay_rows - 1) // delay_rows
+    # How far one cell runs along east, north and delay
     size = np.array([cell_m, cell_m, delay_rows])
+    # Each patch's half span, shrunk a touch so a patch only touching a cell misses it
     reach = placed[:, 3:] / 2 - TOUCH * np.minimum(placed[:, 3:], size)
+    # The first cell each patch reaches along each axis
     low = np.floor((placed[:, :3] - reach) / size)
+    # The last cell it reaches
     high = np.ceil((placed[:, :3] + reach) / size) - 1
+    # Each patch's first and last cell, as integers
     corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
+    # Every cell inside each patch's range, delay held to the radargram window
     spread = [
         np.stack(
             np.meshgrid(
@@ -115,10 +129,15 @@ def tile_cells(
         ).reshape(-1, 3)
         for (east, north, delay), (east_end, north_end, delay_end) in corners
     ]
+    # Each cell any patch reaches, once
     offset = np.unique(np.concatenate(spread), axis=0)  # (Q, 3)
+    # The ground centre of each cell, in metres from the tile centre
     centre = (offset[:, :2] + 0.5) * cell_m  # (Q, 2)
+    # The first delay row of each cell
     delay_start = offset[:, 2] * delay_rows  # (Q,)
+    # Its last row, the window's end at most
     delay_end = np.minimum(delay_start + delay_rows, sharad.DELAY_ROWS)  # (Q,)
+    # Each cell's centre east, north and delay, then its spans along each
     position = np.column_stack(
         [
             centre,
@@ -127,4 +146,5 @@ def tile_cells(
             delay_end - delay_start,
         ]
     )  # (Q, 6)
+    # Positions in float32, as the patches' own
     return {"offset": offset, "position": position.astype(np.float32)}

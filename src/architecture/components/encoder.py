@@ -50,13 +50,17 @@ class Encoder(nn.Module):
             stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
+        # Where the wavelength axis sits in a patch, or None for a single-channel one
         self.at = axes.index(Axis.WAVELENGTH) if Axis.WAVELENGTH in axes else None
         # Map one channel of a patch into the token width
         self.embed = nn.Linear(
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
+        # Tell each channel's token which instrument and wavelength it holds
         self.channels = ChannelEncoder(dim, centres_nm)
+        # Encode where a patch sits and how far it reaches, at the patch spacing
         self.place = PositionalEncoding(dim, stride)
+        # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(
@@ -77,15 +81,24 @@ class Encoder(nn.Module):
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
+        # Give every patch a channel axis last: a new one, or the wavelength axis moved
         if self.at is None:
+            # A patch with no wavelength axis is one channel
             values, measured = values.unsqueeze(-1), measured.unsqueeze(-1)
         else:
+            # Move the wavelength axis to the end of the values
             values = values.movedim(2 + self.at, -1)
+            # Move it to the end of the measured mask too
             measured = measured.movedim(2 + self.at, -1)
+        # Each channel of each patch as one row of its samples
         bands = values.flatten(2, -2).transpose(2, 3)  # (B, K, C, G)
+        # Whether each channel measured any sample of the patch
         channels = measured.flatten(2, -2).any(dim=2).unsqueeze(-1)  # (B, K, C, 1)
+        # Embed each channel's samples, tell it its channel, and pass it through GELU
         tokens = functional.gelu(self.channels(self.embed(bands)))  # (B, K, C, D)
+        # How many channels each patch measured, at least one to divide by
         counted = channels.sum(dim=2).clamp(min=1)  # (B, K, 1)
+        # One token per patch: the mean over the channels it measured
         tokens = (tokens * channels).sum(dim=2) / counted  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
         return self.blocks(tokens + self.place(position), visible)  # (B, K, D)

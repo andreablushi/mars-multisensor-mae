@@ -42,19 +42,28 @@ def token_batch_padding(
         identities: The tile each read belongs to, in the batch's own order.
     """
     batch = {}
+    # Pad each instrument's patches across the batch's tiles
     for name in samples[0][0]:
+        # This instrument's arrays in every tile
         held = [sample[name] for sample, _, _ in samples]
+        # Every array padded with zeros to the most patches any tile has
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
             )
             for key in held[0]
         }
+        # Values in float32, whatever the stored type
         padded["values"] = padded["values"].float()
+        # The instrument's patches over the batch
         batch[name] = Tokens(**padded)
+    # The cells of every tile
     reached = [cells for _, cells, _ in samples]
+    # How many cells each tile has
     counts = torch.tensor([len(one["offset"]) for one in reached])  # (B,)
+    # The cell slots of the tile with the most
     slots = torch.arange(int(counts.max()))  # (Q,)
+    # Offsets and positions padded with zeros, and which slots are real cells
     cells = Cells(
         *(
             pad_sequence(
@@ -64,4 +73,5 @@ def token_batch_padding(
         ),
         slots.unsqueeze(0) < counts.unsqueeze(1),
     )
+    # The patches, the cells and the tile names, in the batch's order
     return batch, cells, [identity for _, _, identity in samples]
