@@ -9,7 +9,6 @@ import numpy as np
 import torch
 from building.configs import sharad
 from torch import Tensor
-from torch.nn.utils.rnn import pad_sequence
 
 TOUCH = 1e-2
 
@@ -85,51 +84,47 @@ def covering_indices(
 
 
 def tile_cells(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
-    cell_m: float,
-    delay_rows: int,
-) -> Cells:
-    """Return the cells the patches of each tile in a batch reach.
+    placed: np.ndarray, cell_m: float, delay_rows: int
+) -> dict[str, np.ndarray]:
+    """Return the cells one tile's patches reach.
 
     Args:
-        samples: The patch arrays and identity of each tile.
+        placed: Where every patch of the tile sits and how far it reaches. (N, 6)
         cell_m: How far a cell runs along either ground axis, in metres.
         delay_rows: How many radar delay rows a cell spans.
 
     Returns:
-        cells: The tile cells, padded across the batch.
+        cells: Each cell's "offset", its east, north and delay cell (Q, 3), and its
+            "position", ground metres and delay rows for its centre and span. (Q, 6)
     """
-    reached = []
     depth_cells = (sharad.DELAY_ROWS + delay_rows - 1) // delay_rows
     size = np.array([cell_m, cell_m, delay_rows])
-    for sample, _ in samples:
-        placed = np.concatenate([held["position"] for held in sample.values()])
-        reach = placed[:, 3:] / 2 - TOUCH * np.minimum(placed[:, 3:], size)
-        low = np.floor((placed[:, :3] - reach) / size)
-        high = np.ceil((placed[:, :3] + reach) / size) - 1
-        corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
-        spread = [
-            np.stack(
-                np.meshgrid(
-                    np.arange(east, east_end + 1),
-                    np.arange(north, north_end + 1),
-                    np.arange(max(delay, 0), min(delay_end, depth_cells - 1) + 1),
-                    indexing="ij",
-                ),
-                axis=-1,
-            ).reshape(-1, 3)
-            for (east, north, delay), (east_end, north_end, delay_end) in corners
+    reach = placed[:, 3:] / 2 - TOUCH * np.minimum(placed[:, 3:], size)
+    low = np.floor((placed[:, :3] - reach) / size)
+    high = np.ceil((placed[:, :3] + reach) / size) - 1
+    corners = zip(low.astype(np.int64), high.astype(np.int64), strict=True)
+    spread = [
+        np.stack(
+            np.meshgrid(
+                np.arange(east, east_end + 1),
+                np.arange(north, north_end + 1),
+                np.arange(max(delay, 0), min(delay_end, depth_cells - 1) + 1),
+                indexing="ij",
+            ),
+            axis=-1,
+        ).reshape(-1, 3)
+        for (east, north, delay), (east_end, north_end, delay_end) in corners
+    ]
+    offset = np.unique(np.concatenate(spread), axis=0)  # (Q, 3)
+    centre = (offset[:, :2] + 0.5) * cell_m  # (Q, 2)
+    delay_start = offset[:, 2] * delay_rows  # (Q,)
+    delay_end = np.minimum(delay_start + delay_rows, sharad.DELAY_ROWS)  # (Q,)
+    position = np.column_stack(
+        [
+            centre,
+            (delay_start + delay_end) / 2,
+            np.full_like(centre, cell_m),
+            delay_end - delay_start,
         ]
-        reached.append(torch.as_tensor(np.unique(np.concatenate(spread), axis=0)))
-    counts = torch.tensor([len(one) for one in reached])
-    slots = torch.arange(int(counts.max()))
-    offset = pad_sequence(reached, batch_first=True)
-    centre = (offset[..., :2] + 0.5) * cell_m
-    delay_start = offset[..., 2].to(centre.dtype) * delay_rows
-    delay_end = (delay_start + delay_rows).clamp(max=sharad.DELAY_ROWS)
-    depth = ((delay_start + delay_end) / 2).unsqueeze(-1)
-    span = centre.new_full(centre.shape, cell_m)
-    position = torch.cat(
-        [centre, depth, span, (delay_end - delay_start)[..., None]], dim=-1
-    )
-    return Cells(offset, position, slots.unsqueeze(0) < counts.unsqueeze(1))
+    )  # (Q, 6)
+    return {"offset": offset, "position": position.astype(np.float32)}

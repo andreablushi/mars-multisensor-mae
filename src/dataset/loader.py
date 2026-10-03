@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gc
 import random
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from functools import partial
 
 from building.metadata.observation import ObservationMetadata
@@ -56,7 +56,7 @@ def loaders_by_split(
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
-    collate: Callable,
+    cell_m: float,
     shares: Sequence[float],
     seed: int,
     delay: str,
@@ -70,7 +70,7 @@ def loaders_by_split(
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
-        collate: How one batch of read tiles becomes what the model is handed.
+        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in.
         delay: The instrument whose rows give every surface patch its delay.
@@ -91,7 +91,7 @@ def loaders_by_split(
             pool,
             shapes,
             delay,
-            collate,
+            cell_m,
             batch_size,
             workers,
             name == TRAINING_SPLIT,
@@ -108,7 +108,7 @@ def tile_loader(
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
     delay: str,
-    collate: Callable,
+    cell_m: float,
     batch_size: int,
     workers: int,
     shuffle: bool,
@@ -123,7 +123,7 @@ def tile_loader(
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
-        collate: How one batch of read tiles becomes what the model is handed.
+        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the model.
         shuffle: Whether the tiles come in a new order every pass.
@@ -147,6 +147,6 @@ def tile_loader(
             pool=pool,
             shapes=shapes,
             delay=delay,
-            collate=collate,
+            cell_m=cell_m,
         ),
     )

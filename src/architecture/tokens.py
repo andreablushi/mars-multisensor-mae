@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
-from architecture.grid import Cells, tile_cells
+from architecture.grid import Cells
 
 # B = batch, K = patches, P = patch dimensions.
 
@@ -29,16 +29,12 @@ class Tokens(NamedTuple):
 
 
 def token_batch_padding(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
-    cell_m: float,
-    delay_rows: int,
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], dict[str, np.ndarray], str]],
 ) -> tuple[dict[str, Tokens], Cells, list[str]]:
     """Return one batch of every instrument's tokens, the cells they reach, and whose.
 
     Args:
-        samples: Each tile's patch arrays and identity.
-        cell_m: How far a cell runs along the ground, in metres.
-        delay_rows: How many radar delay rows a cell spans.
+        samples: Each tile's patch arrays, the cells they reach, and its identity.
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
@@ -47,7 +43,7 @@ def token_batch_padding(
     """
     batch = {}
     for name in samples[0][0]:
-        held = [sample[name] for sample, _ in samples]
+        held = [sample[name] for sample, _, _ in samples]
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
@@ -56,8 +52,16 @@ def token_batch_padding(
         }
         padded["values"] = padded["values"].float()
         batch[name] = Tokens(**padded)
-    return (
-        batch,
-        tile_cells(samples, cell_m, delay_rows),
-        [identity for _, identity in samples],
+    reached = [cells for _, cells, _ in samples]
+    counts = torch.tensor([len(one["offset"]) for one in reached])  # (B,)
+    slots = torch.arange(int(counts.max()))  # (Q,)
+    cells = Cells(
+        *(
+            pad_sequence(
+                [torch.as_tensor(one[key]) for one in reached], batch_first=True
+            )
+            for key in ("offset", "position")
+        ),
+        slots.unsqueeze(0) < counts.unsqueeze(1),
     )
+    return batch, cells, [identity for _, _, identity in samples]

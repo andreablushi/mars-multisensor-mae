@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from functools import partial
 from pathlib import Path
 
 import torch
@@ -14,7 +13,6 @@ from dhub.submit import run_stage
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from configs.paths import results_path
 from configs.schema import Config
@@ -99,11 +97,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         config.dataset.pool,
         shapes,
         config.model.delay,
-        partial(
-            token_batch_padding,
-            cell_m=config.model.cell_m,
-            delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
-        ),
+        config.model.cell_m,
         config.training.batch_size,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from functools import partial
 
 from dhub.configs import stage_workers
 from dhub.publish import publish_checkpoint
@@ -12,7 +11,6 @@ from dhub.submit import run_stage
 from digitalhub_runtime_python import handler
 from evaluate import built_model, evaluate_checkpoint
 
-from architecture.tokens import token_batch_padding
 from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
 from logs.console import console_logger
@@ -47,11 +45,7 @@ def run_training(
         sizes,
         config.dataset.pool,
         shapes,
-        partial(
-            token_batch_padding,
-            cell_m=config.model.cell_m,
-            delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
-        ),
+        config.model.cell_m,
         config.dataset.split,
         config.dataset.seed,
         config.model.delay,
