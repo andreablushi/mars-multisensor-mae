@@ -14,6 +14,9 @@ from typing import Any
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+from analysis import paths as labelled
+from analysis.ground_truth.artifacts import LABELS
+from analysis.ground_truth.models.label import Label
 from building import paths as built
 from building.common.layout import Axis
 from building.metadata.dataset import DatasetManifest
@@ -151,6 +154,16 @@ class DatasetBuild:
         for one in self.read_observation_metadata():
             standing[one.instrument].append(min(one.sample_spacing_m))
         return {name: float(np.median(held)) for name, held in standing.items()}
+
+    def read_label_by_tile(self) -> dict[str, str]:
+        """Return the class the feature catalogue gave every tile the draw took.
+
+        Returns:
+            classes: The class each tile earned, keyed by the tile it was drawn for.
+        """
+        held = self.read_table(labelled.LABELS_NAME, LABELS)
+        labels = [parquet.built_row(Label, row) for row in held.to_pylist()]
+        return {one.tile: one.label for one in labels}
 
     def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.

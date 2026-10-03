@@ -25,7 +25,6 @@ from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
 from evaluation.results import RESULTS_FILE, write_tile_distances
-from evaluation.store import read_label_by_tile
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
@@ -91,7 +90,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     model, device, sizes, shapes, _ = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
     build = published_build(config.evaluation.build, config.dataset.root)
-    classes = read_label_by_tile(build)
+    classes = build.read_label_by_tile()
     by_tile = build.read_observation_metadata_by_tile()
     workers = stage_workers(EVALUATION_STAGE)
     loader = DataLoader(
