@@ -23,7 +23,10 @@ from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
 from common.disk.files import atomic_path
 
+from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
+from dataset.models.positioning import read_surface_delays
+from dataset.patches import patch_arrays, read_tile_patches
 
 
 @dataclass(slots=True)
@@ -43,18 +46,6 @@ class DatasetBuild:
     fetch: Callable[[str], bytes]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
     stats: dict[str, dict[str, Any]] | None = None
-
-    def fetch_object(self, path: str) -> bytes:
-        """Return what one object of the build holds, off disk or fetched.
-
-        Args:
-            path: Where it sits, relative to the build root, as the index names it.
-
-        Returns:
-            data: The bytes of that object.
-        """
-        held = self.root / path
-        return held.read_bytes() if held.is_file() else self.fetch(path)
 
     def local_root(self, *names: str) -> Path:
         """Return the build root, the named objects fetched onto it where missing.
@@ -134,6 +125,61 @@ class DatasetBuild:
         held = self.local_root(labelled.LABELS_NAME) / labelled.LABELS_NAME
         return {one.tile: one.label for one in parquet.read_rows(Label, LABELS, held)}
 
+    def read_tiles(
+        self,
+        identities: Sequence[str],
+        tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
+        axes: Mapping[str, tuple[str, ...]],
+        sizes: Mapping[str, Mapping[str, int]],
+        pool: Mapping[str, int],
+        shapes: Mapping[str, tuple[int, ...]],
+        delay: str,
+        collate: Callable,
+    ) -> object:
+        """Return one batch of tiles, each read from the run's cache or cut and cached.
+
+        Args:
+            identities: The tiles of the batch.
+            tiles: The index rows of each sensor of each tile, keyed by tile.
+            axes: What each axis of each instrument's values holds.
+            sizes: How far a patch of each sensor runs along each axis it is cut on.
+            pool: How many ground samples of a patch each instrument averages into one.
+            shapes: The shape of one patch of each instrument as the model reads it.
+            delay: The instrument whose rows give every surface patch its delay.
+            collate: How the read tiles become what the model is handed.
+
+        Returns:
+            batch: What collate makes of each tile's patches and identity.
+        """
+        samples = []
+        for identity in identities:
+            held = self.root / ready_tile_path(identity)
+            sample = {}
+            if held.is_file():
+                with np.load(held) as arrays:
+                    for packed in arrays.files:
+                        name, key = packed.split("/")
+                        sample.setdefault(name, {})[key] = arrays[packed]
+            else:
+                rows = tiles[identity]
+                delays = read_surface_delays(self, rows[delay])
+                read = read_tile_patches(rows, self, sizes, pool, delays)
+                sample = {
+                    name: patch_arrays(drawn, shapes[name], axes[name])
+                    for name, drawn in read.items()
+                }
+                with atomic_path(held) as written, written.open("wb") as file:
+                    np.savez_compressed(
+                        file,
+                        **{
+                            f"{name}/{key}": array
+                            for name, arrays in sample.items()
+                            for key, array in arrays.items()
+                        },
+                    )
+            samples.append((sample, identity))
+        return collate(samples)
+
     def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.
 
@@ -145,7 +191,9 @@ class DatasetBuild:
             observation: The observation, its values standardised by the build's own
                 constants and the rest as the build wrote them.
         """
-        with np.load(io.BytesIO(self.fetch_object(path))) as held:
+        stored = self.root / path
+        data = stored.read_bytes() if stored.is_file() else self.fetch(path)
+        with np.load(io.BytesIO(data)) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
             # Only these are read, so what is not asked for stays packed.

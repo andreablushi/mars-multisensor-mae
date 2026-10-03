@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 from dhub.configs import stage_workers
-from dhub.publish import publish_results, published_name
+from dhub.publish import publish_results
 from dhub.store import published_build, published_checkpoint
 from dhub.submit import run_stage
 from digitalhub_runtime_python import handler
@@ -16,7 +16,7 @@ from digitalhub_runtime_python import handler
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import token_batch_padding
 from configs.load import load_config
-from configs.paths import checkpoint_path, results_path
+from configs.paths import results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_layout
@@ -125,7 +125,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
     log.info("results written to %s", results)
     if project is not None:
-        publish_results(project, results, published_name("results", config.run_name))
+        publish_results(project, results, config.run_name)
 
 
 @handler()
@@ -137,9 +137,8 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         overrides: What to compose the config with, as hydra spells them.
     """
     config = load_config(overrides or [])
-    name = published_name("model", config.run_name)
-    held = checkpoint_path(config.training.checkpoints, name)
-    evaluate_checkpoint(config, published_checkpoint(name, held), project)
+    checkpoint = published_checkpoint(config.run_name, config.training.checkpoints)
+    evaluate_checkpoint(config, checkpoint, project)
 
 
 if __name__ == "__main__":

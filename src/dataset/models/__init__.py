@@ -1,1 +1,1 @@
-"""What a read hands on: the observation it read, and the patches it cut that into."""
+"""What a read hands on, and where the samples it read sit around their tile."""

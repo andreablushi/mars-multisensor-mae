@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 
 import yaml
 
@@ -34,16 +33,13 @@ class Platform:
 
 
 @lru_cache(maxsize=1)
-def load_platform(path: Path = PLATFORM_CONFIG_PATH) -> Platform:
+def load_platform() -> Platform:
     """Return what a platform run is given, reading the config file once.
-
-    Args:
-        path: The config file, which carries every setting a run is submitted with.
 
     Returns:
         platform: The settled choices for the submission.
     """
-    return Platform(**yaml.safe_load(path.read_text(encoding="utf-8")))
+    return Platform(**yaml.safe_load(PLATFORM_CONFIG_PATH.read_text(encoding="utf-8")))
 
 
 def stage_workers(stage: str) -> int:

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 
-from configs.paths import build_root, results_path
+from configs.paths import build_root, checkpoint_path, results_path
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform
@@ -30,7 +30,7 @@ def published_build(build: str, root: str) -> DatasetBuild:
         project.get_artifact(published_name("dataset", build)).spec.path
     )
     bucket = published.netloc
-    prefix = published.path.lstrip("/").rstrip("/") + "/"
+    prefix = published.path.strip("/") + "/"
     client = dh.get_s3_client()
 
     def fetch(path: str) -> bytes:
@@ -51,18 +51,20 @@ def published_build(build: str, root: str) -> DatasetBuild:
     return DatasetBuild(root=build_root(build, root), fetch=fetch)
 
 
-def published_checkpoint(name: str, destination: Path) -> Path:
-    """Return where one published model landed on this machine, fetched again each time.
+def published_checkpoint(run_name: str, checkpoints: str) -> Path:
+    """Return where one run's latest published model landed here, fetched each time.
 
     Args:
-        name: What it was published as, the name meaning its latest version.
-        destination: The file to write it to, whose directory is made if it is missing.
+        run_name: What the run is called, which names the model.
+        checkpoints: Where checkpoints land, relative to the repository.
 
     Returns:
         path: The checkpoint, on this machine.
     """
     credentials.refresh()
     project = dh.get_or_create_project(load_platform().project)
+    name = published_name("model", run_name)
+    destination = checkpoint_path(checkpoints, name)
     destination.parent.mkdir(parents=True, exist_ok=True)
     return Path(project.get_model(name).download(str(destination), overwrite=True))
 

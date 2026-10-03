@@ -42,7 +42,6 @@ def write_tile_distances(
         classes: The class each tile earned, keyed by the tile.
         distances: The distance between every pair of tiles. (T, T)
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     parquet.write_rows(
         [
             TileDistances(tile, classes[tile], tuple(row))

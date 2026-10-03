@@ -6,7 +6,7 @@ from dataclasses import asdict
 from functools import partial
 
 from dhub.configs import stage_workers
-from dhub.publish import publish_checkpoint, published_name
+from dhub.publish import publish_checkpoint
 from dhub.store import published_build
 from dhub.submit import run_stage
 from digitalhub_runtime_python import handler
@@ -95,8 +95,7 @@ def run_training(
     run.finish()
     published = best
     if project is not None:
-        name = published_name("model", config.run_name)
-        published = publish_checkpoint(project, best, name)
+        published = publish_checkpoint(project, best, config.run_name)
     if evaluate:
         evaluate_checkpoint(config, best, project)
     return published
