@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -293,7 +294,11 @@ def read_patch_layout(
         centres_nm: The wavelength of each sensor's channels, in nm, or None.
     """
     rows = build.read_row_by_instrument()
-    resolution = build.read_resolution_by_instrument()
+    spacing = defaultdict(list)
+    for held in build.read_observation_metadata().values():
+        for name, records in held.items():
+            spacing[name].extend(min(one.sample_spacing_m) for one in records)
+    resolution = {name: float(np.median(held)) for name, held in spacing.items()}
     return (
         {
             name: patch_lengths(

@@ -4,25 +4,24 @@ from __future__ import annotations
 
 import io
 import json
-import os
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.parquet as pq
 from analysis import paths as labelled
 from analysis.ground_truth.artifacts import LABELS
 from analysis.ground_truth.models.label import Label
 from building import paths as built
 from building.common.layout import Axis
-from building.metadata.dataset import DatasetManifest
+from building.metadata.dataset import read_normalization
+from building.metadata.index import read_observation_metadata
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
+from common.disk.files import atomic_path
 
 from dataset.models.observation import Observation
 
@@ -34,17 +33,18 @@ class DatasetBuild:
     Attributes:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
-        records: What every observation is, once the index is read, else None.
-        normalization: The mean and std of each instrument, once the manifest is read,
-            else None.
+        records: The rows of each sensor of each tile, once the index is read, else
+            None.
+        stats: The mean and std of each instrument, once the manifest is read, else
+            None.
     """
 
     root: Path
     fetch: Callable[[str], bytes]
-    records: list[ObservationMetadata] | None = None
-    normalization: dict[str, dict[str, Any]] | None = None
+    records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
+    stats: dict[str, dict[str, Any]] | None = None
 
-    def read_object(self, path: str) -> bytes:
+    def fetch_object(self, path: str) -> bytes:
         """Return what one object of the build holds, off disk or fetched.
 
         Args:
@@ -54,79 +54,39 @@ class DatasetBuild:
             data: The bytes of that object.
         """
         held = self.root / path
-        if held.is_file():
-            return held.read_bytes()
-        return self.fetch(path)
+        return held.read_bytes() if held.is_file() else self.fetch(path)
 
-    def keep(self, path: str, data: bytes) -> None:
-        """Keep one file under the root.
+    def local_root(self, *names: str) -> Path:
+        """Return the build root, the named objects fetched onto it where missing.
 
         Args:
-            path: Where it goes, relative to the build root.
-            data: What it holds.
-        """
-        held = self.root / path
-        held.parent.mkdir(parents=True, exist_ok=True)
-        # Written whole then moved, so a reader beside this one finds it finished.
-        temporary = held.with_suffix(f"{held.suffix}.{os.getpid()}")
-        temporary.write_bytes(data)
-        temporary.replace(held)
-
-    def read_table(self, path: str, schema: pa.Schema | None = None) -> pa.Table:
-        """Return one parquet object of the build, read out of the bytes it holds.
-
-        Args:
-            path: Where it sits, relative to the build root.
-            schema: What to read it under, or None to take the file's own.
+            names: The objects the dataset repository's own readers open there.
 
         Returns:
-            table: The rows it holds.
+            root: The build root, holding every named object.
         """
-        return pq.read_table(io.BytesIO(self.read_object(path)), schema=schema)
+        for name in names:
+            held = self.root / name
+            if not held.is_file():
+                with atomic_path(held) as written:
+                    written.write_bytes(self.fetch(name))
+        return self.root
 
-    def read_observation_metadata(self) -> list[ObservationMetadata]:
-        """Return what every observation of the build is, reading the index once.
-
-        Returns:
-            records: One row per observation, in the order the index holds them.
-        """
-        if self.records is None:
-            held = self.read_table(built.OBSERVATION_METADATA_NAME)
-            self.records = [
-                parquet.built_row(ObservationMetadata, row) for row in held.to_pylist()
-            ]
-        return self.records
-
-    def read_normalization(self) -> dict[str, dict[str, Any]]:
-        """Return the mean and std each instrument is standardised by, read once.
-
-        Returns:
-            normalization: The constants of each instrument, per band where it has
-                bands, an instrument left unscaled absent.
-
-        Raises:
-            ValueError: When the build records no normalization.
-        """
-        if self.normalization is None:
-            held = json.loads(self.read_object(built.DATASET_MANIFEST_NAME))
-            normalization = DatasetManifest(**held).normalization
-            if normalization is None:
-                raise ValueError(f"{self.root.name} records no normalization.")
-            self.normalization = normalization
-        return self.normalization
-
-    def read_observation_metadata_by_tile(
+    def read_observation_metadata(
         self,
     ) -> dict[str, dict[str, list[ObservationMetadata]]]:
         """Return the observations of each tile, by the instrument that took them.
 
         Returns:
-            standing: The rows of each sensor of each tile, keyed by identity.
+            records: The rows of each sensor of each tile, keyed by tile.
         """
-        standing = defaultdict(lambda: defaultdict(list))
-        for one in self.read_observation_metadata():
-            standing[one.tile][one.instrument].append(one)
-        return {tile: dict(rows) for tile, rows in standing.items()}
+        if self.records is None:
+            root = self.local_root(built.OBSERVATION_METADATA_NAME)
+            standing = defaultdict(lambda: defaultdict(list))
+            for one in read_observation_metadata(root):
+                standing[one.tile][one.instrument].append(one)
+            self.records = {tile: dict(rows) for tile, rows in standing.items()}
+        return self.records
 
     def read_row_by_instrument(self) -> dict[str, ObservationMetadata]:
         """Return one index row of each instrument the build reached.
@@ -134,7 +94,11 @@ class DatasetBuild:
         Returns:
             rows: One row per sensor, saying what each axis holds and how far it runs.
         """
-        return {one.instrument: one for one in self.read_observation_metadata()}
+        return {
+            name: held[-1]
+            for rows in self.read_observation_metadata().values()
+            for name, held in rows.items()
+        }
 
     def read_axes_by_instrument(self) -> dict[str, tuple[str, ...]]:
         """Return what each axis of each instrument's values holds.
@@ -144,16 +108,22 @@ class DatasetBuild:
         """
         return {name: one.axes for name, one in self.read_row_by_instrument().items()}
 
-    def read_resolution_by_instrument(self) -> dict[str, float]:
-        """Return how much ground one sample of each instrument spans, over the build.
+    def read_stats(self) -> dict[str, dict[str, Any]]:
+        """Return the mean and std each instrument is standardised by, read once.
 
         Returns:
-            resolution_m: One length per sensor, its median finest ground axis.
+            stats: The constants of each instrument, per band where it has bands, an
+                instrument left unscaled absent.
+
+        Raises:
+            ValueError: When the build records no normalization.
         """
-        standing = defaultdict(list)
-        for one in self.read_observation_metadata():
-            standing[one.instrument].append(min(one.sample_spacing_m))
-        return {name: float(np.median(held)) for name, held in standing.items()}
+        if self.stats is None:
+            stats = read_normalization(self.local_root(built.DATASET_MANIFEST_NAME))
+            if stats is None:
+                raise ValueError(f"{self.root.name} records no normalization.")
+            self.stats = stats
+        return self.stats
 
     def read_label_by_tile(self) -> dict[str, str]:
         """Return the class the feature catalogue gave every tile the draw took.
@@ -161,9 +131,8 @@ class DatasetBuild:
         Returns:
             classes: The class each tile earned, keyed by the tile it was drawn for.
         """
-        held = self.read_table(labelled.LABELS_NAME, LABELS)
-        labels = [parquet.built_row(Label, row) for row in held.to_pylist()]
-        return {one.tile: one.label for one in labels}
+        held = self.local_root(labelled.LABELS_NAME) / labelled.LABELS_NAME
+        return {one.tile: one.label for one in parquet.read_rows(Label, LABELS, held)}
 
     def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
         """Return one stored observation, read out of the object it was written as.
@@ -176,7 +145,7 @@ class DatasetBuild:
             observation: The observation, its values standardised by the build's own
                 constants and the rest as the build wrote them.
         """
-        with np.load(io.BytesIO(self.read_object(path))) as held:
+        with np.load(io.BytesIO(self.fetch_object(path))) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
             # Only these are read, so what is not asked for stays packed.
@@ -184,19 +153,13 @@ class DatasetBuild:
                 name: held[name]
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
-        values = arrays[described["measurement"]]
         axes = tuple(described["axes"])
-        constants = self.read_normalization().get(described["instrument"])
-        if constants is not None:
-            # Per band constants run along the wavelength axis, a scalar along none.
-            shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
-            mean, std = (
-                np.asarray(constants[name], np.float32).reshape(shape)
-                for name in ("mean", "std")
-            )
-            values = (values - mean) / std
         return Observation(
-            values=values,
+            values=standardised_values(
+                arrays[described["measurement"]],
+                axes,
+                self.read_stats().get(described["instrument"]),
+            ),
             axes=axes,
             measured=arrays[MEASURED],
             north=arrays[NORTH],
@@ -204,3 +167,30 @@ class DatasetBuild:
             beside={name: arrays[name] for name in beside},
             described=described,
         )
+
+
+def standardised_values(
+    values: np.ndarray, axes: Sequence[str], constants: Mapping[str, Any] | None
+) -> np.ndarray:
+    """Return one observation's values standardised by its instrument's constants.
+
+    Args:
+        values: The values, as the build stored them.
+        axes: What each axis of the values holds.
+        constants: The instrument's mean and std, per band where it has bands, or
+            None for an instrument left unscaled.
+
+    Returns:
+        values: The standardised values, or the stored ones where there are no
+            constants.
+    """
+    # Leave the values as they are when the build has no constants for this instrument.
+    if constants is None:
+        return values
+    # Per band constants run along the wavelength axis, a scalar along none.
+    shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
+    mean, std = (
+        np.asarray(constants[name], np.float32).reshape(shape)
+        for name in ("mean", "std")
+    )
+    return (values - mean) / std
