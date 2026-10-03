@@ -62,7 +62,7 @@ class Encoder(nn.Module):
     def forward(
         self,
         values: Tensor,
-        valid: Tensor,
+        measured: Tensor,
         position: Tensor,
         visible: Tensor,
     ) -> Tensor:
@@ -70,7 +70,7 @@ class Encoder(nn.Module):
 
         Args:
             values: The normalised patches. (B, K, *P)
-            valid: Whether each sample is a measurement, broadcastable. (B, K, *P')
+            measured: Whether each sample is a measurement, broadcastable. (B, K, *P')
             position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
             visible: Which patches the encoder may read. (B, K)
 
@@ -78,14 +78,14 @@ class Encoder(nn.Module):
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
         if self.at is None:
-            values, valid = values.unsqueeze(-1), valid.unsqueeze(-1)
+            values, measured = values.unsqueeze(-1), measured.unsqueeze(-1)
         else:
             values = values.movedim(2 + self.at, -1)
-            valid = valid.movedim(2 + self.at, -1)
+            measured = measured.movedim(2 + self.at, -1)
         bands = values.flatten(2, -2).transpose(2, 3)  # (B, K, C, G)
-        measured = valid.flatten(2, -2).any(dim=2).unsqueeze(-1)  # (B, K, C, 1)
+        channels = measured.flatten(2, -2).any(dim=2).unsqueeze(-1)  # (B, K, C, 1)
         tokens = functional.gelu(self.channels(self.embed(bands)))  # (B, K, C, D)
-        counted = measured.sum(dim=2).clamp(min=1)  # (B, K, 1)
-        tokens = (tokens * measured).sum(dim=2) / counted  # (B, K, D)
+        counted = channels.sum(dim=2).clamp(min=1)  # (B, K, 1)
+        tokens = (tokens * channels).sum(dim=2) / counted  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
         return self.blocks(tokens + self.place(position), visible)  # (B, K, D)

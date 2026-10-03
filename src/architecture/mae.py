@@ -120,7 +120,7 @@ class CrossSensorMAE(nn.Module):
                 continue
             stem = self.encoders[name](
                 tokens.values,
-                tokens.valid,
+                tokens.measured,
                 tokens.position,
                 counted[name],
             )  # (B, K, D)
@@ -140,7 +140,7 @@ class CrossSensorMAE(nn.Module):
         Args:
             encoded: Each instrument's shared tokens. (B, K, D)
             batch: Each instrument's patches over the batch.
-            counted: Which of its tokens count: visible while training, else present.
+            counted: Which of its tokens count: visible while training, else measured.
             cells: The cells the batch's patches reach.
             read: Which instruments the grid is built from.
 
@@ -163,34 +163,36 @@ class CrossSensorMAE(nn.Module):
             cells: The cells the batch's patches reach.
 
         Returns:
-            grid: One vector per cell, over every present patch, none hidden.
+            grid: One vector per cell, over every measured patch, none hidden.
         """
-        counted = {name: one.present for name, one in batch.items()}
+        counted = {name: one.measured_slots for name, one in batch.items()}
         encoded = self.shared_tokens(batch, counted)
         return self.gridded(encoded, batch, counted, cells, list(batch))
 
-    def forward(self, batch: dict[str, Tokens], cells: Cells) -> Reconstruction:
+    def forward(
+        self, batch: dict[str, Tokens], visible: dict[str, Tensor], cells: Cells
+    ) -> Reconstruction:
         """Return every instrument's hidden patches, predicted from every instrument.
 
         Args:
-            batch: Each instrument's patches over the batch, some of them hidden.
+            batch: Each instrument's patches over the batch.
+            visible: Which patches each encoder may read, the rest hidden. (B, K)
             cells: The cells the batch's patches reach.
 
         Returns:
             reconstruction: The predictions made from each instrument's grid.
         """
-        counted = {name: one.visible for name, one in batch.items()}
-        encoded = self.shared_tokens(batch, counted)
+        encoded = self.shared_tokens(batch, visible)
         # The grid each instrument makes alone, which is all a decoder ever reads
         grids = {
-            name: self.gridded(encoded, batch, counted, cells, [name]) for name in batch
+            name: self.gridded(encoded, batch, visible, cells, [name]) for name in batch
         }
         placed = cells.position  # (B, Q, 6)
         predictions = {}
         # Every patch is predicted from the cells one instrument alone was read into,
         # so no instrument ever reads its own patches back out of the grid it asks.
         for asked, tokens in batch.items():
-            hidden = tokens.present & ~tokens.visible  # (B, K)
+            hidden = tokens.measured_slots & ~visible[asked]  # (B, K)
             for read in batch:
                 # Recomputed on the way back, so only one decoder pass is held at once
                 predictions[asked, read] = checkpoint(

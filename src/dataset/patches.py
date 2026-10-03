@@ -52,7 +52,7 @@ def read_tile_patches(
             observation = build.read_observation(record.path)
             for at in range(math.prod(counts)):
                 patch = cut_patch(observation, record, at, lengths, counts, delays)
-                if patch.valid.any():
+                if patch.measured.any():
                     if name in pool:
                         patch = downsampled_patch(patch, pool[name])
                     held.append(patch)
@@ -103,12 +103,12 @@ def cut_patch(
         length if holds == Axis.GROUND else 1
         for length, holds in zip(lengths, axes, strict=True)
     )
-    valid = observation.measured[taken].reshape(ground_shape).copy()
+    measured = observation.measured[taken].reshape(ground_shape).copy()
     if record.band_valid_count is not None:
         # A band the observation never measured was filled, so it measures nothing.
         band_shape = tuple(-1 if holds == Axis.WAVELENGTH else 1 for holds in axes)
-        measured = np.asarray(record.band_valid_count) > 0
-        valid = valid & measured.reshape(band_shape)
+        bands = np.asarray(record.band_valid_count) > 0
+        measured = measured & bands.reshape(band_shape)
     if Axis.DELAY in axes:
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
@@ -132,7 +132,7 @@ def cut_patch(
         spans = (abs(down[0]), abs(across[1]))
     return Patch(
         values=observation.values[window].copy(),
-        valid=valid,
+        measured=measured,
         axes=axes,
         north_m=north_m,
         east_m=east_m,
@@ -164,13 +164,13 @@ def downsampled_patch(patch: Patch, factor: int) -> Patch:
 
     # Where each ground axis's averaged samples land once it is split in two
     pooled = tuple(at + order + 1 for order, at in enumerate(ground))
-    valid = patch.valid.reshape(split(patch.valid.shape))
-    weight = np.broadcast_to(valid, split(patch.values.shape)).astype(np.float32)
+    measured = patch.measured.reshape(split(patch.measured.shape))
+    weight = np.broadcast_to(measured, split(patch.values.shape)).astype(np.float32)
     values = patch.values.reshape(weight.shape)
     return dataclasses.replace(
         patch,
         values=values.sum(axis=pooled) / np.maximum(weight.sum(axis=pooled), 1.0),
-        valid=valid.any(axis=pooled),
+        measured=measured.any(axis=pooled),
     )
 
 
@@ -247,9 +247,9 @@ def patch_arrays(
         axes: What each axis of its values holds.
 
     Returns:
-        arrays: The patches under "values", "valid" and "position".
+        arrays: The patches under "values", "measured" and "position".
     """
-    valid_shape = tuple(
+    measured_shape = tuple(
         held if holds in (Axis.GROUND, Axis.WAVELENGTH) else 1
         for held, holds in zip(shape, axes, strict=True)
     )
@@ -257,8 +257,8 @@ def patch_arrays(
         "values": np.array([one.values for one in patches], np.float32).reshape(
             -1, *shape
         ),
-        "valid": np.array([one.valid for one in patches], bool).reshape(
-            -1, *valid_shape
+        "measured": np.array([one.measured for one in patches], bool).reshape(
+            -1, *measured_shape
         ),
         "position": np.array(
             [

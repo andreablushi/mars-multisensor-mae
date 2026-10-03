@@ -13,7 +13,7 @@ class Patch:
 
     Attributes:
         values: The patch's own values, in the observation's axis order.
-        valid: Whether each sample is a measurement, broadcasting over the values.
+        measured: Whether each sample is a measurement, broadcasting over the values.
         axes: What each axis of the values holds, in that same order.
         north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
@@ -26,7 +26,7 @@ class Patch:
     """
 
     values: np.ndarray
-    valid: np.ndarray
+    measured: np.ndarray
     axes: tuple[str, ...]
     north_m: float
     east_m: float

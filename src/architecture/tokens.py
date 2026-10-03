@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -14,47 +14,20 @@ from architecture.grid import Cells, tile_cells
 # B = batch, K = patches, P = patch dimensions.
 
 
-@dataclass(frozen=True, slots=True)
-class Tokens:
+class Tokens(NamedTuple):
     """One sensor's patches over a batch of tiles, padded to one count.
 
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
-        valid: Whether each sample is a measurement. (B, K, *P')
+        measured: Whether each sample is a measurement, false over padding. (B, K, *P')
         position: The patch centre and its span, in metres. (B, K, 6)
-        visible: Whether a slot holds a patch its encoder may read. (B, K)
-        present: Whether each slot holds a patch rather than padding. (B, K)
+        measured_slots: Whether a slot holds a patch rather than padding. (B, K)
     """
 
     values: Tensor
-    valid: Tensor
+    measured: Tensor
     position: Tensor
-    visible: Tensor
-    present: Tensor
-
-    def to(self, device: torch.device) -> Tokens:
-        """Return the same tokens held on one device.
-
-        Args:
-            device: The device to hold them on.
-
-        Returns:
-            tokens: Every tensor moved there, copied beside the work when pinned.
-        """
-        return Tokens(
-            *(
-                getattr(self, one.name).to(device, non_blocking=True)
-                for one in fields(self)
-            )
-        )
-
-    def pin_memory(self) -> Tokens:
-        """Return the same tokens in page-locked memory, which the loader copies from.
-
-        Returns:
-            tokens: Every tensor pinned.
-        """
-        return Tokens(*(getattr(self, one.name).pin_memory() for one in fields(self)))
+    measured_slots: Tensor
 
 
 def token_batch_padding(
@@ -86,8 +59,8 @@ def token_batch_padding(
             for key in held[0]
         }
         padded["values"] = padded["values"].float()
-        present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
-        batch[name] = Tokens(**padded, visible=present, present=present)
+        measured_slots = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
+        batch[name] = Tokens(**padded, measured_slots=measured_slots)
     return (
         batch,
         tile_cells(samples, cell_m, delay_rows),

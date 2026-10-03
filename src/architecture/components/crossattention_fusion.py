@@ -56,7 +56,7 @@ class CrossAttentionFusion(nn.Module):
         Args:
             tokens: Each instrument's tokens from the cross-sensor encoder. (B, K, D)
             position: Where each of its patches sits and reaches, in metres. (B, K, 6)
-            counted: Which of its tokens count: visible while training, else present.
+            counted: Which of its tokens count: visible while training, else measured.
             cells: The cells the batch's patches reach.
             read: Which instruments this grid is built from.
 

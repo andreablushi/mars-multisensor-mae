@@ -37,10 +37,10 @@ def validation_terms(
     counts = defaultdict(int)
     with torch.no_grad():
         for batch, cells, _ in loader:
-            batch, reconstruction = masked_reconstruction(
+            batch, visible, reconstruction = masked_reconstruction(
                 model, batch, cells, mask_ratio, generator, device
             )
-            terms = csmae_loss(reconstruction, batch)
+            terms = csmae_loss(reconstruction, batch, visible)
             for name, value in terms.items():
                 if not value.isnan():
                     totals[name] += float(value)

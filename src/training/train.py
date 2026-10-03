@@ -97,10 +97,10 @@ def train(
         ready = time.perf_counter()
         for batch, cells, _ in islice(batches, accumulate):
             waited += time.perf_counter() - ready
-            batch, reconstruction = masked_reconstruction(
+            batch, visible, reconstruction = masked_reconstruction(
                 model, batch, cells, mask_ratio, generator, device
             )
-            terms = csmae_loss(reconstruction, batch)
+            terms = csmae_loss(reconstruction, batch, visible)
             (terms["loss"] / accumulate).backward()
             measured.append({name: value.detach() for name, value in terms.items()})
             ready = time.perf_counter()

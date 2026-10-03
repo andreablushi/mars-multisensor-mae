@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -15,8 +16,7 @@ TOUCH = 1e-2
 # B = batch, Q = cells, D = feature channels.
 
 
-@dataclass(frozen=True, slots=True)
-class Cells:
+class Cells(NamedTuple):
     """The cells a batch of tiles is cut into, padded to one count.
 
     Attributes:
@@ -28,30 +28,6 @@ class Cells:
     offset: Tensor
     position: Tensor
     present: Tensor
-
-    def to(self, device: torch.device) -> Cells:
-        """Return the same cells held on one device.
-
-        Args:
-            device: The device to hold them on.
-
-        Returns:
-            cells: Every tensor moved there, copied beside the work when pinned.
-        """
-        return Cells(
-            *(
-                getattr(self, one.name).to(device, non_blocking=True)
-                for one in fields(self)
-            )
-        )
-
-    def pin_memory(self) -> Cells:
-        """Return the same cells in page-locked memory, which the loader copies from.
-
-        Returns:
-            cells: Every tensor pinned.
-        """
-        return Cells(*(getattr(self, one.name).pin_memory() for one in fields(self)))
 
 
 @dataclass(frozen=True, slots=True)
