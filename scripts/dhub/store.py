@@ -8,12 +8,11 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 
-from configs.paths import RESULTS_ROOT, build_root
+from configs.paths import build_root, results_path
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform
 from dhub.publish import published_name
-from evaluation.results import RESULTS_FILE
 
 
 def published_build(build: str, root: str) -> DatasetBuild:
@@ -79,7 +78,7 @@ def fetched_results() -> list[Path]:
     prefix = published_name("results", "")
     paths = []
     for artifact in project.list_artifacts():
-        held = RESULTS_ROOT / artifact.name.removeprefix(prefix) / RESULTS_FILE
+        held = results_path(artifact.name.removeprefix(prefix))
         if not artifact.name.startswith(prefix) or held.is_file():
             continue
         held.parent.mkdir(parents=True, exist_ok=True)

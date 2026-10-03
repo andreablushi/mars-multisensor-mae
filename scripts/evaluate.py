@@ -17,14 +17,14 @@ from torch.utils.data import DataLoader
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import token_batch_padding
 from configs.load import load_config
-from configs.paths import REPO_ROOT, RESULTS_ROOT
+from configs.paths import checkpoint_path, results_path
 from configs.schema import Config
 from dataset.models.split import DatasetSplit
 from dataset.patches import read_patch_layout
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
-from evaluation.results import RESULTS_FILE, write_tile_distances
+from evaluation.results import write_tile_distances
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
@@ -126,7 +126,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     distances = chamfer_distances(
         [grids[tile] for tile in tiles], config.evaluation.minimal_chamfer_cell_distance
     )
-    results = RESULTS_ROOT / config.run_name / RESULTS_FILE
+    results = results_path(config.run_name)
     write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
     log.info("results written to %s", results)
     if project is not None:
@@ -143,7 +143,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     """
     config = load_config(overrides or [])
     name = published_name("model", config.run_name)
-    held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
+    held = checkpoint_path(config.training.checkpoints, name)
     evaluate_checkpoint(config, published_checkpoint(name, held), project)
 
 

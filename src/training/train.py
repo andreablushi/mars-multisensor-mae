@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
-from configs.paths import REPO_ROOT
+from configs.paths import checkpoint_path
 from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
@@ -22,8 +22,6 @@ from training.early_stopping import EarlyStopping
 from training.loss import csmae_loss
 from training.step import masked_reconstruction
 from training.validate import validation_terms
-
-BEST_CHECKPOINT = "best.pt"
 
 log = console_logger(__name__)
 
@@ -86,7 +84,7 @@ def train(
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     stopping = EarlyStopping(patience)
     generator = torch.Generator(device=device).manual_seed(seed)
-    best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
+    best = checkpoint_path(checkpoints, "best")
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
     best_step = -1

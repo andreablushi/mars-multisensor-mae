@@ -9,8 +9,6 @@ from pathlib import Path
 import numpy as np
 from common.disk import parquet
 
-RESULTS_FILE = "results.parquet"
-
 
 @dataclass(frozen=True, slots=True)
 class TileDistances:

@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping
 import digitalhub as dh
 from dotenv import load_dotenv
 
-from configs.paths import REPO_ROOT
+from configs.paths import ENV_PATH
 from dhub import credentials
 from dhub.configs import load_platform
 
@@ -51,7 +51,7 @@ def run_stage(
         # The platform calls the handler, a run here the function under it.
         run.__wrapped__(**arguments)
         return
-    load_dotenv(REPO_ROOT / ".env")
+    load_dotenv(ENV_PATH)
     platform = load_platform()
     asked = platform.stages[stage]
     # The job installs the clone's requirements.txt at start, so no image is built

@@ -5,12 +5,12 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
+import wandb
 from dotenv import load_dotenv
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
-import wandb
-from configs.paths import REPO_ROOT
+from configs.paths import ENV_PATH
 
 
 def start_logging(
@@ -31,7 +31,7 @@ def start_logging(
         run: The run, named and grouped by the run name so the training and
             the evaluation of one model sit together, its place read from the .env.
     """
-    load_dotenv(REPO_ROOT / ".env")
+    load_dotenv(ENV_PATH)
     for tracked in wandb.Api().runs(
         f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
         filters={"display_name": run_name},

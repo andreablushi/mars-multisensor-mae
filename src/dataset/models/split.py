@@ -11,13 +11,12 @@ from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from torch.utils.data import Dataset
 
+from configs.paths import ready_tile_path
 from dataset.models.patch import Patch
 from dataset.patches import read_surface_delays, read_tile_patches
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
-
-READY = "ready"
 
 
 class DatasetSplit(Dataset):
@@ -83,7 +82,7 @@ class DatasetSplit(Dataset):
             identity: The tile the read belongs to.
         """
         identity = self.identities[index]
-        held = self.build.root / READY / f"{identity}.npz"
+        held = self.build.root / ready_tile_path(identity)
         data = held.read_bytes() if held.is_file() else self.read_ready_tile(identity)
         sample = {}
         with np.load(io.BytesIO(data)) as arrays:
@@ -115,7 +114,7 @@ class DatasetSplit(Dataset):
                 ).items()
             },
         )
-        self.build.keep(f"{READY}/{identity}.npz", packed.getvalue())
+        self.build.keep(ready_tile_path(identity), packed.getvalue())
         return packed.getvalue()
 
 

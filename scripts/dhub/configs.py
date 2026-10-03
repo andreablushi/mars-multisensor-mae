@@ -8,9 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from configs.paths import CONFIGS_ROOT
-
-PLATFORM_CONFIG_PATH = CONFIGS_ROOT / "digitalhub.yaml"
+from configs.paths import PLATFORM_CONFIG_PATH
 
 
 @dataclass(frozen=True, slots=True)
