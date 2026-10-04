@@ -67,26 +67,29 @@ def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
     return (apart < reach).all(dim=-1)
 
 
-def covering_indices(
-    covering: Tensor, dtype: torch.dtype
+def neighbourhoods(
+    boxes: Tensor, keys: Tensor, usable: Tensor
 ) -> tuple[Tensor, Tensor, Tensor]:
-    """Return where each row's covering boxes sit, padded to the most any row holds.
+    """Return the usable keys each box overlaps, padded to the most any box holds.
 
     Args:
-        covering: Whether each box covers each other box. (..., S)
-        dtype: What the rows are ranked as, that of the tokens they then gather.
+        boxes: Where each query sits and how far it reaches. (N, 6)
+        keys: Where each key sits and how far it reaches, shared or per box. (S, 6)
+        usable: Which keys may be read, shaped as the keys. (S,)
 
     Returns:
-        at: The index of each covering box, then of padding. (..., M)
-        chosen: Whether each index is a covering box rather than padding. (..., M)
-        ignored: The padding attention skips, none in a row nothing covers. (..., M)
+        at: The index of each overlapping key, then of padding. (N, M)
+        chosen: Whether each index is a key rather than padding. (N, M)
+        ignored: The padding attention skips, none in a row nothing reaches. (N, M)
     """
-    # The most covering boxes any row has, at least one so no row is empty
-    count = max(int(covering.sum(dim=-1).max()), 1)
-    # Each row's covering boxes first, then padding, with their indices
-    chosen, at = covering.to(dtype).topk(count, dim=-1)  # (..., M)
-    # Which of those are real covering boxes
-    chosen = chosen.bool()  # (..., M)
+    # Which usable keys each box overlaps along east, north and delay
+    reaching = overlapping_boxes(boxes.unsqueeze(-2), keys, 3) & usable  # (N, S)
+    # The most keys any box overlaps, at least one so no row is empty
+    count = max(int(reaching.sum(dim=-1).max()), 1)
+    # Each box's overlapping keys first, then padding, with their indices
+    chosen, at = reaching.to(keys.dtype).topk(count, dim=-1)  # (N, M)
+    # Which of those are real keys
+    chosen = chosen.bool()  # (N, M)
     return at, chosen, ~chosen & chosen.any(dim=-1, keepdim=True)
 
 

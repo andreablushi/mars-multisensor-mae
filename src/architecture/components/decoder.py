@@ -7,8 +7,8 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.neighbourhood import neighbourhoods
 from architecture.components.positional_encoding import PositionalEncoding
+from architecture.grid import neighbourhoods
 
 # B = batch, C = cells, K = target patches, N = hidden patches, M = window cells,
 # D = token channels, P = patch dimensions.
@@ -116,11 +116,17 @@ class Decoder(nn.Module):
         window = torch.cat([asked[:, :3], asked[:, 3:] * REACH], dim=-1)  # (N, 6)
         written = []
         # Read the hidden patches a chunk at a time, so their windows fit in memory
-        for rows, at, chosen, ignored in neighbourhoods(
-            window, tiles, context_position, context_visible, PATCHES
-        ):
+        for start in range(0, len(tiles), PATCHES):
+            # The hidden patches of this chunk
+            rows = slice(start, start + PATCHES)
             # The tile each patch of the chunk belongs to, as a column
             tile = tiles[rows, None]  # (n, 1)
+            # The cells in each patch's window, padded to one count
+            at, chosen, ignored = neighbourhoods(
+                window[rows],
+                context_position[tiles[rows]],
+                context_visible[tiles[rows]],
+            )  # (n, M)
             # Where each cell in a patch's window sits and reaches
             around = context_position[tile, at]  # (n, M, 6)
             # Each cell's centre relative to the patch's, beside its own spans

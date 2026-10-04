@@ -8,26 +8,23 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
-from architecture.components.neighbourhood import neighbourhoods
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.grid import Cells, TileGrid
+from architecture.grid import Cells, TileGrid, neighbourhoods
 from architecture.tokens import Tokens
 
-# B = batch, Q = cells, S = source patches, M = covering patches, D = token channels.
-
-CELLS = 4096
+# B = batch, Q = cells, C = cells of one tile, S = source patches,
+# M = covering patches, D = token channels.
 
 
 class CrossAttentionFusion(nn.Module):
     """Read each cell from the patches covering it, and nothing else.
 
-    A cell no counted patch covers is left empty.
+    A cell no readable patch covers is left empty.
 
     Attributes:
         query: What a cell asks with, before it is placed. (D)
         place: The positional encoding, at the cell's own size.
         attend: The attention from a cell to the patches covering it.
-        norm: What a cell is normalised by before it is read out.
     """
 
     def __init__(self, dim: int, heads: int, cell_m: float) -> None:
@@ -47,8 +44,6 @@ class CrossAttentionFusion(nn.Module):
         self.place = PositionalEncoding(dim, cell_m)
         # The attention a cell reads its covering patches with
         self.attend = nn.MultiheadAttention(dim, heads, batch_first=True)
-        # Normalise what a cell read before it is made unit length
-        self.norm = nn.LayerNorm(dim)
 
     def forward(
         self,
@@ -70,53 +65,38 @@ class CrossAttentionFusion(nn.Module):
         Returns:
             grid: One unit vector per usable cell.
         """
-        # Where each cell sits and how far it reaches
-        placed = cells.position  # (B, Q, 6)
         # The tokens of every instrument read, side by side
-        held = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
+        sources = torch.cat([tokens[name] for name in read], dim=1)  # (B, S, D)
         # Where each of those tokens' patches sits and reaches
-        where = torch.cat([batch[name].position for name in read], dim=1)  # (B, S, 6)
-        # Which of those tokens may be read
-        taken = torch.cat([counted[name] for name in read], dim=1)  # (B, S)
-        # With no token at all, every cell is left empty
-        if held.shape[1] == 0:
-            return TileGrid(
-                held.new_zeros(*placed.shape[:2], held.shape[-1]),
-                torch.zeros_like(cells.present),
-                cells.offset,
-            )
-        # Every cell of every tile as one query
-        boxes = placed.flatten(0, 1)  # (B * Q, 6)
-        # The tile each query belongs to
-        tiles = torch.arange(len(placed), device=placed.device).repeat_interleave(
-            placed.shape[1]
-        )  # (B * Q,)
-        attended, covered = [], []
-        # Read the cells a chunk at a time, so a tile's cells fit in memory
-        for rows, at, chosen, ignored in neighbourhoods(
-            boxes, tiles, where, taken, CELLS
-        ):
-            # The tokens covering each cell of the chunk, padded to one count
-            picked = held[tiles[rows, None], at]  # (n, M, D)
+        source_boxes = torch.cat([batch[name].position for name in read], dim=1)
+        # Which of those tokens may be read, the hidden ones never
+        readable = torch.cat([counted[name] for name in read], dim=1)  # (B, S)
+        # Every cell starts empty
+        values = sources.new_zeros(*cells.present.shape, sources.shape[-1])  # (B, Q, D)
+        occupied = torch.zeros_like(cells.present)  # (B, Q)
+        # With no token at all, every cell stays empty
+        if sources.shape[1] == 0:
+            return TileGrid(values, occupied, cells.offset)
+        # One tile at a time, so its cells and tokens fit in memory
+        for tile, present in enumerate(cells.present):
+            # Where each real cell of the tile sits and reaches
+            boxes = cells.position[tile, present]  # (C, 6)
+            # The readable tokens covering each cell, padded to one count
+            at, chosen, ignored = neighbourhoods(
+                boxes, source_boxes[tile], readable[tile]
+            )  # (C, M)
+            covering = sources[tile, at]  # (C, M, D)
             # Each cell asks with the shared query, placed where it sits
-            asked = self.query + self.place(boxes[rows])  # (n, D)
+            asked = (self.query + self.place(boxes)).unsqueeze(1)  # (C, 1, D)
             # Each cell attends over the tokens covering it, padding skipped
-            read_out, _ = self.attend(
-                asked.unsqueeze(1),
-                picked,
-                picked,
-                key_padding_mask=ignored,
-                need_weights=False,
-            )  # (n, 1, D)
-            # Keep what each cell read
-            attended.append(read_out[:, 0])  # (n, D)
-            # Keep whether any token covered it
-            covered.append(chosen.any(dim=-1))  # (n,)
-        # A cell is occupied when it is a real cell that some token covered
-        occupied = cells.present & torch.cat(covered).view(placed.shape[:2])  # (B, Q)
-        # Normalise what each cell read and make it unit length
-        values = functional.normalize(
-            self.norm(torch.cat(attended).view(*placed.shape[:2], -1)), dim=-1
-        )  # (B, Q, D)
-        # Empty cells are zeroed, so only occupied ones carry a vector
-        return TileGrid(values * occupied.unsqueeze(-1), occupied, cells.offset)
+            attended, _ = self.attend(
+                asked, covering, covering, key_padding_mask=ignored, need_weights=False
+            )  # (C, 1, D)
+            # A cell is occupied when some readable token covers it
+            covered = chosen.any(dim=-1)  # (C,)
+            # Unit vectors where covered, zero elsewhere
+            values[tile, present] = functional.normalize(
+                attended[:, 0], dim=-1
+            ) * covered.unsqueeze(-1)
+            occupied[tile, present] = covered
+        return TileGrid(values, occupied, cells.offset)
