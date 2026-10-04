@@ -6,9 +6,9 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 from architecture.components.crossattention_fusion import CrossAttentionFusion
+from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.components.transformer import Transformer
 from architecture.grid import Cells, TileGrid
 from architecture.tokens import Tokens
 
@@ -60,7 +60,9 @@ class CrossSensorMAE(nn.Module):
             }
         )
         # One stack every instrument's tokens pass through alone, on shared weights
-        self.crossencoder = Transformer(encoder_dim, encoder_heads, crossencoder_depth)
+        self.crossencoder = CrossSensorEncoder(
+            encoder_dim, encoder_heads, crossencoder_depth
+        )
         # The one place the instruments meet, each cell read from what reaches it
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
         # One decoder per instrument, each writing its patches back from the cells
