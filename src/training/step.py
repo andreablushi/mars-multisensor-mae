@@ -7,33 +7,25 @@ from collections import defaultdict
 import torch
 from torch import Tensor
 
-from architecture.grid import Cells
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens
 from training.loss import loss_terms, scored_patches, summed_errors
 
 
-def device_batch(
-    batch: dict[str, Tokens], cells: Cells, device: torch.device
-) -> tuple[dict[str, Tokens], Cells]:
+def device_batch(batch: dict[str, Tokens], device: torch.device) -> dict[str, Tokens]:
     """Return one batch held on the model device.
 
     Args:
         batch: Each instrument's patches over the batch.
-        cells: The cells the batch's patches reach.
         device: Where the model runs.
 
     Returns:
         batch: The patches, on the device.
-        cells: The cells, on the device.
     """
-    return (
-        {
-            name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
-            for name, tokens in batch.items()
-        },
-        Cells(*(one.to(device, non_blocking=True) for one in cells)),
-    )
+    return {
+        name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
+        for name, tokens in batch.items()
+    }
 
 
 def drawn_masks(
@@ -95,7 +87,7 @@ def batch_errors(
 
 def step_terms(
     model: CrossSensorMAE,
-    passes: list[tuple[dict[str, Tokens], Cells, list[str]]],
+    passes: list[tuple[dict[str, Tokens], list[str]]],
     mask_ratio: float,
     generator: torch.Generator,
     device: torch.device,
@@ -114,8 +106,8 @@ def step_terms(
     """
     # Every pass is drawn first, so each term is averaged over the whole step
     drawn, counts = [], defaultdict(float)
-    for batch, cells, _ in passes:
-        batch, _ = device_batch(batch, cells, device)
+    for batch, _ in passes:
+        batch = device_batch(batch, device)
         visible, hidden, scored = drawn_masks(
             batch, mask_ratio, model.attention_m, generator
         )
@@ -124,8 +116,8 @@ def step_terms(
             counts[term] += float(patches.sum())
     sums = defaultdict(float)
     # One pass on the device at a time, its gradients added to the step's
-    for (batch, cells, _), masks in zip(passes, drawn, strict=True):
-        batch, _ = device_batch(batch, cells, device)
+    for (batch, _), masks in zip(passes, drawn, strict=True):
+        batch = device_batch(batch, device)
         held = batch_errors(model, batch, *masks)
         loss_terms(held, counts)["loss"].backward()
         for term, value in held.items():

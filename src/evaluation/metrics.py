@@ -10,47 +10,48 @@ from sklearn.metrics import silhouette_samples
 from torch import Tensor
 from umap import UMAP
 
-from architecture.grid import TileGrid
+from evaluation.evaluate import TileTokens
 
 TOP_K = (1, 5, 10, 20)
 PAIR_BATCH = 4
 
 
 def chamfer_distances(
-    grids: Sequence[TileGrid], minimal_chamfer_cell_distance: int | None = None
+    tiles: Sequence[TileTokens], minimal_chamfer_cell_distance: int | None = None
 ) -> Tensor:
-    """Return how far every tile stands from every other, over the cells they hold.
+    """Return how far every tile stands from every other, over the tokens they hold.
 
-    A tile is its occupied cells and nothing else, so two are compared by matching
-    each cell of one to the nearest cell of the other and averaging both ways. The
-    cost of a match is the cosine distance between two cells, which the fusion's
-    unit vectors put in [0, 1], so the distance is already normalised. A cell whose
-    neighbourhood holds nothing to match stands a whole mismatch from that tile.
+    A tile is its weighted tokens and nothing else, so two are compared by matching
+    each token of one to the nearest token of the other and averaging both ways by
+    weight. The cost of a match is the cosine distance between two tokens, which
+    their unit length puts in [0, 1], so the distance is already normalised. A token
+    whose neighbourhood holds nothing to match stands a whole mismatch from that tile.
 
     Args:
-        grids: One grid per tile, in the order the distances are wanted.
+        tiles: One set of tokens per tile, in the order the distances are wanted.
         minimal_chamfer_cell_distance: How far, in cells along any axis, a
-            cell may be matched from its own offset, or None to match it anywhere
+            token may be matched from its own cell, or None to match it anywhere
             in the other tile.
 
     Returns:
         distances: The distance between every pair of tiles, in [0, 1]. (T, T)
     """
-    counts = torch.tensor([int(one.occupied.sum()) for one in grids])  # (T,)
-    device = grids[0].values.device
+    counts = torch.tensor([int((one.weight > 0).sum()) for one in tiles])  # (T,)
     width = int(counts.max())
-    values = grids[0].values.new_zeros(len(grids), width, grids[0].values.shape[-1])
-    offsets = values.new_zeros(len(grids), width, 3)
-    for at, grid in enumerate(grids):
-        values[at, : counts[at]] = grid.values[grid.occupied]
-        offsets[at, : counts[at]] = grid.offset[grid.occupied].to(values.dtype)
-    counted = counts.to(device, values.dtype)  # (T,)
-    held = torch.arange(width, device=device) < counted.unsqueeze(1)  # (T, W)
-    distances = values.new_zeros(len(grids), len(grids))
+    values = tiles[0].values.new_zeros(len(tiles), width, tiles[0].values.shape[-1])
+    offsets = values.new_zeros(len(tiles), width, 3)
+    weights = values.new_zeros(len(tiles), width)
+    for at, tile in enumerate(tiles):
+        compared = tile.weight > 0
+        values[at, : counts[at]] = tile.values[compared]
+        offsets[at, : counts[at]] = tile.offset[compared].to(values.dtype)
+        weights[at, : counts[at]] = tile.weight[compared]
+    held = weights > 0  # (T, W)
+    distances = values.new_zeros(len(tiles), len(tiles))
     # Both ways round are the same sum, so only a tile against those after it is read.
-    for at in range(len(grids)):
-        for start in range(at, len(grids), PAIR_BATCH):
-            rest = slice(start, min(start + PAIR_BATCH, len(grids)))
+    for at in range(len(tiles)):
+        for start in range(at, len(tiles), PAIR_BATCH):
+            rest = slice(start, min(start + PAIR_BATCH, len(tiles)))
             cost = (
                 1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
             ) / 2  # (R, W, W)
@@ -66,8 +67,7 @@ def chamfer_distances(
             forward = cost.amin(dim=2).nan_to_num(posinf=1.0)
             backward = cost.amin(dim=1).nan_to_num(posinf=1.0)
             distances[at, rest] = (
-                (forward * held[at]).sum(-1) / counted[at]
-                + (backward * held[rest]).sum(-1) / counted[rest]
+                (forward * weights[at]).sum(-1) + (backward * weights[rest]).sum(-1)
             ) / 2
     return (distances + distances.T).fill_diagonal_(0.0)
 

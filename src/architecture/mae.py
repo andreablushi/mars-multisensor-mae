@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional
 from torch.utils.checkpoint import checkpoint
 
-from architecture.components.crossattention_fusion import CrossAttentionFusion
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.grid import Cells, TileGrid
 from architecture.tokens import Tokens
 
-# B = batch, K = patches, Q = cells, D = token channels, P = patch dimensions.
+# B = batch, K = patches, S = tokens read together, D = token channels,
+# P = patch dimensions.
 
 
 class CrossSensorMAE(nn.Module):
@@ -30,7 +30,6 @@ class CrossSensorMAE(nn.Module):
         decoder_dim: int,
         decoder_heads: int,
         decoder_depth: int,
-        cell_m: float,
         attention_m: float,
     ) -> None:
         """Build every part for the instruments the model reads.
@@ -39,13 +38,12 @@ class CrossSensorMAE(nn.Module):
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
             strides: How far apart two neighbouring patch centres sit, in metres.
             encoder_dim: How wide a token is everywhere but the decoders.
-            encoder_heads: How many attention heads every encoder and the fusion run.
+            encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
             crossencoder_depth: How many blocks the cross-sensor encoder stacks.
             decoder_dim: How wide a token is in the decoders.
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
-            cell_m: How far a cell of a tile's grid runs along the ground, in metres.
             attention_m: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
@@ -67,8 +65,6 @@ class CrossSensorMAE(nn.Module):
         self.crossencoder = CrossSensorEncoder(
             encoder_dim, encoder_heads, crossencoder_depth, attention_m
         )
-        # The one place the instruments meet, each cell read from what reaches it
-        self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
         # One decoder per instrument, each writing its patches back from the tokens
         self.decoders = nn.ModuleDict(
             {
@@ -146,25 +142,25 @@ class CrossSensorMAE(nn.Module):
         return self.crossencoder(tokens, readable, position), position, readable
 
     def embed(
-        self, batch: dict[str, Tokens], present: dict[str, Tensor], cells: Cells
-    ) -> TileGrid:
-        """Return the grid standing for each tile, over every instrument it holds.
+        self, batch: dict[str, Tokens], present: dict[str, Tensor]
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Return the tokens standing for each tile, over every instrument it holds.
 
         Args:
             batch: Each instrument's patches over the batch.
             present: Which slots hold a patch rather than padding. (B, K)
-            cells: The cells the batch's patches reach.
 
         Returns:
-            grid: One vector per cell, over every patch, none hidden.
+            tokens: Every instrument's tokens side by side, of unit length. (B, S, D)
+            position: Where each token's patch sits and reaches, in metres. (B, S, 6)
+            present: Which of them hold a patch. (B, S)
         """
         # Every real patch of every instrument is encoded, nothing hidden
         encoded = self.encoded_tokens(batch, present)
-        tokens, _, _ = self.joint_tokens(encoded, batch, present, list(batch))
-        counts = [one.position.shape[1] for one in batch.values()]
-        shared = dict(zip(batch, tokens.split(counts, dim=1), strict=True))
-        # The grid all instruments make of each tile together
-        return self.fusion(shared, batch, present, cells, list(batch))
+        tokens, position, counted = self.joint_tokens(
+            encoded, batch, present, list(batch)
+        )
+        return functional.normalize(tokens, dim=-1), position, counted
 
     def forward(
         self,

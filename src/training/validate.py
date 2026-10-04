@@ -35,8 +35,8 @@ def validation_terms(
     generator = torch.Generator(device=device).manual_seed(seed)
     sums, counts = defaultdict(float), defaultdict(float)
     with torch.no_grad():
-        for batch, cells, _ in loader:
-            batch, _ = device_batch(batch, cells, device)
+        for batch, _ in loader:
+            batch = device_batch(batch, device)
             visible, hidden, scored = drawn_masks(
                 batch, mask_ratio, model.attention_m, generator
             )

@@ -35,10 +35,9 @@ class ModelConfig:
     Attributes:
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
-        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         attention_m: How far apart on the ground two tokens may attend, in metres.
         encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
-        encoder_heads: How many attention heads every encoder and the fusion run.
+        encoder_heads: How many attention heads every encoder runs.
         encoder_depth: How many blocks each instrument encoder stacks.
         crossencoder_depth: How many blocks the cross-sensor encoder stacks.
         decoder_dim: How wide a token is in the decoders, a multiple of 12.
@@ -48,7 +47,6 @@ class ModelConfig:
 
     instruments: list[str]
     delay: str
-    cell_m: float
     attention_m: float
     encoder_dim: int
     encoder_heads: int
@@ -94,13 +92,15 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
+        cell_m: How far a cell tokens are matched by runs along the ground, in metres.
         minimal_chamfer_cell_distance: How far, in cells along any axis, a
-            cell may be matched from its own offset, or None to match it anywhere
+            token may be matched from its own cell, or None to match it anywhere
             in the other tile.
         delay_window: The first and last delay cell kept, counted from the surface.
     """
 
     build: str
+    cell_m: float
     minimal_chamfer_cell_distance: int | None
     delay_window: tuple[int, int]
 

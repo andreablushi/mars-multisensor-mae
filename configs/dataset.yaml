@@ -8,8 +8,8 @@ build: training
 root: data/dataset
 
 # How far a patch runs along an axis holding each thing, an axis left out taken
-# whole. A tile is 32 km: a CTX patch spans about 640 m of its ground, one grid
-# cell, and every other about 2.5 km.
+# whole. A tile is 32 km: a CTX patch spans about 640 m of its ground, and every
+# other about 2.5 km.
 patchsize:
   # A scan at about 5 m a pixel, about 2300 patches of a tile.
   CTX: {ground: 128}

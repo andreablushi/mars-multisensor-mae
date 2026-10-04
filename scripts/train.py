@@ -50,7 +50,6 @@ def run_training(
         sizes,
         config.dataset.pool,
         shapes,
-        config.model.cell_m,
         config.dataset.split,
         config.dataset.seed,
         config.model.delay,

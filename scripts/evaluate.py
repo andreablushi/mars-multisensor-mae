@@ -66,7 +66,6 @@ def built_model(
         config.model.decoder_dim,
         config.model.decoder_heads,
         config.model.decoder_depth,
-        config.model.cell_m,
         config.model.attention_m,
     ).to(device)
     return model, device, sizes, shapes, strides
@@ -96,23 +95,24 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         config.dataset.pool,
         shapes,
         config.model.delay,
-        config.model.cell_m,
         config.training.memory_batch_size,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
     )
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
-    grids = evaluate_latent_space(
+    tokens = evaluate_latent_space(
         model,
         loader,
         device,
+        config.evaluation.cell_m,
         config.dataset.patchsize["SHARAD"]["delay"],
         config.evaluation.delay_window,
     )
-    tiles = sorted(grids)
+    tiles = sorted(tokens)
     distances = chamfer_distances(
-        [grids[tile] for tile in tiles], config.evaluation.minimal_chamfer_cell_distance
+        [tokens[tile] for tile in tiles],
+        config.evaluation.minimal_chamfer_cell_distance,
     )
     results = results_path(config.run_name)
     write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
