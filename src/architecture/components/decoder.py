@@ -18,6 +18,59 @@ PATCHES = 1024
 REACH = 3.0
 
 
+class CrossAttentionBlock(nn.Module):
+    """One pre-norm block: the patch attends over its cells, then a feed-forward.
+
+    Attributes:
+        attend_norm: What the patch is normalised by before it attends.
+        attend: The attention from the patch to its cells.
+        feed_norm: What the patch is normalised by before the feed-forward.
+        feed: The feed-forward, four times as wide inside.
+    """
+
+    def __init__(self, dim: int, heads: int) -> None:
+        """Build one block for one token width.
+
+        Args:
+            dim: The token width.
+            heads: How many attention heads the block runs.
+        """
+        super().__init__()
+        # Normalise the patch before it attends
+        self.attend_norm = nn.LayerNorm(dim)
+        # The patch reads its cells
+        self.attend = nn.MultiheadAttention(dim, heads, batch_first=True)
+        # Normalise the patch before the feed-forward
+        self.feed_norm = nn.LayerNorm(dim)
+        # The feed-forward, four times as wide inside
+        self.feed = nn.Sequential(
+            nn.Linear(dim, 4 * dim), nn.GELU(), nn.Linear(4 * dim, dim)
+        )
+
+    def forward(self, query: Tensor, cells: Tensor, ignored: Tensor) -> Tensor:
+        """Return the patch token after it reads its cells.
+
+        Args:
+            query: The patch token. (N, 1, D)
+            cells: The cells it reads. (N, M, D)
+            ignored: The padding attention skips. (N, M)
+
+        Returns:
+            query: The updated patch token. (N, 1, D)
+        """
+        # The patch attends over its cells, padding skipped, and adds what it read
+        read, _ = self.attend(
+            self.attend_norm(query),
+            cells,
+            cells,
+            key_padding_mask=ignored,
+            need_weights=False,
+        )
+        query = query + read
+        # The feed-forward, added back
+        return query + self.feed(self.feed_norm(query))  # (N, 1, D)
+
+
 class Decoder(nn.Module):
     """Let each hidden patch attend over the cells around it, then write it.
 
@@ -29,7 +82,8 @@ class Decoder(nn.Module):
         expand: From the shared width up to the decoder width, at unit scale.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding of a cell's offset from the patch.
-        blocks: The transformer, from the patch to its cells.
+        blocks: The cross-attention blocks, from the patch to its cells.
+        norm: What the patch is normalised by after the blocks.
         predict: From a token to every sample of its patch.
     """
 
@@ -63,18 +117,12 @@ class Decoder(nn.Module):
         nn.init.normal_(self.mask, std=0.02)
         # Encode a cell's offset from the patch, at the instrument's patch spacing
         self.place = PositionalEncoding(dim, stride)
-        # One pre-norm decoder block: the patch attends to itself, then to its cells
-        block = nn.TransformerDecoderLayer(
-            dim,
-            heads,
-            4 * dim,
-            dropout=0.0,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
+        # The blocks the patch reads its cells through
+        self.blocks = nn.ModuleList(
+            CrossAttentionBlock(dim, heads) for _ in range(depth)
         )
-        # Stack the blocks and normalise once more at the end
-        self.blocks = nn.TransformerDecoder(block, depth, norm=nn.LayerNorm(dim))
+        # Normalise once more at the end
+        self.norm = nn.LayerNorm(dim)
         # Write every sample of the patch from its token
         self.predict = nn.Linear(dim, math.prod(shape))
         # Start by predicting zero, the dataset's mean after standardisation
@@ -119,28 +167,25 @@ class Decoder(nn.Module):
         for start in range(0, len(tiles), PATCHES):
             # The hidden patches of this chunk
             rows = slice(start, start + PATCHES)
-            # The tile each patch of the chunk belongs to, as a column
-            tile = tiles[rows, None]  # (n, 1)
+            # The tile each patch of the chunk belongs to
+            tile = tiles[rows]  # (n,)
             # The cells in each patch's window, padded to one count
             at, chosen, ignored = neighbourhoods(
-                window[rows],
-                context_position[tiles[rows]],
-                context_visible[tiles[rows]],
+                window[rows], context_position[tile], context_visible[tile]
             )  # (n, M)
-            # Where each cell in a patch's window sits and reaches
-            around = context_position[tile, at]  # (n, M, 6)
             # Each cell's centre relative to the patch's, beside its own spans
-            offset = relative_boxes(around, window[rows])  # (n, M, 6)
+            offset = relative_boxes(context_position[tile[:, None], at], asked[rows])
             # Each cell's vector, placed by its offset from the patch
-            read = cells[tile, at] + self.place(offset)  # (n, M, D')
+            read = cells[tile[:, None], at] + self.place(offset)  # (n, M, D')
             # A window holding no cell reads zeros, so it writes a learned constant
             read = read * chosen.unsqueeze(-1)  # (n, M, D')
             # Every hidden patch asks with the same mask token
-            query = self.mask.expand(len(tile), 1, -1)  # (n, 1, D')
-            # The patch attends over the cells of its window, padding skipped
-            decoded = self.blocks(query, read, memory_key_padding_mask=ignored)
+            decoded = self.mask.expand(len(tile), 1, -1)  # (n, 1, D')
+            # The patch reads the cells of its window, block after block
+            for block in self.blocks:
+                decoded = block(decoded, read, ignored)
             # Write every sample of each patch from its decoded token
-            written.append(self.predict(decoded[:, 0]))  # (n, prod P)
+            written.append(self.predict(self.norm(decoded[:, 0])))  # (n, prod P)
         # Put the written patches back into their slots, in the patch's own shape
         prediction[tiles, slot] = (
             torch.cat(written).unflatten(-1, self.shape).to(prediction.dtype)
