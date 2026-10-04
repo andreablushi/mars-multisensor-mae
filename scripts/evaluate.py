@@ -67,6 +67,7 @@ def built_model(
         config.model.decoder_heads,
         config.model.decoder_depth,
         config.model.cell_m,
+        config.model.attention_m,
     ).to(device)
     return model, device, sizes, shapes, strides
 

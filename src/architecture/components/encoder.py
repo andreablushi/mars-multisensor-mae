@@ -28,6 +28,7 @@ class Encoder(nn.Module):
         heads: int,
         depth: int,
         stride: float,
+        radius: float,
     ) -> None:
         """Build the encoder for one instrument.
 
@@ -37,6 +38,7 @@ class Encoder(nn.Module):
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
             stride: How far apart two neighbouring patch centres sit, in metres.
+            radius: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
         # Map every sample of a patch into the token width
@@ -44,7 +46,7 @@ class Encoder(nn.Module):
         # Encode where a patch sits and how far it reaches, at the patch spacing
         self.place = PositionalEncoding(dim, stride)
         # The transformer the instrument's patch tokens attend over each other in
-        self.blocks = Transformer(dim, heads, depth)
+        self.blocks = Transformer(dim, heads, depth, radius)
 
     def forward(
         self, values: Tensor, measured: Tensor, position: Tensor, visible: Tensor
@@ -63,4 +65,6 @@ class Encoder(nn.Module):
         # One token per patch, from its measured samples alone
         tokens = self.embed((values * measured).flatten(2))  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
-        return self.blocks(tokens + self.place(position), visible)  # (B, K, D)
+        return self.blocks(
+            tokens + self.place(position), visible, position
+        )  # (B, K, D)

@@ -36,6 +36,7 @@ class ModelConfig:
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
         cell_m: How far a cell of a tile's grid runs along the ground, in metres.
+        attention_m: How far apart on the ground two tokens may attend, in metres.
         encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
         encoder_heads: How many attention heads every encoder and the fusion run.
         encoder_depth: How many blocks each instrument encoder stacks.
@@ -48,6 +49,7 @@ class ModelConfig:
     instruments: list[str]
     delay: str
     cell_m: float
+    attention_m: float
     encoder_dim: int
     encoder_heads: int
     encoder_depth: int

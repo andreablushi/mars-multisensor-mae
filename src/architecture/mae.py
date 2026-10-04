@@ -30,6 +30,7 @@ class CrossSensorMAE(nn.Module):
         decoder_heads: int,
         decoder_depth: int,
         cell_m: float,
+        attention_m: float,
     ) -> None:
         """Build every part for the instruments the model reads.
 
@@ -44,6 +45,7 @@ class CrossSensorMAE(nn.Module):
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
             cell_m: How far a cell of a tile's grid runs along the ground, in metres.
+            attention_m: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
         # One encoder per instrument, each from its patches to tokens
@@ -55,13 +57,14 @@ class CrossSensorMAE(nn.Module):
                     encoder_heads,
                     encoder_depth,
                     strides[name],
+                    attention_m,
                 )
                 for name, shape in shapes.items()
             }
         )
         # One stack every instrument's tokens pass through alone, on shared weights
         self.crossencoder = CrossSensorEncoder(
-            encoder_dim, encoder_heads, crossencoder_depth
+            encoder_dim, encoder_heads, crossencoder_depth, attention_m
         )
         # The one place the instruments meet, each cell read from what reaches it
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
@@ -110,7 +113,9 @@ class CrossSensorMAE(nn.Module):
                 counted[name],
             )  # (B, K, D)
             # The shared stack maps those tokens into the space every instrument shares
-            encoded[name] = self.crossencoder(stem, counted[name])  # (B, K, D)
+            encoded[name] = self.crossencoder(
+                stem, counted[name], tokens.position
+            )  # (B, K, D)
         return encoded
 
     def embed(
