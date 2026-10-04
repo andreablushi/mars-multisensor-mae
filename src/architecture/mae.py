@@ -63,7 +63,7 @@ class CrossSensorMAE(nn.Module):
                 for name, shape in shapes.items()
             }
         )
-        # One stack every instrument's tokens pass through alone, on shared weights
+        # One stack the instruments read together pass through, on shared weights
         self.crossencoder = CrossSensorEncoder(
             encoder_dim, encoder_heads, crossencoder_depth, attention_m
         )
@@ -86,11 +86,13 @@ class CrossSensorMAE(nn.Module):
         )
         # The token width, which an instrument with no patch is handed zeros at
         self.dim = encoder_dim
+        # How far apart on the ground two tokens may attend, in metres
+        self.attention_m = attention_m
 
-    def shared_tokens(
+    def encoded_tokens(
         self, batch: dict[str, Tokens], counted: dict[str, Tensor]
     ) -> dict[str, Tensor]:
-        """Return each instrument's patches in the space every instrument shares.
+        """Return each instrument's patches as its own encoder reads them.
 
         Args:
             batch: Each instrument's patches over the batch.
@@ -108,17 +110,40 @@ class CrossSensorMAE(nn.Module):
                 )  # (B, 0, D)
                 continue
             # The instrument's own encoder turns its readable patches into tokens
-            stem = self.encoders[name](
+            encoded[name] = self.encoders[name](
                 tokens.values,
                 tokens.measured,
                 tokens.position,
                 counted[name],
             )  # (B, K, D)
-            # The shared stack maps those tokens into the space every instrument shares
-            encoded[name] = self.crossencoder(
-                stem, counted[name], tokens.position
-            )  # (B, K, D)
         return encoded
+
+    def joint_tokens(
+        self,
+        encoded: dict[str, Tensor],
+        batch: dict[str, Tokens],
+        counted: dict[str, Tensor],
+        read: list[str],
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Return some instruments' tokens side by side, attended over together.
+
+        Args:
+            encoded: Each instrument's tokens from its own encoder. (B, K, D)
+            batch: Each instrument's patches over the batch, which place the tokens.
+            counted: Which of its tokens count: visible while training, else present.
+            read: Which instruments are read together.
+
+        Returns:
+            tokens: The tokens, in the space every instrument shares. (B, S, D)
+            position: Where each token's patch sits and reaches, in metres. (B, S, 6)
+            counted: Which of them count. (B, S)
+        """
+        position = torch.cat(
+            [batch[name].position for name in read], dim=1
+        )  # (B, S, 6)
+        readable = torch.cat([counted[name] for name in read], dim=1)  # (B, S)
+        tokens = torch.cat([encoded[name] for name in read], dim=1)  # (B, S, D)
+        return self.crossencoder(tokens, readable, position), position, readable
 
     def embed(
         self, batch: dict[str, Tokens], present: dict[str, Tensor], cells: Cells
@@ -134,46 +159,49 @@ class CrossSensorMAE(nn.Module):
             grid: One vector per cell, over every patch, none hidden.
         """
         # Every real patch of every instrument is encoded, nothing hidden
-        encoded = self.shared_tokens(batch, present)
+        encoded = self.encoded_tokens(batch, present)
+        tokens, _, _ = self.joint_tokens(encoded, batch, present, list(batch))
+        counts = [one.position.shape[1] for one in batch.values()]
+        shared = dict(zip(batch, tokens.split(counts, dim=1), strict=True))
         # The grid all instruments make of each tile together
-        return self.fusion(encoded, batch, present, cells, list(batch))
+        return self.fusion(shared, batch, present, cells, list(batch))
 
     def forward(
         self,
         batch: dict[str, Tokens],
         visible: dict[str, Tensor],
         hidden: dict[str, Tensor],
-        cells: Cells,
-        kept: list[str],
-    ) -> dict[str, Tensor]:
-        """Return every instrument's hidden patches, predicted from the ones kept.
+    ) -> dict[tuple[str, str], Tensor]:
+        """Return every instrument's hidden patches, from all and from the others.
 
         Args:
             batch: Each instrument's patches over the batch.
             visible: Which patches each encoder may read. (B, K)
             hidden: Which patches are predicted, none of them padding. (B, K)
-            cells: The cells the batch's patches reach.
-            kept: Which instruments the decoders read.
 
         Returns:
-            predictions: The predicted patches of each instrument. (B, K, *P)
+            predictions: Under "umr" each instrument's patches read from every
+                instrument, under "cmr" from every other one. (B, K, *P)
         """
-        # Only the visible patches of the instruments kept are encoded
-        encoded = self.shared_tokens({name: batch[name] for name in kept}, visible)
-        # Every kept token side by side, the context every decoder reads
-        context = torch.cat([encoded[name] for name in kept], dim=1)  # (B, S, D)
-        placed = torch.cat([batch[name].position for name in kept], dim=1)  # (B, S, 6)
-        readable = torch.cat([visible[name] for name in kept], dim=1)  # (B, S)
+        # Only the visible patches are encoded, each instrument on its own
+        encoded = self.encoded_tokens(batch, visible)
+        # None reads every instrument, a name every instrument but that one
+        reads = {None: list(batch)} | {
+            name: [one for one in batch if one != name] for name in batch
+        }
+        joint = {
+            left: self.joint_tokens(encoded, batch, visible, read)
+            for left, read in reads.items()
+        }
         return {
             # Recomputed on the way back, so only one decoder pass is held at once
-            name: checkpoint(
+            (term, name): checkpoint(
                 self.decoders[name],
-                context,
-                placed,
-                readable,
+                *joint[left],
                 tokens.position,
                 hidden[name],
                 use_reentrant=False,
             )  # (B, K, *P)
             for name, tokens in batch.items()
+            for term, left in (("umr", None), ("cmr", name))
         }

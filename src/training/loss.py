@@ -7,7 +7,6 @@ from collections.abc import Mapping
 import torch
 from torch import Tensor
 
-from architecture.grid import overlapping_boxes
 from architecture.tokens import Tokens
 
 
@@ -15,7 +14,7 @@ def scored_patches(
     batch: dict[str, Tokens],
     visible: dict[str, Tensor],
     hidden: dict[str, Tensor],
-    kept: list[str],
+    radius: float,
 ) -> dict[tuple[str, str], Tensor]:
     """Return the hidden patches each loss term scores, keyed by term and instrument.
 
@@ -23,43 +22,32 @@ def scored_patches(
         batch: Each instrument's patches over the batch.
         visible: Which patches each encoder reads. (B, K)
         hidden: Which patches are predicted. (B, K)
-        kept: Which instruments the grid is read from.
+        radius: How far apart on the ground two tokens may attend, in metres.
 
     Returns:
-        scored: Under "umr" every hidden patch of an instrument the grid holds,
-            under "cmr" those of one it leaves out that a kept one reaches. (B, K)
+        scored: Under "umr" every hidden patch of an instrument, under "cmr" those
+            a visible patch of another instrument reaches. (B, K)
     """
     scored = {}
     for name, target in batch.items():
-        if name in kept:
-            scored["umr", name] = hidden[name]
-            continue
-        reached = torch.zeros_like(hidden[name])  # (B, K)
-        for source_name in kept:
-            source = batch[source_name]
-            # Surface patches are matched on the ground alone, a sounder in delay too
-            sounder = (target.position[..., 5] > 0).any() or (
-                source.position[..., 5] > 0
-            ).any()
-            overlapping = overlapping_boxes(
-                target.position[:, :, None],
-                source.position[:, None],
-                3 if sounder else 2,
-            )  # (B, K, K')
-            reached |= (overlapping & visible[source_name][:, None]).any(dim=-1)
-        scored["cmr", name] = hidden[name] & reached  # (B, K)
+        scored["umr", name] = hidden[name]
+        others = [one for one in batch if one != name]
+        position = torch.cat([batch[one].position for one in others], dim=1)
+        readable = torch.cat([visible[one] for one in others], dim=1)  # (B, S)
+        near = torch.cdist(target.position[..., :2], position[..., :2]) <= radius
+        scored["cmr", name] = hidden[name] & (near & readable[:, None]).any(dim=-1)
     return scored
 
 
 def summed_errors(
-    predictions: Mapping[str, Tensor],
+    predictions: Mapping[tuple[str, str], Tensor],
     batch: dict[str, Tokens],
     scored: Mapping[tuple[str, str], Tensor],
 ) -> dict[tuple[str, str], Tensor]:
     """Return each term's error, summed over the patches it scores.
 
     Args:
-        predictions: The predicted patches of each instrument. (B, K, *P)
+        predictions: The predicted patches of each term and instrument. (B, K, *P)
         batch: Each instrument's patches over the batch.
         scored: The patches each term scores. (B, K)
 
@@ -73,7 +61,9 @@ def summed_errors(
         measured = target.measured.to(target.values.dtype).expand_as(target.values)
         samples = tuple(range(2, target.values.dim()))
         # Each patch's squared error, averaged over its measured samples
-        error = ((predictions[name] - target.values) ** 2 * measured).sum(dim=samples)
+        error = ((predictions[term, name] - target.values) ** 2 * measured).sum(
+            dim=samples
+        )
         error = error / measured.sum(dim=samples).clamp(min=1)  # (B, K)
         sums[term, name] = (error * patches).sum()  # ()
     return sums

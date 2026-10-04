@@ -1,4 +1,4 @@
-"""Bringing every sensor's tokens into one space, on weights they all pass through."""
+"""Bringing the sensors' tokens into one space, attended over together."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from architecture.components.transformer import Transformer
 
 
 class CrossSensorEncoder(nn.Module):
-    """Attend over one sensor's tokens alone, on weights shared with every other.
+    """Attend over the tokens of the sensors read together, on weights they share.
 
     Attributes:
         blocks: The transformer.
@@ -26,14 +26,14 @@ class CrossSensorEncoder(nn.Module):
             radius: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
-        # The stack every instrument's tokens pass through, on the same weights
+        # The stack the instruments' tokens pass through together
         self.blocks = Transformer(dim, heads, depth, radius)
 
     def forward(self, tokens: Tensor, visible: Tensor, position: Tensor) -> Tensor:
-        """Return one instrument's tokens mapped into the space every instrument shares.
+        """Return the tokens mapped into the space every instrument shares.
 
         Args:
-            tokens: The instrument's encoded tokens. (B, K, D)
+            tokens: The instruments' encoded tokens, side by side. (B, K, D)
             visible: Which of them carry a patch the encoder read. (B, K)
             position: Where each token's patch sits and reaches, in metres. (B, K, 6)
 

@@ -86,7 +86,6 @@ def run_training(
         config.training.validate_every,
         config.training.patience,
         config.training.mask_ratio,
-        config.training.drop_ratio,
         config.training.checkpoints,
         config.dataset.seed,
         device,

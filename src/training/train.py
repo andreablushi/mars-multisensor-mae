@@ -37,7 +37,6 @@ def train(
     validate_every: int,
     patience: int,
     mask_ratio: float,
-    drop_ratio: float,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -58,7 +57,6 @@ def train(
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        drop_ratio: The chance each instrument is left out of the grid.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -96,7 +94,7 @@ def train(
         passes = list(islice(batches, accumulate))
         waited = time.perf_counter() - began
         optimizer.zero_grad()
-        terms = step_terms(model, passes, mask_ratio, drop_ratio, generator, device)
+        terms = step_terms(model, passes, mask_ratio, generator, device)
         # Stabilize training against exploding gradients
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
@@ -111,9 +109,7 @@ def train(
         # The last step is validated too, so a short run still leaves a checkpoint
         if step % validate_every and step < max_steps:
             continue
-        metrics = validation_terms(
-            model, validation, mask_ratio, drop_ratio, seed, device
-        )
+        metrics = validation_terms(model, validation, mask_ratio, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
