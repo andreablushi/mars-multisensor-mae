@@ -54,12 +54,10 @@ def built_model(
         strides: How far apart two neighbouring patch centres of each sensor sit.
     """
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
-    shapes, strides, centres_nm = read_patch_layout(build, sizes, config.dataset.pool)
+    shapes, strides = read_patch_layout(build, sizes, config.dataset.pool)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
-        build.read_axes_by_instrument(),
-        centres_nm,
         strides,
         config.model.encoder_dim,
         config.model.encoder_heads,

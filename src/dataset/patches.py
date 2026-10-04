@@ -11,8 +11,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
-from building.models.instrument import INSTRUMENTS
 
+from dataset.bands import (
+    measures_read_bands,
+    observation_read_bands,
+    read_band_patchsize,
+)
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
 from dataset.models.positioning import metres_from_centre
@@ -44,14 +48,19 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
-            lengths = patch_lengths(record.shape, record.axes, size)
-            counts = tuple(
-                length // patch
-                for length, patch in zip(record.shape, lengths, strict=True)
+            # An observation missing any band read is left out whole
+            if not measures_read_bands(name, record):
+                continue
+            observation = observation_read_bands(
+                name, build.read_observation(record.path)
             )
-            observation = build.read_observation(record.path)
+            shape = observation.values.shape
+            lengths = patch_lengths(shape, record.axes, size)
+            counts = tuple(
+                length // patch for length, patch in zip(shape, lengths, strict=True)
+            )
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, record, at, lengths, counts, delays)
+                patch = cut_patch(observation, at, lengths, counts, delays)
                 if patch.measured.any():
                     if name in pool:
                         patch = downsampled_patch(patch, pool[name])
@@ -62,7 +71,6 @@ def read_tile_patches(
 
 def cut_patch(
     observation: Observation,
-    record: ObservationMetadata,
     index: int,
     lengths: tuple[int, ...],
     counts: tuple[int, ...],
@@ -72,7 +80,6 @@ def cut_patch(
 
     Args:
         observation: The observation, read whole.
-        record: Its index row, which carries what a patch says about the whole.
         index: Which patch, counting whole ones as the axes run, the last fastest.
         lengths: How far one patch of it runs along each axis.
         counts: How many whole patches each of those axes holds.
@@ -104,11 +111,6 @@ def cut_patch(
         for length, holds in zip(lengths, axes, strict=True)
     )
     measured = observation.measured[taken].reshape(ground_shape).copy()
-    if record.band_valid_count is not None:
-        # A band the observation never measured was filled, so it measures nothing.
-        band_shape = tuple(-1 if holds == Axis.WAVELENGTH else 1 for holds in axes)
-        bands = np.asarray(record.band_valid_count) > 0
-        measured = measured & bands.reshape(band_shape)
     if Axis.DELAY in axes:
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
@@ -201,10 +203,8 @@ def read_patch_layout(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
-) -> tuple[
-    dict[str, tuple[int, ...]], dict[str, float], dict[str, tuple[float, ...] | None]
-]:
-    """Return each instrument's patch shape, patch spacing and channel wavelengths.
+) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
+    """Return each instrument's patch shape and patch spacing.
 
     Args:
         build: The published build the instruments are read from.
@@ -214,7 +214,6 @@ def read_patch_layout(
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
         strides: How far apart two neighbouring patch centres of each sensor sit.
-        centres_nm: The wavelength of each sensor's channels, in nm, or None.
     """
     rows = build.read_row_by_instrument()
     spacing = defaultdict(list)
@@ -225,12 +224,14 @@ def read_patch_layout(
     return (
         {
             name: patch_lengths(
-                rows[name].shape, rows[name].axes, size, pool.get(name, 1)
+                rows[name].shape,
+                rows[name].axes,
+                size | read_band_patchsize(name),
+                pool.get(name, 1),
             )
             for name, size in sizes.items()
         },
         {name: size[Axis.GROUND] * resolution[name] for name, size in sizes.items()},
-        {name: INSTRUMENTS[name].layout.band_centres_nm for name in sizes},
     )
 
 
@@ -250,7 +251,7 @@ def patch_arrays(
         arrays: The patches under "values", "measured" and "position".
     """
     measured_shape = tuple(
-        held if holds in (Axis.GROUND, Axis.WAVELENGTH) else 1
+        held if holds == Axis.GROUND else 1
         for held, holds in zip(shape, axes, strict=True)
     )
     return {
