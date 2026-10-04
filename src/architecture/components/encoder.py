@@ -46,18 +46,21 @@ class Encoder(nn.Module):
         # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth)
 
-    def forward(self, values: Tensor, position: Tensor, visible: Tensor) -> Tensor:
+    def forward(
+        self, values: Tensor, measured: Tensor, position: Tensor, visible: Tensor
+    ) -> Tensor:
         """Return the encoded tokens.
 
         Args:
             values: The normalised patches. (B, K, *P)
+            measured: Whether each sample is a measurement, broadcastable. (B, K, *P')
             position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
             visible: Which patches the encoder may read. (B, K)
 
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
-        # One token per patch, from all its samples
-        tokens = self.embed(values.flatten(2))  # (B, K, D)
+        # One token per patch, from its measured samples alone
+        tokens = self.embed((values * measured).flatten(2))  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
         return self.blocks(tokens + self.place(position), visible)  # (B, K, D)

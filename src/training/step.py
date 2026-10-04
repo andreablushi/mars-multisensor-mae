@@ -51,7 +51,7 @@ def drawn_masks(
     """
     visible, hidden = {}, {}
     for name, tokens in batch.items():
-        present = tokens.measured.flatten(2).any(dim=-1)  # (B, K)
+        present = tokens.present  # (B, K)
         noise = torch.rand(present.shape, generator=generator, device=present.device)
         # Padding is given the highest noise, so only present patches are hidden.
         order = noise.masked_fill(~present, 2.0).argsort(dim=1)  # (B, K)

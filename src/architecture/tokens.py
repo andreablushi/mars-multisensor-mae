@@ -27,6 +27,15 @@ class Tokens(NamedTuple):
     measured: Tensor
     position: Tensor
 
+    @property
+    def present(self) -> Tensor:
+        """Return which slots hold a patch rather than padding.
+
+        Returns:
+            present: True where any sample of the slot is a measurement. (B, K)
+        """
+        return self.measured.flatten(2).any(dim=-1)
+
 
 def token_batch_padding(
     samples: list[tuple[dict[str, dict[str, np.ndarray]], dict[str, np.ndarray], str]],

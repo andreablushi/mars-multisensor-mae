@@ -103,6 +103,7 @@ class CrossSensorMAE(nn.Module):
             # The instrument's own encoder turns its readable patches into tokens
             stem = self.encoders[name](
                 tokens.values,
+                tokens.measured,
                 tokens.position,
                 counted[name],
             )  # (B, K, D)

@@ -38,10 +38,7 @@ def evaluate_latent_space(
                 for name, tokens in batch.items()
             }
             cells = Cells(*(one.to(device, non_blocking=True) for one in cells))
-            present = {
-                name: tokens.measured.flatten(2).any(dim=-1)
-                for name, tokens in batch.items()
-            }  # (B, K)
+            present = {name: tokens.present for name, tokens in batch.items()}  # (B, K)
             with torch.autocast(device.type, dtype=torch.bfloat16):
                 grid = model.embed(batch, present, cells)
             # A tile's surface cell is the median delay of its patches spanning none

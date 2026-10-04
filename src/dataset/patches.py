@@ -171,7 +171,8 @@ def downsampled_patch(patch: Patch, factor: int) -> Patch:
     values = patch.values.reshape(weight.shape)
     return dataclasses.replace(
         patch,
-        values=values.sum(axis=pooled) / np.maximum(weight.sum(axis=pooled), 1.0),
+        values=(values * weight).sum(axis=pooled)
+        / np.maximum(weight.sum(axis=pooled), 1.0),
         measured=measured.any(axis=pooled),
     )
 
