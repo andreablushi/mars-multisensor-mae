@@ -6,6 +6,8 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
+from architecture.components.rotary_encoding import RotaryEncoding
+
 # B = batch, N = tokens, D = token channels.
 
 
@@ -16,6 +18,7 @@ class Block(nn.Module):
         heads: How many attention heads the block runs.
         attend_norm: What the tokens are normalised by before they attend.
         qkv: From a token to its query, key and value.
+        rotate: The rotary encoding queries and keys are turned by.
         out: From the attended heads back to the token width.
         feed_norm: What the tokens are normalised by before the feed-forward.
         feed: The feed-forward, four times as wide inside.
@@ -32,18 +35,20 @@ class Block(nn.Module):
         self.heads = heads
         self.attend_norm = nn.LayerNorm(dim)
         self.qkv = nn.Linear(dim, 3 * dim)
+        self.rotate = RotaryEncoding(dim // heads)
         self.out = nn.Linear(dim, dim)
         self.feed_norm = nn.LayerNorm(dim)
         self.feed = nn.Sequential(
             nn.Linear(dim, 4 * dim), nn.GELU(), nn.Linear(4 * dim, dim)
         )
 
-    def forward(self, tokens: Tensor, mask: Tensor) -> Tensor:
+    def forward(self, tokens: Tensor, mask: Tensor, position: Tensor) -> Tensor:
         """Return the tokens after one block.
 
         Args:
             tokens: The tokens. (B, N, D)
             mask: Which key each token may attend to. (B, 1, N, N)
+            position: Each token's patch centre and span, in metres or rows. (B, N, 6)
 
         Returns:
             tokens: The updated tokens. (B, N, D)
@@ -54,8 +59,12 @@ class Block(nn.Module):
             .unflatten(-1, (3, self.heads, -1))
             .permute(2, 0, 3, 1, 4)
         )  # (B, H, N, D / H) each
+        # Queries and keys turned by where they sit, so a score reads their offset
         attended = functional.scaled_dot_product_attention(
-            query, key, value, attn_mask=mask
+            self.rotate(query, position),
+            self.rotate(key, position),
+            value,
+            attn_mask=mask,
         )  # (B, H, N, D / H)
         tokens = tokens + self.out(attended.transpose(1, 2).flatten(2))  # (B, N, D)
         return tokens + self.feed(self.feed_norm(tokens))  # (B, N, D)
@@ -101,5 +110,5 @@ class Transformer(nn.Module):
         itself = torch.eye(near.shape[-1], dtype=torch.bool, device=near.device)
         mask = ((near & attended.unsqueeze(1)) | itself).unsqueeze(1)  # (B, 1, N, N)
         for block in self.blocks:
-            tokens = block(tokens, mask)
+            tokens = block(tokens, mask, position)
         return self.norm(tokens)  # (B, N, D)

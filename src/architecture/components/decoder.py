@@ -7,7 +7,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.positional_encoding import PositionalEncoding
+from architecture.components.span_encoding import SpanEncoding
 from architecture.components.transformer import Transformer
 
 # B = batch, S = context tokens, K = target patches, D = token channels,
@@ -21,7 +21,7 @@ class Decoder(nn.Module):
         shape: The shape of one patch this decoder predicts.
         expand: From the shared width to the decoder width.
         mask: The token standing in for a hidden patch. (D')
-        place: The positional encoding of every token, at the patch spacing.
+        span: The encoding of how far each patch reaches, at the patch spacing.
         blocks: The transformer the patches read the context through.
         predict: From a token to every sample of its patch.
     """
@@ -56,8 +56,8 @@ class Decoder(nn.Module):
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         # Start the mask token small, as transformer embeddings are
         nn.init.normal_(self.mask, std=0.02)
-        # Encode where every token sits, at the instrument's patch spacing
-        self.place = PositionalEncoding(dim, stride)
+        # Encode how far every token's patch reaches, at the patch spacing
+        self.span = SpanEncoding(dim, stride)
         # The blocks the patches read the context through
         self.blocks = Transformer(dim, heads, depth, radius)
         # Write every sample of the patch from its token
@@ -97,7 +97,7 @@ class Decoder(nn.Module):
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 6)
         # The visible context and the hidden patches attend, nothing else
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, S + K)
-        decoded = self.blocks(tokens + self.place(placed), attended, placed)
+        decoded = self.blocks(tokens + self.span(placed), attended, placed)
         # Write every sample of each patch slot from its decoded token
         written = self.predict(decoded[:, context.shape[1] :])  # (B, K, prod P)
         return written.unflatten(-1, self.shape)  # (B, K, *P)

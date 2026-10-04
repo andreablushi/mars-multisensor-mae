@@ -6,7 +6,7 @@ import math
 
 from torch import Tensor, nn
 
-from architecture.components.positional_encoding import PositionalEncoding
+from architecture.components.span_encoding import SpanEncoding
 from architecture.components.transformer import Transformer
 from architecture.tokens import Tokens
 
@@ -18,7 +18,7 @@ class Encoder(nn.Module):
 
     Attributes:
         embed: From every sample of a patch to a token.
-        place: The positional encoding.
+        span: The encoding of how far each patch reaches.
         blocks: The transformer.
     """
 
@@ -44,8 +44,8 @@ class Encoder(nn.Module):
         super().__init__()
         # Map every sample of a patch into the token width
         self.embed = nn.Linear(math.prod(shape), dim)
-        # Encode where a patch sits and how far it reaches, at the patch spacing
-        self.place = PositionalEncoding(dim, stride)
+        # Encode how far a patch reaches, at the patch spacing
+        self.span = SpanEncoding(dim, stride)
         # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth, radius)
 
@@ -63,5 +63,5 @@ class Encoder(nn.Module):
         tokens = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
         return self.blocks(
-            tokens + self.place(patches.position), visible, patches.position
+            tokens + self.span(patches.position), visible, patches.position
         )  # (B, K, D)
