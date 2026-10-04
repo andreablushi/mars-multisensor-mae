@@ -19,6 +19,7 @@ class Transformer(nn.Module):
             depth: How many blocks are stacked.
         """
         super().__init__()
+        # One pre-norm block: self-attention then a feed-forward four times as wide
         block = nn.TransformerEncoderLayer(
             dim,
             heads,
@@ -28,6 +29,7 @@ class Transformer(nn.Module):
             batch_first=True,
             norm_first=True,
         )
+        # Stack the blocks and normalise once more at the end
         self.blocks = nn.TransformerEncoder(
             block, depth, norm=nn.LayerNorm(dim), enable_nested_tensor=False
         )
@@ -46,4 +48,5 @@ class Transformer(nn.Module):
         padding = ~attended  # (B, N)
         # Unmask wholly empty sequences to keep the soft-max from going nan
         padding[padding.all(dim=1)] = False
+        # Every token attends over the ones that carry something
         return self.blocks(tokens, src_key_padding_mask=padding)  # (B, N, D)

@@ -63,26 +63,28 @@ class TrainingConfig:
 
     Attributes:
         max_steps: How many steps the run takes, at most.
-        batch_size: How many tiles one pass reads.
-        accumulate: How many passes one step adds its gradients over.
+        batch_size: How many tiles one step's gradient is averaged over.
+        memory_batch_size: How many of them one pass holds in memory, dividing it.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        drop_ratio: The chance each instrument is left out of the grid.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
     max_steps: int
     batch_size: int
-    accumulate: int
+    memory_batch_size: int
     learning_rate: float
     weight_decay: float
     warmup_steps: int
     validate_every: int
     patience: int
     mask_ratio: float
+    drop_ratio: float
     checkpoints: str
 
 

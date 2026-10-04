@@ -25,6 +25,7 @@ class CrossSensorEncoder(nn.Module):
             depth: How many blocks are stacked.
         """
         super().__init__()
+        # The stack every instrument's tokens pass through, on the same weights
         self.blocks = Transformer(dim, heads, depth)
 
     def forward(self, tokens: Tensor, visible: Tensor) -> Tensor:

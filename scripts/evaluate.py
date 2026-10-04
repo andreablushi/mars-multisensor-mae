@@ -3,29 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from functools import partial
 from pathlib import Path
 
 import torch
 from dhub.configs import stage_workers
-from dhub.publish import publish_results, published_name
+from dhub.publish import publish_results
 from dhub.store import published_build, published_checkpoint
-from dhub.submit import ran_stage
+from dhub.submit import run_stage
 from digitalhub_runtime_python import handler
-from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import token_batch_padding
 from configs.load import load_config
-from configs.paths import REPO_ROOT, RESULTS_ROOT
+from configs.paths import results_path
 from configs.schema import Config
-from dataset.models.split import DatasetSplit
+from dataset.loader import tile_loader
 from dataset.patches import read_patch_layout
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
-from evaluation.results import RESULTS_FILE, write_tile_distances
-from evaluation.store import read_label_by_tile
+from evaluation.results import write_tile_distances
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
@@ -58,12 +54,10 @@ def built_model(
         strides: How far apart two neighbouring patch centres of each sensor sit.
     """
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
-    shapes, strides, centres_nm = read_patch_layout(build, sizes, config.dataset.pool)
+    shapes, strides = read_patch_layout(build, sizes, config.dataset.pool)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
-        build.read_axes_by_instrument(),
-        centres_nm,
         strides,
         config.model.encoder_dim,
         config.model.encoder_heads,
@@ -91,28 +85,20 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     model, device, sizes, shapes, _ = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
     build = published_build(config.evaluation.build, config.dataset.root)
-    classes = read_label_by_tile(build)
-    by_tile = build.read_observation_metadata_by_tile()
-    workers = stage_workers(EVALUATION_STAGE)
-    loader = DataLoader(
-        DatasetSplit(
-            build,
-            {tile: rows for tile, rows in by_tile.items() if tile in classes},
-            axes,
-            sizes,
-            config.dataset.pool,
-            shapes,
-            config.model.delay,
-        ),
-        batch_size=config.training.batch_size,
-        num_workers=workers,
-        persistent_workers=workers > 0,
-        pin_memory=True,
-        collate_fn=partial(
-            token_batch_padding,
-            cell_m=config.model.cell_m,
-            delay_rows=config.dataset.patchsize["SHARAD"]["delay"],
-        ),
+    classes = build.read_label_by_tile()
+    by_tile = build.read_observation_metadata()
+    loader = tile_loader(
+        build,
+        {tile: rows for tile, rows in by_tile.items() if tile in classes},
+        axes,
+        sizes,
+        config.dataset.pool,
+        shapes,
+        config.model.delay,
+        config.model.cell_m,
+        config.training.memory_batch_size,
+        stage_workers(EVALUATION_STAGE),
+        shuffle=False,
     )
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
@@ -127,11 +113,11 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     distances = chamfer_distances(
         [grids[tile] for tile in tiles], config.evaluation.minimal_chamfer_cell_distance
     )
-    results = RESULTS_ROOT / config.run_name / RESULTS_FILE
+    results = results_path(config.run_name)
     write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
     log.info("results written to %s", results)
     if project is not None:
-        publish_results(project, results, published_name("results", config.run_name))
+        publish_results(project, results, config.run_name)
 
 
 @handler()
@@ -143,12 +129,9 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         overrides: What to compose the config with, as hydra spells them.
     """
     config = load_config(overrides or [])
-    name = published_name("model", config.run_name)
-    held = REPO_ROOT / config.training.checkpoints / f"{name}.pt"
-    evaluate_checkpoint(config, published_checkpoint(name, held), project)
+    checkpoint = published_checkpoint(config.run_name, config.training.checkpoints)
+    evaluate_checkpoint(config, checkpoint, project)
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        ran_stage(EVALUATION_STAGE, EVALUATION_HANDLER, run_evaluation, __doc__)
-    )
+    run_stage(EVALUATION_STAGE, EVALUATION_HANDLER, run_evaluation, __doc__)

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import gc
 import random
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from functools import partial
 
 from building.metadata.observation import ObservationMetadata
 from torch.utils.data import DataLoader
 
-from dataset.models.split import DatasetSplit
 from dataset.store import DatasetBuild
 
 TRAINING_SPLIT = "train"
@@ -45,10 +45,7 @@ def split_tiles(
     splits: dict[str, list[str]] = {name: [] for name in SPLITS}
     placed = dict.fromkeys(SPLITS, 0.0)
     for tile in order:
-        name = min(
-            SPLITS,
-            key=lambda one: placed[one] / wanted[one],
-        )
+        name = min(SPLITS, key=lambda one: placed[one] / wanted[one])
         splits[name].append(tile)
         placed[name] += counted[tile]
     return splits
@@ -59,11 +56,11 @@ def loaders_by_split(
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
-    collate: Callable,
+    cell_m: float,
     shares: Sequence[float],
     seed: int,
     delay: str,
-    batch_size: int,
+    memory_batch_size: int,
     workers: int,
 ) -> dict[str, DataLoader]:
     """Return every split of a build in batches, whole tiles at a time.
@@ -73,21 +70,20 @@ def loaders_by_split(
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
-        collate: How one batch of read tiles becomes what the model is handed.
+        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in.
         delay: The instrument whose rows give every surface patch its delay.
-        batch_size: How many tiles one step reads.
+        memory_batch_size: How many tiles one pass holds in memory.
         workers: How many processes read tiles beside the training.
 
     Returns:
         loaders: One loader per split, the training one shuffled and the other not.
     """
-    by_tile = build.read_observation_metadata_by_tile()
-    splits = split_tiles(by_tile, shares, seed)
+    by_tile = build.read_observation_metadata()
     axes = build.read_axes_by_instrument()
-    datasets = {
-        name: DatasetSplit(
+    return {
+        name: tile_loader(
             build,
             {tile: by_tile[tile] for tile in held},
             axes,
@@ -95,19 +91,62 @@ def loaders_by_split(
             pool,
             shapes,
             delay,
+            cell_m,
+            memory_batch_size,
+            workers,
+            name == TRAINING_SPLIT,
         )
-        for name, held in splits.items()
+        for name, held in split_tiles(by_tile, shares, seed).items()
     }
+
+
+def tile_loader(
+    build: DatasetBuild,
+    tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
+    axes: Mapping[str, tuple[str, ...]],
+    sizes: Mapping[str, Mapping[str, int]],
+    pool: Mapping[str, int],
+    shapes: Mapping[str, tuple[int, ...]],
+    delay: str,
+    cell_m: float,
+    memory_batch_size: int,
+    workers: int,
+    shuffle: bool,
+) -> DataLoader:
+    """Return some tiles of a build in batches, whole tiles at a time.
+
+    Args:
+        build: The build the tiles are read from.
+        tiles: The index rows of each sensor of each tile, keyed by tile.
+        axes: What each axis of each instrument's values holds.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
+        pool: How many ground samples of a patch each instrument averages into one.
+        shapes: The shape of one patch of each instrument as the model reads it.
+        delay: The instrument whose rows give every surface patch its delay.
+        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
+        memory_batch_size: How many tiles one batch holds in memory.
+        workers: How many processes read tiles beside the model.
+        shuffle: Whether the tiles come in a new order every pass.
+
+    Returns:
+        loader: The tiles in batches.
+    """
     gc.freeze()
-    return {
-        name: DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=name == TRAINING_SPLIT,
-            num_workers=workers,
-            persistent_workers=workers > 0,
-            pin_memory=True,
-            collate_fn=collate,
-        )
-        for name, dataset in datasets.items()
-    }
+    return DataLoader(
+        list(tiles),
+        batch_size=memory_batch_size,
+        shuffle=shuffle,
+        num_workers=workers,
+        persistent_workers=workers > 0,
+        pin_memory=True,
+        collate_fn=partial(
+            build.read_tiles,
+            tiles=tiles,
+            axes=axes,
+            sizes=sizes,
+            pool=pool,
+            shapes=shapes,
+            delay=delay,
+            cell_m=cell_m,
+        ),
+    )

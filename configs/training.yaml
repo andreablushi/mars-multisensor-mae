@@ -2,10 +2,12 @@
 
 # A run is counted in steps, so how long a split happens to be settles nothing.
 max_steps: 12500
-# How many tiles one pass reads, each carrying every patch of its own.
-batch_size: 3
-# How many passes one step adds its gradients over, so a step reads 24 tiles.
-accumulate: 8
+# How many tiles one step's gradient is averaged over, each carrying every patch
+# of its own.
+batch_size: 24
+# How many of them are held in memory at once: a step adds its gradients over
+# batch_size / memory_batch_size passes, so it must divide batch_size.
+memory_batch_size: 3
 learning_rate: 0.00025
 weight_decay: 0.05
 warmup_steps: 50
@@ -17,6 +19,10 @@ patience: 2
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
+
+# The chance each instrument is left out of the one grid every decoder reads, drawn
+# per pass with one always kept: one left out is reconstructed cross-modally.
+drop_ratio: 0.5
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

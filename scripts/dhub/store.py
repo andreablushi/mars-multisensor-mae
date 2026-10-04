@@ -8,11 +8,11 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 
-from configs.paths import RESULTS_ROOT, build_root
+from configs.paths import build_root, checkpoint_path, results_path
 from dataset.store import DatasetBuild
 from dhub import credentials
 from dhub.configs import load_platform
-from evaluation.results import RESULTS_FILE
+from dhub.publish import published_name
 
 
 def published_build(build: str, root: str) -> DatasetBuild:
@@ -25,12 +25,12 @@ def published_build(build: str, root: str) -> DatasetBuild:
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
     """
-    platform = load_platform()
-    project = dh.get_or_create_project(platform.project)
-    name = f"{platform.publishes['dataset']}-{build}"
-    published = urlparse(project.get_artifact(name).spec.path)
+    project = dh.get_or_create_project(load_platform().project)
+    published = urlparse(
+        project.get_artifact(published_name("dataset", build)).spec.path
+    )
     bucket = published.netloc
-    prefix = published.path.lstrip("/").rstrip("/") + "/"
+    prefix = published.path.strip("/") + "/"
     client = dh.get_s3_client()
 
     def fetch(path: str) -> bytes:
@@ -51,18 +51,20 @@ def published_build(build: str, root: str) -> DatasetBuild:
     return DatasetBuild(root=build_root(build, root), fetch=fetch)
 
 
-def published_checkpoint(name: str, destination: Path) -> Path:
-    """Return where one published model landed on this machine, fetched again each time.
+def published_checkpoint(run_name: str, checkpoints: str) -> Path:
+    """Return where one run's latest published model landed here, fetched each time.
 
     Args:
-        name: What it was published as, or one version's key, the name meaning latest.
-        destination: The file to write it to, whose directory is made if it is missing.
+        run_name: What the run is called, which names the model.
+        checkpoints: Where checkpoints land, relative to the repository.
 
     Returns:
         path: The checkpoint, on this machine.
     """
     credentials.refresh()
     project = dh.get_or_create_project(load_platform().project)
+    name = published_name("model", run_name)
+    destination = checkpoint_path(checkpoints, name)
     destination.parent.mkdir(parents=True, exist_ok=True)
     return Path(project.get_model(name).download(str(destination), overwrite=True))
 
@@ -74,12 +76,11 @@ def fetched_results() -> list[Path]:
         paths: One results file per run fetched, none where it was already here.
     """
     credentials.refresh()
-    platform = load_platform()
-    project = dh.get_or_create_project(platform.project)
-    prefix = f"{platform.publishes['results']}-"
+    project = dh.get_or_create_project(load_platform().project)
+    prefix = published_name("results", "")
     paths = []
     for artifact in project.list_artifacts():
-        held = RESULTS_ROOT / artifact.name.removeprefix(prefix) / RESULTS_FILE
+        held = results_path(artifact.name.removeprefix(prefix))
         if not artifact.name.startswith(prefix) or held.is_file():
             continue
         held.parent.mkdir(parents=True, exist_ok=True)

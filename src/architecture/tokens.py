@@ -2,72 +2,48 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from typing import NamedTuple
 
 import numpy as np
 import torch
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
-from architecture.grid import Cells, tile_cells
+from architecture.grid import Cells
 
 # B = batch, K = patches, P = patch dimensions.
 
 
-@dataclass(frozen=True, slots=True)
-class Tokens:
+class Tokens(NamedTuple):
     """One sensor's patches over a batch of tiles, padded to one count.
 
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
-        valid: Whether each sample is a measurement. (B, K, *P')
+        measured: Whether each sample is a measurement, false over padding. (B, K, *P')
         position: The patch centre and its span, in metres. (B, K, 6)
-        visible: Whether a slot holds a patch its encoder may read. (B, K)
-        present: Whether each slot holds a patch rather than padding. (B, K)
     """
 
     values: Tensor
-    valid: Tensor
+    measured: Tensor
     position: Tensor
-    visible: Tensor
-    present: Tensor
 
-    def to(self, device: torch.device) -> Tokens:
-        """Return the same tokens held on one device.
-
-        Args:
-            device: The device to hold them on.
+    @property
+    def present(self) -> Tensor:
+        """Return which slots hold a patch rather than padding.
 
         Returns:
-            tokens: Every tensor moved there, copied beside the work when pinned.
+            present: True where any sample of the slot is a measurement. (B, K)
         """
-        return Tokens(
-            *(
-                getattr(self, one.name).to(device, non_blocking=True)
-                for one in fields(self)
-            )
-        )
-
-    def pin_memory(self) -> Tokens:
-        """Return the same tokens in page-locked memory, which the loader copies from.
-
-        Returns:
-            tokens: Every tensor pinned.
-        """
-        return Tokens(*(getattr(self, one.name).pin_memory() for one in fields(self)))
+        return self.measured.flatten(2).any(dim=-1)
 
 
 def token_batch_padding(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
-    cell_m: float,
-    delay_rows: int,
+    samples: list[tuple[dict[str, dict[str, np.ndarray]], dict[str, np.ndarray], str]],
 ) -> tuple[dict[str, Tokens], Cells, list[str]]:
     """Return one batch of every instrument's tokens, the cells they reach, and whose.
 
     Args:
-        samples: Each tile's patch arrays and identity.
-        cell_m: How far a cell runs along the ground, in metres.
-        delay_rows: How many radar delay rows a cell spans.
+        samples: Each tile's patch arrays, the cells they reach, and its identity.
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
@@ -75,21 +51,36 @@ def token_batch_padding(
         identities: The tile each read belongs to, in the batch's own order.
     """
     batch = {}
+    # Pad each instrument's patches across the batch's tiles
     for name in samples[0][0]:
-        held = [sample[name] for sample, _ in samples]
-        counts = torch.tensor([len(one["values"]) for one in held])  # (B,)
-        slots = torch.arange(int(counts.max()))  # (K,)
+        # This instrument's arrays in every tile
+        held = [sample[name] for sample, _, _ in samples]
+        # Every array padded with zeros to the most patches any tile has
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
             )
             for key in held[0]
         }
+        # Values in float32, whatever the stored type
         padded["values"] = padded["values"].float()
-        present = slots.unsqueeze(0) < counts.unsqueeze(1)  # (B, K)
-        batch[name] = Tokens(**padded, visible=present, present=present)
-    return (
-        batch,
-        tile_cells(samples, cell_m, delay_rows),
-        [identity for _, identity in samples],
+        # The instrument's patches over the batch
+        batch[name] = Tokens(**padded)
+    # The cells of every tile
+    reached = [cells for _, cells, _ in samples]
+    # How many cells each tile has
+    counts = torch.tensor([len(one["offset"]) for one in reached])  # (B,)
+    # The cell slots of the tile with the most
+    slots = torch.arange(int(counts.max()))  # (Q,)
+    # Offsets and positions padded with zeros, and which slots are real cells
+    cells = Cells(
+        *(
+            pad_sequence(
+                [torch.as_tensor(one[key]) for one in reached], batch_first=True
+            )
+            for key in ("offset", "position")
+        ),
+        slots.unsqueeze(0) < counts.unsqueeze(1),
     )
+    # The patches, the cells and the tile names, in the batch's order
+    return batch, cells, [identity for _, _, identity in samples]

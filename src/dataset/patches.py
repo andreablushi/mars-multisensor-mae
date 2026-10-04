@@ -4,97 +4,25 @@ from __future__ import annotations
 
 import dataclasses
 import math
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
-from building.models.instrument import INSTRUMENTS
-from building.preprocessing.common import geometry, relative_positioning
-from building.preprocessing.common.models.position import Position
-from building.preprocessing.common.store import STORED
-from common.maths.geodesy import SPHEROID, PolarGrid
-from common.models.tile import Tile
 
+from dataset.bands import (
+    measures_read_bands,
+    observation_read_bands,
+    read_band_patchsize,
+)
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
+from dataset.models.positioning import metres_from_centre
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
-
-
-def metres_from_centre(
-    observation: Observation, taken: tuple[slice, ...] = ()
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return how far north and east of its tile centre every sample one cut keeps sits.
-
-    Args:
-        observation: The stored observation the cut is taken of.
-        taken: What the cut keeps of each ground axis, empty for every sample.
-
-    Returns:
-        north: The ground metres north of the centre, one per sample kept.
-        east: The ground metres east of it, in the same frame.
-    """
-    described = observation.described
-    separable = described["separable"]
-    north, east = observation.north, observation.east
-    if taken:
-        north, east = (
-            (north[taken[0]], east[taken[1]])
-            if separable
-            else (north[taken], east[taken])
-        )
-    grid = described["polar"]
-    position = Position(
-        north, east, separable, None if grid is None else PolarGrid(*grid)
-    )
-    frame = Tile(described["band"], described["column"], **described["box"])
-    northing = np.empty(position.sizes, dtype=STORED)
-    easting = np.empty(position.sizes, dtype=STORED)
-    for block in geometry.line_blocks(position.sizes):
-        lon, lat = relative_positioning.position_degrees(position, frame, block)
-        lon, lat = np.broadcast_arrays(
-            np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
-        )
-        # The geodesic each sample stands at, on the spheroid rather than a sphere.
-        azimuth, _, span = SPHEROID.inv(
-            np.full(lon.shape, frame.centre_lon),
-            np.full(lon.shape, frame.centre_lat),
-            lon,
-            lat,
-        )
-        bearing = np.radians(azimuth)
-        easting[block] = span * np.sin(bearing)
-        northing[block] = span * np.cos(bearing)
-    return northing, easting
-
-
-def read_surface_delays(
-    build: DatasetBuild, observations: Sequence[ObservationMetadata]
-) -> np.ndarray:
-    """Return the row every sample of the delay instrument sounds at, over a tile.
-
-    Args:
-        build: The published build the observations are read from.
-        observations: The tile's index rows of the instrument carrying the delay.
-
-    Returns:
-        delays: One row per sample: north, east and the delay row. (N, 3)
-    """
-    placed = []
-    for record in observations:
-        # Loads specifically the delay plane, which is beside the measured values.
-        observation = build.read_observation(record.path, ("delay",))
-        measured = observation.measured
-        north, east = metres_from_centre(observation)
-        rows = observation.beside["delay"]
-        # Unmeasured samples have no delay row.
-        placed.append(
-            np.stack([north[measured], east[measured], rows[measured]], axis=1)
-        )  # (n, 3)
-    return np.concatenate(placed).astype(np.float64)  # (N, 3)
 
 
 def read_tile_patches(
@@ -120,15 +48,20 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
-            lengths = patch_lengths(record.shape, record.axes, size)
-            counts = tuple(
-                length // patch
-                for length, patch in zip(record.shape, lengths, strict=True)
+            # An observation missing any band read is left out whole
+            if not measures_read_bands(name, record):
+                continue
+            observation = observation_read_bands(
+                name, build.read_observation(record.path)
             )
-            observation = build.read_observation(record.path)
+            shape = observation.values.shape
+            lengths = patch_lengths(shape, record.axes, size)
+            counts = tuple(
+                length // patch for length, patch in zip(shape, lengths, strict=True)
+            )
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, record, at, lengths, counts, delays)
-                if patch.valid.any():
+                patch = cut_patch(observation, at, lengths, counts, delays)
+                if patch.measured.any():
                     if name in pool:
                         patch = downsampled_patch(patch, pool[name])
                     held.append(patch)
@@ -138,7 +71,6 @@ def read_tile_patches(
 
 def cut_patch(
     observation: Observation,
-    record: ObservationMetadata,
     index: int,
     lengths: tuple[int, ...],
     counts: tuple[int, ...],
@@ -148,7 +80,6 @@ def cut_patch(
 
     Args:
         observation: The observation, read whole.
-        record: Its index row, which carries what a patch says about the whole.
         index: Which patch, counting whole ones as the axes run, the last fastest.
         lengths: How far one patch of it runs along each axis.
         counts: How many whole patches each of those axes holds.
@@ -179,12 +110,7 @@ def cut_patch(
         length if holds == Axis.GROUND else 1
         for length, holds in zip(lengths, axes, strict=True)
     )
-    valid = observation.measured[taken].reshape(ground_shape).copy()
-    if record.band_valid_count is not None:
-        # A band the observation never measured was filled, so it measures nothing.
-        band_shape = tuple(-1 if holds == Axis.WAVELENGTH else 1 for holds in axes)
-        measured = np.asarray(record.band_valid_count) > 0
-        valid = valid & measured.reshape(band_shape)
+    measured = observation.measured[taken].reshape(ground_shape).copy()
     if Axis.DELAY in axes:
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
@@ -208,7 +134,7 @@ def cut_patch(
         spans = (abs(down[0]), abs(across[1]))
     return Patch(
         values=observation.values[window].copy(),
-        valid=valid,
+        measured=measured,
         axes=axes,
         north_m=north_m,
         east_m=east_m,
@@ -240,13 +166,14 @@ def downsampled_patch(patch: Patch, factor: int) -> Patch:
 
     # Where each ground axis's averaged samples land once it is split in two
     pooled = tuple(at + order + 1 for order, at in enumerate(ground))
-    valid = patch.valid.reshape(split(patch.valid.shape))
-    weight = np.broadcast_to(valid, split(patch.values.shape)).astype(np.float32)
+    measured = patch.measured.reshape(split(patch.measured.shape))
+    weight = np.broadcast_to(measured, split(patch.values.shape)).astype(np.float32)
     values = patch.values.reshape(weight.shape)
     return dataclasses.replace(
         patch,
-        values=values.sum(axis=pooled) / np.maximum(weight.sum(axis=pooled), 1.0),
-        valid=valid.any(axis=pooled),
+        values=(values * weight).sum(axis=pooled)
+        / np.maximum(weight.sum(axis=pooled), 1.0),
+        measured=measured.any(axis=pooled),
     )
 
 
@@ -277,10 +204,8 @@ def read_patch_layout(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
-) -> tuple[
-    dict[str, tuple[int, ...]], dict[str, float], dict[str, tuple[float, ...] | None]
-]:
-    """Return each instrument's patch shape, patch spacing and channel wavelengths.
+) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
+    """Return each instrument's patch shape and patch spacing.
 
     Args:
         build: The published build the instruments are read from.
@@ -290,17 +215,65 @@ def read_patch_layout(
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
         strides: How far apart two neighbouring patch centres of each sensor sit.
-        centres_nm: The wavelength of each sensor's channels, in nm, or None.
     """
     rows = build.read_row_by_instrument()
-    resolution = build.read_resolution_by_instrument()
+    spacing = defaultdict(list)
+    for held in build.read_observation_metadata().values():
+        for name, records in held.items():
+            spacing[name].extend(min(one.sample_spacing_m) for one in records)
+    resolution = {name: float(np.median(held)) for name, held in spacing.items()}
     return (
         {
             name: patch_lengths(
-                rows[name].shape, rows[name].axes, size, pool.get(name, 1)
+                rows[name].shape,
+                rows[name].axes,
+                size | read_band_patchsize(name),
+                pool.get(name, 1),
             )
             for name, size in sizes.items()
         },
         {name: size[Axis.GROUND] * resolution[name] for name, size in sizes.items()},
-        {name: INSTRUMENTS[name].layout.band_centres_nm for name in sizes},
     )
+
+
+def patch_arrays(
+    patches: Sequence[Patch],
+    shape: Sequence[int],
+    axes: Sequence[str],
+) -> dict[str, np.ndarray]:
+    """Return one instrument's read patches as the arrays a model is handed.
+
+    Args:
+        patches: The patches, all of one instrument.
+        shape: The shape of one patch of it as the model reads it.
+        axes: What each axis of its values holds.
+
+    Returns:
+        arrays: The patches under "values", "measured" and "position".
+    """
+    measured_shape = tuple(
+        held if holds == Axis.GROUND else 1
+        for held, holds in zip(shape, axes, strict=True)
+    )
+    return {
+        "values": np.array([one.values for one in patches], np.float32).reshape(
+            -1, *shape
+        ),
+        "measured": np.array([one.measured for one in patches], bool).reshape(
+            -1, *measured_shape
+        ),
+        "position": np.array(
+            [
+                [
+                    one.east_m,
+                    one.north_m,
+                    one.delay,
+                    one.east_span_m,
+                    one.north_span_m,
+                    one.delay_span,
+                ]
+                for one in patches
+            ],
+            np.float32,
+        ).reshape(-1, 6),
+    }

@@ -14,16 +14,13 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
-from configs.paths import REPO_ROOT
+from configs.paths import checkpoint_path
 from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
-from training.loss import csmae_loss
-from training.step import masked_reconstruction
+from training.step import step_terms
 from training.validate import validation_terms
-
-BEST_CHECKPOINT = "best.pt"
 
 log = console_logger(__name__)
 
@@ -40,6 +37,7 @@ def train(
     validate_every: int,
     patience: int,
     mask_ratio: float,
+    drop_ratio: float,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -52,13 +50,15 @@ def train(
         training: The training split, in batches.
         validation: The validation split, in batches.
         max_steps: How many steps the run takes, at most.
-        accumulate: How many batches one step adds its gradients over.
+        accumulate: How many batches one step adds its gradients over, pooled
+            so the step equals one batch of all their tiles.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        drop_ratio: The chance each instrument is left out of the grid.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -86,31 +86,17 @@ def train(
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     stopping = EarlyStopping(patience)
     generator = torch.Generator(device=device).manual_seed(seed)
-    best = REPO_ROOT / checkpoints / BEST_CHECKPOINT
+    best = checkpoint_path(checkpoints, "best")
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
     best_step = -1
     model.train()
     for step in range(1, max_steps + 1):
         began = time.perf_counter()
-        waited = 0.0
-        measured = []
+        passes = list(islice(batches, accumulate))
+        waited = time.perf_counter() - began
         optimizer.zero_grad()
-        ready = time.perf_counter()
-        for batch, cells, _ in islice(batches, accumulate):
-            waited += time.perf_counter() - ready
-            batch, reconstruction = masked_reconstruction(
-                model, batch, cells, mask_ratio, generator, device
-            )
-            terms = csmae_loss(reconstruction, batch)
-            (terms["loss"] / accumulate).backward()
-            measured.append({name: value.detach() for name, value in terms.items()})
-            ready = time.perf_counter()
-        # A term an instrument missed in one batch is averaged over the others
-        terms = {
-            name: torch.stack([one[name] for one in measured]).nanmean()
-            for name in measured[0]
-        }
+        terms = step_terms(model, passes, mask_ratio, drop_ratio, generator, device)
         # Stabilize training against exploding gradients
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
@@ -125,7 +111,9 @@ def train(
         # The last step is validated too, so a short run still leaves a checkpoint
         if step % validate_every and step < max_steps:
             continue
-        metrics = validation_terms(model, validation, mask_ratio, seed, device)
+        metrics = validation_terms(
+            model, validation, mask_ratio, drop_ratio, seed, device
+        )
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
