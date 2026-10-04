@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import torch
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
@@ -68,7 +69,7 @@ class CrossSensorMAE(nn.Module):
         )
         # The one place the instruments meet, each cell read from what reaches it
         self.fusion = CrossAttentionFusion(encoder_dim, encoder_heads, cell_m)
-        # One decoder per instrument, each writing its patches back from the cells
+        # One decoder per instrument, each writing its patches back from the tokens
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
@@ -77,7 +78,8 @@ class CrossSensorMAE(nn.Module):
                     decoder_dim,
                     decoder_heads,
                     decoder_depth,
-                    min(strides[name], cell_m),
+                    strides[name],
+                    attention_m,
                 )
                 for name, shape in shapes.items()
             }
@@ -151,22 +153,24 @@ class CrossSensorMAE(nn.Module):
             visible: Which patches each encoder may read. (B, K)
             hidden: Which patches are predicted, none of them padding. (B, K)
             cells: The cells the batch's patches reach.
-            kept: Which instruments the grid is read from.
+            kept: Which instruments the decoders read.
 
         Returns:
             predictions: The predicted patches of each instrument. (B, K, *P)
         """
         # Only the visible patches of the instruments kept are encoded
         encoded = self.shared_tokens({name: batch[name] for name in kept}, visible)
-        # The one grid every decoder reads, made of the instruments kept together
-        grid = self.fusion(encoded, batch, visible, cells, kept)
+        # Every kept token side by side, the context every decoder reads
+        context = torch.cat([encoded[name] for name in kept], dim=1)  # (B, S, D)
+        placed = torch.cat([batch[name].position for name in kept], dim=1)  # (B, S, 6)
+        readable = torch.cat([visible[name] for name in kept], dim=1)  # (B, S)
         return {
             # Recomputed on the way back, so only one decoder pass is held at once
             name: checkpoint(
                 self.decoders[name],
-                grid.values,
-                cells.position,
-                grid.occupied,
+                context,
+                placed,
+                readable,
                 tokens.position,
                 hidden[name],
                 use_reentrant=False,
