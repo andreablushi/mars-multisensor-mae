@@ -90,7 +90,7 @@ class Transformer(nn.Module):
         Args:
             tokens: The tokens to attend over. (B, N, D)
             attended: Which of them carry something. (B, N)
-            position: Where each token's patch sits and reaches, in metres. (B, N, 6)
+            position: Each token's patch centre and span, in metres or rows. (B, N, 6)
 
         Returns:
             tokens: The attended tokens. (B, N, D)

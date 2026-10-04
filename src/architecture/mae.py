@@ -100,7 +100,7 @@ class CrossSensorMAE(nn.Module):
 
         Returns:
             tokens: The tokens, in the space every instrument shares. (B, S, D)
-            position: Where each token's patch sits and reaches, in metres. (B, S, 6)
+            position: Each token's patch centre and span, in metres or rows. (B, S, 6)
             counted: Which of them count. (B, S)
         """
         position = torch.cat([batch[name].position for name in read], 1)  # (B, S, 6)
@@ -119,7 +119,7 @@ class CrossSensorMAE(nn.Module):
 
         Returns:
             tokens: Every instrument's tokens side by side, of unit length. (B, S, D)
-            position: Where each token's patch sits and reaches, in metres. (B, S, 6)
+            position: Each token's patch centre and span, in metres or rows. (B, S, 6)
             present: Which of them hold a patch. (B, S)
         """
         encoded = {

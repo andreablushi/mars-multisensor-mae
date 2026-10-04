@@ -18,7 +18,7 @@ class Tokens(NamedTuple):
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
         measured: Whether each sample is a measurement, false over padding. (B, K, *P')
-        position: The patch centre and its span, in metres. (B, K, 6)
+        position: The patch centre and its span, in metres or rows. (B, K, 6)
     """
 
     values: Tensor

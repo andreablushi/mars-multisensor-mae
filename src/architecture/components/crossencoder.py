@@ -35,7 +35,7 @@ class CrossSensorEncoder(nn.Module):
         Args:
             tokens: The instruments' encoded tokens, side by side. (B, K, D)
             visible: Which of them carry a patch the encoder read. (B, K)
-            position: Where each token's patch sits and reaches, in metres. (B, K, 6)
+            position: Each token's patch centre and span, in metres or rows. (B, K, 6)
 
         Returns:
             tokens: The mapped tokens, meaningful where visible. (B, K, D)

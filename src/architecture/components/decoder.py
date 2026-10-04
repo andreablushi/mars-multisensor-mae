@@ -78,9 +78,9 @@ class Decoder(nn.Module):
 
         Args:
             context: The tokens the prediction reads, of any sensor. (B, S, D)
-            context_position: Where each sits and reaches, in metres. (B, S, 6)
+            context_position: Each one's centre and span, in metres or rows. (B, S, 6)
             context_visible: Which of them hold anything. (B, S)
-            position: Where each patch asked for sits and reaches, in metres. (B, K, 6)
+            position: Each asked patch's centre and span, in metres or rows. (B, K, 6)
             hidden: Which of them to predict. (B, K)
 
         Returns:
