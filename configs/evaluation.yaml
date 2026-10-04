@@ -5,15 +5,11 @@
 # The build the labelled tiles are read from, published as dataset-<build>.
 build: evaluation
 
-# How far a cell runs along the ground: tokens are matched by the cell they fall in.
-cell_m: 640.0
-
-# How far, in cells along east, north and delay, a token may be matched, the delay
-# counted from each tile's own surface so no absolute height is compared.
+# How far east or north, in metres, a token may be matched from where it sits.
 # A feature is an arrangement of places and not only what those places are made
 # of, so a token is matched near where it sits. Null matches it anywhere in the
 # other tile, which is the bare token set and keeps no arrangement at all.
-minimal_chamfer_cell_distance: 4
+minimal_chamfer_distance_m: 2560.0
 
 # The delay cells each tile is compared over, counted from its surface cell, so
 # every tile holds the same slab: from one cell above the surface to two below it.

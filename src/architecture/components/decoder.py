@@ -19,7 +19,7 @@ class Decoder(nn.Module):
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
-        expand: From the shared width up to the decoder width, at unit scale.
+        expand: From the shared width to the decoder width.
         mask: The token standing in for a hidden patch. (D')
         place: The positional encoding of every token, at the patch spacing.
         blocks: The transformer the patches read the context through.
@@ -50,8 +50,8 @@ class Decoder(nn.Module):
         super().__init__()
         # The shape of one patch, which the output is unflattened to
         self.shape = shape
-        # Bring tokens from the shared width to the decoder width, normalised
-        self.expand = nn.Sequential(nn.Linear(shared, dim), nn.LayerNorm(dim))
+        # Bring tokens from the shared width to the decoder width
+        self.expand = nn.Linear(shared, dim)
         # One learned token standing in for every hidden patch
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         # Start the mask token small, as transformer embeddings are

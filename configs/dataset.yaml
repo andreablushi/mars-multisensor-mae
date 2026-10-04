@@ -9,13 +9,15 @@ root: data/dataset
 
 # How far a patch runs along an axis holding each thing, an axis left out taken
 # whole. A tile is 32 km: a CTX patch spans about 640 m of its ground, and every
-# other about 2.5 km.
+# other about 2.5 km. Patches a tile are counted over the training build's index,
+# median (90th percentile), before the empty corners of a crop are dropped.
 patchsize:
-  # A scan at about 5 m a pixel, about 2300 patches of a tile.
+  # A scan at about 5 m a pixel: 3362 (6384) patches a tile.
   CTX: {ground: 128}
-  # A survey at about 200 m a pixel, its multispectral bands kept whole.
+  # A survey at about 200 m a pixel, its multispectral bands kept whole: 104 (164).
   CRISM: {ground: 12}
-  # A sounder walks one line, so its ground is traces and its delay is depth.
+  # A sounder walks one line, so its ground is traces and its delay is depth: 336
+  # (1120).
   SHARAD: {ground: 8, delay: 256}
 
 # How many ground samples of a patch are averaged into one along each ground axis,

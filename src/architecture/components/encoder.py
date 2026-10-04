@@ -8,6 +8,7 @@ from torch import Tensor, nn
 
 from architecture.components.positional_encoding import PositionalEncoding
 from architecture.components.transformer import Transformer
+from architecture.tokens import Tokens
 
 # B = batch, K = patches, D = token channels, P = patch dimensions.
 
@@ -48,23 +49,19 @@ class Encoder(nn.Module):
         # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth, radius)
 
-    def forward(
-        self, values: Tensor, measured: Tensor, position: Tensor, visible: Tensor
-    ) -> Tensor:
+    def forward(self, patches: Tokens, visible: Tensor) -> Tensor:
         """Return the encoded tokens.
 
         Args:
-            values: The normalised patches. (B, K, *P)
-            measured: Whether each sample is a measurement, broadcastable. (B, K, *P')
-            position: Where each patch sits and how far it reaches, in metres. (B, K, 6)
+            patches: The instrument's patches over the batch.
             visible: Which patches the encoder may read. (B, K)
 
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
         # One token per patch, from its measured samples alone
-        tokens = self.embed((values * measured).flatten(2))  # (B, K, D)
+        tokens = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
         # Place the tokens on the ground and attend over the visible ones
         return self.blocks(
-            tokens + self.place(position), visible, position
+            tokens + self.place(patches.position), visible, patches.position
         )  # (B, K, D)

@@ -17,7 +17,7 @@ PAIR_BATCH = 4
 
 
 def chamfer_distances(
-    tiles: Sequence[TileTokens], minimal_chamfer_cell_distance: int | None = None
+    tiles: Sequence[TileTokens], minimal_chamfer_distance_m: float | None = None
 ) -> Tensor:
     """Return how far every tile stands from every other, over the tokens they hold.
 
@@ -29,9 +29,9 @@ def chamfer_distances(
 
     Args:
         tiles: One set of tokens per tile, in the order the distances are wanted.
-        minimal_chamfer_cell_distance: How far, in cells along any axis, a
-            token may be matched from its own cell, or None to match it anywhere
-            in the other tile.
+        minimal_chamfer_distance_m: How far east or north, in metres, a token may be
+            matched from where it sits, or None to match it anywhere in the other
+            tile.
 
     Returns:
         distances: The distance between every pair of tiles, in [0, 1]. (T, T)
@@ -39,12 +39,12 @@ def chamfer_distances(
     counts = torch.tensor([int((one.weight > 0).sum()) for one in tiles])  # (T,)
     width = int(counts.max())
     values = tiles[0].values.new_zeros(len(tiles), width, tiles[0].values.shape[-1])
-    offsets = values.new_zeros(len(tiles), width, 3)
+    grounds = values.new_zeros(len(tiles), width, 2)
     weights = values.new_zeros(len(tiles), width)
     for at, tile in enumerate(tiles):
         compared = tile.weight > 0
         values[at, : counts[at]] = tile.values[compared]
-        offsets[at, : counts[at]] = tile.offset[compared].to(values.dtype)
+        grounds[at, : counts[at]] = tile.ground[compared]
         weights[at, : counts[at]] = tile.weight[compared]
     held = weights > 0  # (T, W)
     distances = values.new_zeros(len(tiles), len(tiles))
@@ -56,13 +56,9 @@ def chamfer_distances(
                 1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
             ) / 2  # (R, W, W)
             matched = held[at].view(1, -1, 1) & held[rest].unsqueeze(1)
-            if minimal_chamfer_cell_distance is not None:
-                for axis in range(3):
-                    apart = (
-                        offsets[at, :, axis][None, :, None]
-                        - offsets[rest, :, axis][:, None]
-                    ).abs()
-                    matched &= apart <= minimal_chamfer_cell_distance
+            if minimal_chamfer_distance_m is not None:
+                apart = (grounds[at][None, :, None] - grounds[rest][:, None]).abs()
+                matched &= (apart <= minimal_chamfer_distance_m).all(dim=-1)
             cost.masked_fill_(~matched, torch.inf)
             forward = cost.amin(dim=2).nan_to_num(posinf=1.0)
             backward = cost.amin(dim=1).nan_to_num(posinf=1.0)

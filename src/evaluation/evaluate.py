@@ -16,18 +16,17 @@ from training.step import device_batch
 
 @dataclass(frozen=True, slots=True)
 class TileTokens:
-    """One tile's tokens, where each falls and how much each weighs.
+    """One tile's tokens, where each sits and how much each weighs.
 
     Attributes:
         values: The token vectors, of unit length. (S, D)
-        offset: The east, north and delay cell each token falls in, the delay from
-            the tile's surface. (S, 3)
+        ground: How far east and north of the tile centre each sits, in metres. (S, 2)
         weight: What each token weighs, the same for every instrument and zero for
             a token not compared. (S,)
     """
 
     values: Tensor
-    offset: Tensor
+    ground: Tensor
     weight: Tensor
 
 
@@ -35,7 +34,6 @@ def evaluate_latent_space(
     model: CrossSensorMAE,
     loader: DataLoader,
     device: torch.device,
-    cell_m: float,
     delay_rows: int,
     delay_window: tuple[int, int],
 ) -> dict[str, TileTokens]:
@@ -45,8 +43,7 @@ def evaluate_latent_space(
         model: The model, loaded from a checkpoint and on the device.
         loader: The tiles to read, in batches, each tile read whole.
         device: Where the model runs.
-        cell_m: How far a cell tokens are matched by runs along the ground, in metres.
-        delay_rows: How many radar delay rows a cell spans.
+        delay_rows: How many radar delay rows a delay cell spans.
         delay_window: The first and last delay cell kept, counted from the surface.
 
     Returns:
@@ -61,17 +58,13 @@ def evaluate_latent_space(
             with torch.autocast(device.type, dtype=torch.bfloat16):
                 values, placed, counted = model.embed(batch, present)
             # A tile's surface cell is the median delay of its patches spanning none
-            ground = counted & (placed[..., 5] == 0)  # (B, S)
-            rows = placed[..., 2].masked_fill(~ground, torch.nan)  # (B, S)
-            rows = rows.nanmedian(dim=1).values  # (B,)
-            surface = (rows / delay_rows).floor().long()  # (B,)
-            shift = torch.stack(
-                [torch.zeros_like(surface)] * 2 + [surface], dim=-1
-            )  # (B, 3)
-            size = placed.new_tensor([cell_m, cell_m, delay_rows])
-            offset = (placed[..., :3] / size).floor().long() - shift[:, None]
+            surface = counted & (placed[..., 5] == 0)  # (B, S)
+            rows = placed[..., 2].masked_fill(~surface, torch.nan)  # (B, S)
+            rows = rows.nanmedian(dim=1, keepdim=True).values  # (B, 1)
+            # The delay cell of each token, counted from its tile's surface cell
+            depth = (placed[..., 2] / delay_rows).floor() - (rows / delay_rows).floor()
             first, last = delay_window
-            slab = counted & (offset[..., 2] >= first) & (offset[..., 2] <= last)
+            slab = counted & (depth >= first) & (depth <= last)  # (B, S)
             # Each instrument weighs the same, however many tokens it holds
             parts = slab.split([one.position.shape[1] for one in batch.values()], 1)
             counts = torch.stack([part.sum(dim=1) for part in parts], dim=1)  # (B, I)
@@ -83,6 +76,6 @@ def evaluate_latent_space(
             for at, identity in enumerate(identities):
                 # Kept in full precision, since the distances are read in its dtype
                 tiles[identity] = TileTokens(
-                    values[at].float(), offset[at], weight[at].float()
+                    values[at].float(), placed[at, :, :2], weight[at].float()
                 )
     return tiles

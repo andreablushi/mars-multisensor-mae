@@ -105,14 +105,13 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         model,
         loader,
         device,
-        config.evaluation.cell_m,
         config.dataset.patchsize["SHARAD"]["delay"],
         config.evaluation.delay_window,
     )
     tiles = sorted(tokens)
     distances = chamfer_distances(
         [tokens[tile] for tile in tiles],
-        config.evaluation.minimal_chamfer_cell_distance,
+        config.evaluation.minimal_chamfer_distance_m,
     )
     results = results_path(config.run_name)
     write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
