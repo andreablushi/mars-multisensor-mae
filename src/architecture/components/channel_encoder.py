@@ -1,4 +1,4 @@
-"""Saying what a sensor is and what each channel of it measures, as one vector."""
+"""Saying what each channel of a sensor measures, as one vector."""
 
 from __future__ import annotations
 
@@ -16,13 +16,12 @@ LONGEST_NM = 2700.0
 
 
 class ChannelEncoder(nn.Module):
-    """A learned instrument mark, plus a Fourier encoding of each channel's wavelength.
+    """A Fourier encoding of each channel's wavelength.
 
     An instrument without a wavelength axis reads its patch as one channel,
-    encoded by its mark alone.
+    encoded as zeros.
 
     Attributes:
-        mark: What the instrument is, the same under every channel of it. (D)
         encoded: The cosines then sines of each channel's wavelength. (C, D)
     """
 
@@ -34,10 +33,6 @@ class ChannelEncoder(nn.Module):
             centres_nm: The wavelength each channel is centred on, in nm, or None.
         """
         super().__init__()
-        # One learned vector saying which instrument a token comes from
-        self.mark = nn.Parameter(torch.zeros(dim))  # (D)
-        # Start the mark small, as transformer embeddings are
-        nn.init.normal_(self.mark, std=0.02)
         # Wavelength periods spaced evenly in log, from the shortest to the longest
         periods = torch.logspace(
             math.log10(SHORTEST_NM), math.log10(LONGEST_NM), dim // 2
@@ -56,7 +51,7 @@ class ChannelEncoder(nn.Module):
         self.register_buffer("encoded", encoded)
 
     def forward(self, tokens: Tensor) -> Tensor:
-        """Return each channel's tokens with its instrument and wavelength added.
+        """Return each channel's tokens with its wavelength added.
 
         Args:
             tokens: One token per channel of each patch. (B, K, C, D)
@@ -64,5 +59,5 @@ class ChannelEncoder(nn.Module):
         Returns:
             tokens: The same tokens, each told its channel. (B, K, C, D)
         """
-        # Add the instrument mark and each channel's wavelength encoding
-        return tokens + self.mark + self.encoded  # (B, K, C, D)
+        # Add each channel's wavelength encoding
+        return tokens + self.encoded  # (B, K, C, D)

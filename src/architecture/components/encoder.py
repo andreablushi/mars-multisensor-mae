@@ -56,7 +56,7 @@ class Encoder(nn.Module):
         self.embed = nn.Linear(
             math.prod(size for at, size in enumerate(shape) if at != self.at), dim
         )
-        # Tell each channel's token which instrument and wavelength it holds
+        # Tell each channel's token which wavelength it holds
         self.channels = ChannelEncoder(dim, centres_nm)
         # Encode where a patch sits and how far it reaches, at the patch spacing
         self.place = PositionalEncoding(dim, stride)
