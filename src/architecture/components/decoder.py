@@ -8,7 +8,7 @@ import torch
 from torch import Tensor, nn
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.grid import neighbourhoods
+from architecture.grid import neighbourhoods, relative_boxes
 
 # B = batch, C = cells, K = target patches, N = hidden patches, M = window cells,
 # D = token channels, P = patch dimensions.
@@ -130,9 +130,7 @@ class Decoder(nn.Module):
             # Where each cell in a patch's window sits and reaches
             around = context_position[tile, at]  # (n, M, 6)
             # Each cell's centre relative to the patch's, beside its own spans
-            offset = torch.cat(
-                [around[..., :3] - window[rows, None, :3], around[..., 3:]], dim=-1
-            )  # (n, M, 6)
+            offset = relative_boxes(around, window[rows])  # (n, M, 6)
             # Each cell's vector, placed by its offset from the patch
             read = cells[tile, at] + self.place(offset)  # (n, M, D')
             # A window holding no cell reads zeros, so it writes a learned constant

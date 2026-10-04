@@ -71,6 +71,7 @@ class TrainingConfig:
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        drop_ratio: The chance each instrument is left out of the grid.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -83,6 +84,7 @@ class TrainingConfig:
     validate_every: int
     patience: int
     mask_ratio: float
+    drop_ratio: float
     checkpoints: str
 
 

@@ -35,18 +35,25 @@ def device_batch(
 
 
 def drawn_masks(
-    batch: dict[str, Tokens], mask_ratio: float, generator: torch.Generator
-) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[tuple[str, str], float]]:
-    """Return which patches each encoder reads, which are hidden, and their counts.
+    batch: dict[str, Tokens],
+    mask_ratio: float,
+    drop_ratio: float,
+    generator: torch.Generator,
+) -> tuple[
+    dict[str, Tensor], dict[str, Tensor], list[str], dict[tuple[str, str], float]
+]:
+    """Return which patches are read and hidden, which instruments are kept, and counts.
 
     Args:
         batch: Each instrument's patches over the batch, on the device.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        drop_ratio: The chance each instrument is left out of the grid.
         generator: What fixes the mask, on the device.
 
     Returns:
         visible: Which patches each encoder reads, drawn for each on its own. (B, K)
         hidden: Which patches are predicted, none of them padding. (B, K)
+        kept: Which instruments the grid is read from, never none.
         counts: How many patches each term counts in this batch.
     """
     visible, hidden = {}, {}
@@ -59,11 +66,17 @@ def drawn_masks(
         drawn = rank < (mask_ratio * present.sum(1, keepdim=True)).floor()  # (B, K)
         visible[name] = present & ~drawn  # (B, K)
         hidden[name] = present & drawn  # (B, K)
+    draw = torch.rand(len(batch), generator=generator, device=generator.device)
+    dropped = (draw < drop_ratio).tolist()
+    # One instrument is always kept, so the grid is never empty
+    if all(dropped):
+        dropped[int(draw.argmax())] = False
+    kept = [name for name, out in zip(batch, dropped, strict=True) if not out]
     counts = {
         term: float(weight.sum())
-        for term, weight in term_weights(batch, visible, hidden).items()
+        for term, weight in term_weights(batch, visible, hidden, kept).items()
     }
-    return visible, hidden, counts
+    return visible, hidden, kept, counts
 
 
 def masked_sums(
@@ -72,6 +85,7 @@ def masked_sums(
     cells: Cells,
     visible: dict[str, Tensor],
     hidden: dict[str, Tensor],
+    kept: list[str],
 ) -> dict[tuple[str, str], Tensor]:
     """Return each term's squared error over one batch, summed over its patches.
 
@@ -81,10 +95,13 @@ def masked_sums(
         cells: The cells the batch's patches reach, on the device.
         visible: Which patches each encoder reads. (B, K)
         hidden: Which patches are predicted. (B, K)
+        kept: Which instruments the grid is read from.
 
     Returns:
-        sums: Per instrument asked and instrument read, the summed error. ()
+        sums: Per term and instrument asked, the summed error. ()
     """
     with torch.autocast(cells.offset.device.type, dtype=torch.bfloat16):
-        predictions = model(batch, visible, hidden, cells)
-    return reconstruction_sums(predictions, batch, term_weights(batch, visible, hidden))
+        predictions = model(batch, visible, hidden, cells, kept)
+    return reconstruction_sums(
+        predictions, batch, term_weights(batch, visible, hidden, kept)
+    )

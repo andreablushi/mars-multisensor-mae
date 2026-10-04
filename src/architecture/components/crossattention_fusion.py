@@ -9,7 +9,7 @@ from torch import Tensor, nn
 from torch.nn import functional
 
 from architecture.components.positional_encoding import PositionalEncoding
-from architecture.grid import Cells, TileGrid, neighbourhoods
+from architecture.grid import Cells, TileGrid, neighbourhoods, relative_boxes
 from architecture.tokens import Tokens
 
 # B = batch, Q = cells, C = cells of one tile, S = source patches,
@@ -22,8 +22,8 @@ class CrossAttentionFusion(nn.Module):
     A cell no readable patch covers is left empty.
 
     Attributes:
-        query: What a cell asks with, before it is placed. (D)
-        place: The positional encoding, at the cell's own size.
+        query: What every cell asks with. (D)
+        place: The positional encoding of a patch against a cell, at the cell's size.
         attend: The attention from a cell to the patches covering it.
     """
 
@@ -36,11 +36,11 @@ class CrossAttentionFusion(nn.Module):
             cell_m: How far a cell runs along the ground, in metres.
         """
         super().__init__()
-        # One learned query shared by every cell, before its position is added
+        # One learned query shared by every cell
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         # Start the query small, as transformer embeddings are
         nn.init.normal_(self.query, std=0.02)
-        # Encode where a cell sits and how far it reaches, at the cell's own size
+        # Encode where a patch sits against a cell and how far it reaches
         self.place = PositionalEncoding(dim, cell_m)
         # The attention a cell reads its covering patches with
         self.attend = nn.MultiheadAttention(dim, heads, batch_first=True)
@@ -85,9 +85,12 @@ class CrossAttentionFusion(nn.Module):
             at, chosen, ignored = neighbourhoods(
                 boxes, source_boxes[tile], readable[tile]
             )  # (C, M)
-            covering = sources[tile, at]  # (C, M, D)
-            # Each cell asks with the shared query, placed where it sits
-            asked = (self.query + self.place(boxes)).unsqueeze(1)  # (C, 1, D)
+            # Each covering patch's centre relative to the cell's, beside its spans
+            offset = relative_boxes(source_boxes[tile, at], boxes)  # (C, M, 6)
+            # Each covering token placed by where its patch sits against the cell
+            covering = sources[tile, at] + self.place(offset)  # (C, M, D)
+            # Every cell asks with the same query
+            asked = self.query.expand(len(boxes), 1, -1)  # (C, 1, D)
             # Each cell attends over the tokens covering it, padding skipped
             attended, _ = self.attend(
                 asked, covering, covering, key_padding_mask=ignored, need_weights=False
@@ -95,8 +98,8 @@ class CrossAttentionFusion(nn.Module):
             # A cell is occupied when some readable token covers it
             covered = chosen.any(dim=-1)  # (C,)
             # Unit vectors where covered, zero elsewhere
-            values[tile, present] = functional.normalize(
-                attended[:, 0], dim=-1
-            ) * covered.unsqueeze(-1)
+            values[tile, present] = (
+                functional.normalize(attended[:, 0], dim=-1) * covered.unsqueeze(-1)
+            ).to(values.dtype)
             occupied[tile, present] = covered
         return TileGrid(values, occupied, cells.offset)

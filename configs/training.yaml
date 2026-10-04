@@ -20,5 +20,9 @@ patience: 2
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
+# The chance each instrument is left out of the one grid every decoder reads, drawn
+# per pass with one always kept: one left out is reconstructed cross-modally.
+drop_ratio: 0.5
+
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

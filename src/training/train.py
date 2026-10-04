@@ -39,6 +39,7 @@ def train(
     validate_every: int,
     patience: int,
     mask_ratio: float,
+    drop_ratio: float,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -59,6 +60,7 @@ def train(
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        drop_ratio: The chance each instrument is left out of the grid.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -99,14 +101,18 @@ def train(
         drawn, counts = [], defaultdict(float)
         for batch, cells, _ in passes:
             batch, _ = device_batch(batch, cells, device)
-            visible, hidden, held = drawn_masks(batch, mask_ratio, generator)
-            drawn.append((visible, hidden))
+            visible, hidden, kept, held = drawn_masks(
+                batch, mask_ratio, drop_ratio, generator
+            )
+            drawn.append((visible, hidden, kept))
             for term, count in held.items():
                 counts[term] += count
         sums = defaultdict(float)
-        for (batch, cells, _), (visible, hidden) in zip(passes, drawn, strict=True):
+        for (batch, cells, _), (visible, hidden, kept) in zip(
+            passes, drawn, strict=True
+        ):
             batch, cells = device_batch(batch, cells, device)
-            held = masked_sums(model, batch, cells, visible, hidden)
+            held = masked_sums(model, batch, cells, visible, hidden, kept)
             pooled_terms(held, counts)["loss"].backward()
             for term, value in held.items():
                 sums[term] += value.detach()
@@ -125,7 +131,9 @@ def train(
         # The last step is validated too, so a short run still leaves a checkpoint
         if step % validate_every and step < max_steps:
             continue
-        metrics = validation_terms(model, validation, mask_ratio, seed, device)
+        metrics = validation_terms(
+            model, validation, mask_ratio, drop_ratio, seed, device
+        )
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])

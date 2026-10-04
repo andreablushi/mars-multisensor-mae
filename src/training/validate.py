@@ -16,6 +16,7 @@ def validation_terms(
     model: CrossSensorMAE,
     loader: DataLoader,
     mask_ratio: float,
+    drop_ratio: float,
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
@@ -25,6 +26,7 @@ def validation_terms(
         model: The model, which is switched to evaluation.
         loader: The split, in batches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        drop_ratio: The chance each instrument is left out of the grid.
         seed: What fixes the masks.
         device: Where the model runs.
 
@@ -37,10 +39,12 @@ def validation_terms(
     with torch.no_grad():
         for batch, cells, _ in loader:
             batch, cells = device_batch(batch, cells, device)
-            visible, hidden, drawn = drawn_masks(batch, mask_ratio, generator)
+            visible, hidden, kept, drawn = drawn_masks(
+                batch, mask_ratio, drop_ratio, generator
+            )
             for term, count in drawn.items():
                 counts[term] += count
-            held = masked_sums(model, batch, cells, visible, hidden)
+            held = masked_sums(model, batch, cells, visible, hidden, kept)
             for term, value in held.items():
                 sums[term] += value
     return {name: float(value) for name, value in pooled_terms(sums, counts).items()}

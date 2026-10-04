@@ -67,6 +67,19 @@ def overlapping_boxes(first: Tensor, second: Tensor, axes: int) -> Tensor:
     return (apart < reach).all(dim=-1)
 
 
+def relative_boxes(boxes: Tensor, origin: Tensor) -> Tensor:
+    """Return boxes with their centres taken from an origin's, their spans kept.
+
+    Args:
+        boxes: Where each box around an origin sits and how far it reaches. (N, M, 6)
+        origin: Where each origin sits and how far it reaches. (N, 6)
+
+    Returns:
+        boxes: Each box's centre less its origin's, beside its own spans. (N, M, 6)
+    """
+    return torch.cat([boxes[..., :3] - origin[:, None, :3], boxes[..., 3:]], dim=-1)
+
+
 def neighbourhoods(
     boxes: Tensor, keys: Tensor, usable: Tensor
 ) -> tuple[Tensor, Tensor, Tensor]:

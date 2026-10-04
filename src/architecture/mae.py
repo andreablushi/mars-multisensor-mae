@@ -137,40 +137,34 @@ class CrossSensorMAE(nn.Module):
         visible: dict[str, Tensor],
         hidden: dict[str, Tensor],
         cells: Cells,
-    ) -> dict[tuple[str, str], Tensor]:
-        """Return every instrument's hidden patches, predicted from every instrument.
+        kept: list[str],
+    ) -> dict[str, Tensor]:
+        """Return every instrument's hidden patches, predicted from the ones kept.
 
         Args:
             batch: Each instrument's patches over the batch.
             visible: Which patches each encoder may read. (B, K)
             hidden: Which patches are predicted, none of them padding. (B, K)
             cells: The cells the batch's patches reach.
+            kept: Which instruments the grid is read from.
 
         Returns:
-            predictions: The predicted patches, by the instrument asked and the one
-                read. (B, K, *P)
+            predictions: The predicted patches of each instrument. (B, K, *P)
         """
-        # Only the visible patches are encoded
-        encoded = self.shared_tokens(batch, visible)
-        # The grid each instrument makes alone, which is all a decoder ever reads
-        grids = {
-            name: self.fusion(encoded, batch, visible, cells, [name]) for name in batch
+        # Only the visible patches of the instruments kept are encoded
+        encoded = self.shared_tokens({name: batch[name] for name in kept}, visible)
+        # The one grid every decoder reads, made of the instruments kept together
+        grid = self.fusion(encoded, batch, visible, cells, kept)
+        return {
+            # Recomputed on the way back, so only one decoder pass is held at once
+            name: checkpoint(
+                self.decoders[name],
+                grid.values,
+                cells.position,
+                grid.occupied,
+                tokens.position,
+                hidden[name],
+                use_reentrant=False,
+            )  # (B, K, *P)
+            for name, tokens in batch.items()
         }
-        # Where each cell sits and reaches, which every decoder places cells by
-        placed = cells.position  # (B, Q, 6)
-        predictions = {}
-        # Every patch is predicted from the cells one instrument alone was read into,
-        # so no instrument ever reads its own patches back out of the grid it asks.
-        for asked, tokens in batch.items():
-            for read in batch:
-                # Recomputed on the way back, so only one decoder pass is held at once
-                predictions[asked, read] = checkpoint(
-                    self.decoders[asked],
-                    grids[read].values,
-                    placed,
-                    grids[read].occupied,
-                    tokens.position,
-                    hidden[asked],
-                    use_reentrant=False,
-                )  # (B, K, *P)
-        return predictions
