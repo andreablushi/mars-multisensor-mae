@@ -97,7 +97,10 @@ class Decoder(nn.Module):
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 6)
         # The visible context and the hidden patches attend, nothing else
         attended = torch.cat([context_visible, hidden], dim=1)  # (B, S + K)
-        decoded = self.blocks(tokens + self.span(placed), attended, placed)
+        # The context is read alone, only the patch slots ask and are updated
+        decoded = self.blocks(
+            tokens + self.span(placed), attended, placed, context.shape[1]
+        )
         # Write every sample of each patch slot from its decoded token
         written = self.predict(decoded[:, context.shape[1] :])  # (B, K, prod P)
         return written.unflatten(-1, self.shape)  # (B, K, *P)

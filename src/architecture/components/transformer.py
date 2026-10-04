@@ -42,16 +42,19 @@ class Block(nn.Module):
             nn.Linear(dim, 4 * dim), nn.GELU(), nn.Linear(4 * dim, dim)
         )
 
-    def forward(self, tokens: Tensor, mask: Tensor, position: Tensor) -> Tensor:
-        """Return the tokens after one block.
+    def forward(
+        self, tokens: Tensor, mask: Tensor, position: Tensor, fixed: int
+    ) -> Tensor:
+        """Return the tokens after one block, the first ones only read.
 
         Args:
             tokens: The tokens. (B, N, D)
-            mask: Which key each token may attend to. (B, 1, N, N)
+            mask: Which key each updated token may attend to. (B, 1, N - fixed, N)
             position: Each token's patch centre and span, in metres or rows. (B, N, 6)
+            fixed: How many leading tokens are keys alone, never updated.
 
         Returns:
-            tokens: The updated tokens. (B, N, D)
+            tokens: The tokens, the ones past the fixed updated. (B, N, D)
         """
         # Queries, keys and values split into heads
         query, key, value = (
@@ -61,13 +64,14 @@ class Block(nn.Module):
         )  # (B, H, N, D / H) each
         # Queries and keys turned by where they sit, so a score reads their offset
         attended = functional.scaled_dot_product_attention(
-            self.rotate(query, position),
+            self.rotate(query[..., fixed:, :], position[:, fixed:]),
             self.rotate(key, position),
             value,
             attn_mask=mask,
-        )  # (B, H, N, D / H)
-        tokens = tokens + self.out(attended.transpose(1, 2).flatten(2))  # (B, N, D)
-        return tokens + self.feed(self.feed_norm(tokens))  # (B, N, D)
+        )  # (B, H, N - fixed, D / H)
+        updated = tokens[:, fixed:] + self.out(attended.transpose(1, 2).flatten(2))
+        updated = updated + self.feed(self.feed_norm(updated))  # (B, N - fixed, D)
+        return torch.cat([tokens[:, :fixed], updated], dim=1)  # (B, N, D)
 
 
 class Transformer(nn.Module):
@@ -93,22 +97,27 @@ class Transformer(nn.Module):
         self.blocks = nn.ModuleList(Block(dim, heads) for _ in range(depth))
         self.norm = nn.LayerNorm(dim)
 
-    def forward(self, tokens: Tensor, attended: Tensor, position: Tensor) -> Tensor:
+    def forward(
+        self, tokens: Tensor, attended: Tensor, position: Tensor, fixed: int = 0
+    ) -> Tensor:
         """Return the tokens after attending over the near ones that carry something.
 
         Args:
             tokens: The tokens to attend over. (B, N, D)
             attended: Which of them carry something. (B, N)
             position: Each token's patch centre and span, in metres or rows. (B, N, 6)
+            fixed: How many leading tokens are keys alone, never updated.
 
         Returns:
             tokens: The attended tokens. (B, N, D)
         """
         ground = position[..., :2]  # (B, N, 2)
-        near = torch.cdist(ground, ground) <= self.radius  # (B, N, N)
+        near = torch.cdist(ground[:, fixed:], ground) <= self.radius  # (B, N', N)
         # A token always reads itself, so a row with no other key stays finite
-        itself = torch.eye(near.shape[-1], dtype=torch.bool, device=near.device)
-        mask = ((near & attended.unsqueeze(1)) | itself).unsqueeze(1)  # (B, 1, N, N)
+        itself = torch.eye(near.shape[-1], dtype=torch.bool, device=near.device)[
+            fixed:
+        ]  # (N', N)
+        mask = ((near & attended.unsqueeze(1)) | itself).unsqueeze(1)  # (B, 1, N', N)
         for block in self.blocks:
-            tokens = block(tokens, mask, position)
+            tokens = block(tokens, mask, position, fixed)
         return self.norm(tokens)  # (B, N, D)
