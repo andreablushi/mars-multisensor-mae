@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections import defaultdict
 from itertools import chain, islice, repeat
 from pathlib import Path
 
@@ -20,8 +19,7 @@ from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
 from training.checkpoint import save_checkpoint
 from training.early_stopping import EarlyStopping
-from training.loss import pooled_terms
-from training.step import device_batch, drawn_masks, masked_sums
+from training.step import step_terms
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -98,25 +96,7 @@ def train(
         passes = list(islice(batches, accumulate))
         waited = time.perf_counter() - began
         optimizer.zero_grad()
-        drawn, counts = [], defaultdict(float)
-        for batch, cells, _ in passes:
-            batch, _ = device_batch(batch, cells, device)
-            visible, hidden, kept, held = drawn_masks(
-                batch, mask_ratio, drop_ratio, generator
-            )
-            drawn.append((visible, hidden, kept))
-            for term, count in held.items():
-                counts[term] += count
-        sums = defaultdict(float)
-        for (batch, cells, _), (visible, hidden, kept) in zip(
-            passes, drawn, strict=True
-        ):
-            batch, cells = device_batch(batch, cells, device)
-            held = masked_sums(model, batch, cells, visible, hidden, kept)
-            pooled_terms(held, counts)["loss"].backward()
-            for term, value in held.items():
-                sums[term] += value.detach()
-        terms = pooled_terms(sums, counts)
+        terms = step_terms(model, passes, mask_ratio, drop_ratio, generator, device)
         # Stabilize training against exploding gradients
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
