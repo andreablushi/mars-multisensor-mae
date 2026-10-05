@@ -7,7 +7,6 @@ import math
 import torch
 from torch import Tensor, nn
 
-from architecture.components.span_encoding import SpanEncoding
 from architecture.components.transformer import Transformer
 
 # B = batch, S = context tokens, K = target patches, D = token channels,
@@ -21,7 +20,6 @@ class Decoder(nn.Module):
         shape: The shape of one patch this decoder predicts.
         expand: From the shared width to the decoder width.
         mask: The token standing in for a hidden patch. (D')
-        span: The encoding of how far each patch reaches, at the patch spacing.
         blocks: The transformer the patches read the context through.
         predict: From a token to every sample of its patch.
     """
@@ -33,7 +31,6 @@ class Decoder(nn.Module):
         dim: int,
         heads: int,
         depth: int,
-        stride: float,
     ) -> None:
         """Build the decoder for one instrument.
 
@@ -43,7 +40,6 @@ class Decoder(nn.Module):
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
         # The shape of one patch, which the output is unflattened to
@@ -54,8 +50,6 @@ class Decoder(nn.Module):
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         # Start the mask token small, as transformer embeddings are
         nn.init.normal_(self.mask, std=0.02)
-        # Encode how far every token's patch reaches, at the patch spacing
-        self.span = SpanEncoding(dim, stride)
         # The blocks the patches read the context through
         self.blocks = Transformer(dim, heads, depth)
         # Write every sample of the patch from its token
@@ -96,7 +90,7 @@ class Decoder(nn.Module):
         # The visible context and the hidden patches are read, nothing else
         readable = torch.cat([context_visible, hidden], dim=1)  # (B, S + K)
         # The context is only keys, only the patch slots ask as queries and are updated
-        keys = self.blocks(keys + self.span(placed), readable, placed, context.shape[1])
+        keys = self.blocks(keys, readable, placed, context.shape[1])
         queries = keys[:, context.shape[1] :]  # (B, K, D')
         # Write every sample of each patch slot from its query
         written = self.predict(queries)  # (B, K, prod P)

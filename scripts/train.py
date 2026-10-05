@@ -44,7 +44,7 @@ def run_training(
     if rest:
         raise ValueError("training.batch_size must be a multiple of memory_batch_size.")
     build = published_build(config.dataset.build, config.dataset.root)
-    model, device, sizes, shapes, strides = built_model(config, build)
+    model, device, sizes, shapes = built_model(config, build)
     loaders = loaders_by_split(
         build,
         sizes,
@@ -67,7 +67,6 @@ def run_training(
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
             "shapes": shapes,
-            "strides": strides,
             "tiles": {
                 "training": len(training.dataset),
                 "validation": len(validation.dataset),

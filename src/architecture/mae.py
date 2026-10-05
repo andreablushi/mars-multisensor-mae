@@ -22,7 +22,6 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
-        strides: dict[str, float],
         encoder_dim: int,
         encoder_heads: int,
         encoder_depth: int,
@@ -35,7 +34,6 @@ class CrossSensorMAE(nn.Module):
 
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
-            strides: How far apart two neighbouring patch centres sit, in metres.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
@@ -53,7 +51,6 @@ class CrossSensorMAE(nn.Module):
                     encoder_dim,
                     encoder_heads,
                     encoder_depth,
-                    strides[name],
                 )
                 for name, shape in shapes.items()
             }
@@ -71,7 +68,6 @@ class CrossSensorMAE(nn.Module):
                     decoder_dim,
                     decoder_heads,
                     decoder_depth,
-                    strides[name],
                 )
                 for name, shape in shapes.items()
             }

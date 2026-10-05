@@ -6,7 +6,6 @@ import math
 
 from torch import Tensor, nn
 
-from architecture.components.span_encoding import SpanEncoding
 from architecture.components.transformer import Transformer
 from architecture.tokens import Tokens
 
@@ -14,11 +13,10 @@ from architecture.tokens import Tokens
 
 
 class Encoder(nn.Module):
-    """Embed each patch, place it on the ground, and attend over the set.
+    """Embed each patch and attend over the set.
 
     Attributes:
         embed: From every sample of a patch to a token.
-        span: The encoding of how far each patch reaches.
         blocks: The transformer.
     """
 
@@ -28,7 +26,6 @@ class Encoder(nn.Module):
         dim: int,
         heads: int,
         depth: int,
-        stride: float,
     ) -> None:
         """Build the encoder for one instrument.
 
@@ -37,13 +34,10 @@ class Encoder(nn.Module):
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            stride: How far apart two neighbouring patch centres sit, in metres.
         """
         super().__init__()
         # Map every sample of a patch into the token width
         self.embed = nn.Linear(math.prod(shape), dim)
-        # Encode how far a patch reaches, at the patch spacing
-        self.span = SpanEncoding(dim, stride)
         # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth)
 
@@ -59,7 +53,5 @@ class Encoder(nn.Module):
         """
         # One token per patch, from its measured samples alone, each a key and a query
         keys = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
-        # Place the keys on the ground and attend over the visible ones
-        return self.blocks(
-            keys + self.span(patches.position), visible, patches.position
-        )  # (B, K, D)
+        # Attend over the visible ones, placed on the ground by the rotary encoding
+        return self.blocks(keys, visible, patches.position)  # (B, K, D)

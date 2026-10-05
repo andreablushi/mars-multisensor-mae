@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import math
 import random
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -201,12 +200,12 @@ def patch_lengths(
     )
 
 
-def read_patch_layout(
+def read_patch_shapes(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
-) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
-    """Return each instrument's patch shape and patch spacing.
+) -> dict[str, tuple[int, ...]]:
+    """Return the shape of one patch of each instrument as the model reads it.
 
     Args:
         build: The published build the instruments are read from.
@@ -215,26 +214,17 @@ def read_patch_layout(
 
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
-        strides: How far apart two neighbouring patch centres of each sensor sit.
     """
     rows = build.read_row_by_instrument()
-    spacing = defaultdict(list)
-    for held in build.read_observation_metadata().values():
-        for name, records in held.items():
-            spacing[name].extend(min(one.sample_spacing_m) for one in records)
-    resolution = {name: float(np.median(held)) for name, held in spacing.items()}
-    return (
-        {
-            name: patch_lengths(
-                rows[name].shape,
-                rows[name].axes,
-                size | read_band_patchsize(name),
-                pool.get(name, 1),
-            )
-            for name, size in sizes.items()
-        },
-        {name: size[Axis.GROUND] * resolution[name] for name, size in sizes.items()},
-    )
+    return {
+        name: patch_lengths(
+            rows[name].shape,
+            rows[name].axes,
+            size | read_band_patchsize(name),
+            pool.get(name, 1),
+        )
+        for name, size in sizes.items()
+    }
 
 
 def patch_arrays(
