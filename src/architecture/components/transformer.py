@@ -43,35 +43,36 @@ class Block(nn.Module):
         )
 
     def forward(
-        self, tokens: Tensor, mask: Tensor, position: Tensor, fixed: int
+        self, keys: Tensor, mask: Tensor, position: Tensor, fixed: int
     ) -> Tensor:
-        """Return the tokens after one block, the first ones only read.
+        """Return the keys after one block, the queries among them updated.
 
         Args:
-            tokens: The tokens. (B, N, D)
-            mask: Which key each updated token may attend to. (B, 1, N - fixed, N)
+            keys: Every token, each read as a key and a value, those past the fixed
+                also asking as queries. (B, N, D)
+            mask: Which key each query may attend to. (B, 1, N - fixed, N)
             position: Each token's patch centre and span, in metres or rows. (B, N, 6)
-            fixed: How many leading tokens are keys alone, never updated.
+            fixed: How many leading tokens are keys alone, never queries.
 
         Returns:
-            tokens: The tokens, the ones past the fixed updated. (B, N, D)
+            keys: The keys, the queries among them updated. (B, N, D)
         """
         # Queries, keys and values split into heads
         query, key, value = (
-            self.qkv(self.attend_norm(tokens))
+            self.qkv(self.attend_norm(keys))
             .unflatten(-1, (3, self.heads, -1))
             .permute(2, 0, 3, 1, 4)
         )  # (B, H, N, D / H) each
         # Queries and keys turned by where they sit, so a score reads their offset
-        attended = functional.scaled_dot_product_attention(
+        answered = functional.scaled_dot_product_attention(
             self.rotate(query[..., fixed:, :], position[:, fixed:]),
             self.rotate(key, position),
             value,
             attn_mask=mask,
         )  # (B, H, N - fixed, D / H)
-        updated = tokens[:, fixed:] + self.out(attended.transpose(1, 2).flatten(2))
-        updated = updated + self.feed(self.feed_norm(updated))  # (B, N - fixed, D)
-        return torch.cat([tokens[:, :fixed], updated], dim=1)  # (B, N, D)
+        queries = keys[:, fixed:] + self.out(answered.transpose(1, 2).flatten(2))
+        queries = queries + self.feed(self.feed_norm(queries))  # (B, N - fixed, D)
+        return torch.cat([keys[:, :fixed], queries], dim=1)  # (B, N, D)
 
 
 class Transformer(nn.Module):
@@ -95,24 +96,25 @@ class Transformer(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(
-        self, tokens: Tensor, attended: Tensor, position: Tensor, fixed: int = 0
+        self, keys: Tensor, readable: Tensor, position: Tensor, fixed: int = 0
     ) -> Tensor:
-        """Return the tokens after attending over the ones that carry something.
+        """Return the keys after the queries among them attend over the readable ones.
 
         Args:
-            tokens: The tokens to attend over. (B, N, D)
-            attended: Which of them carry something. (B, N)
+            keys: Every token, each read as a key and a value, those past the fixed
+                also asking as queries. (B, N, D)
+            readable: Which keys carry something. (B, N)
             position: Each token's patch centre and span, in metres or rows. (B, N, 6)
-            fixed: How many leading tokens are keys alone, never updated.
+            fixed: How many leading tokens are keys alone, never queries.
 
         Returns:
-            tokens: The attended tokens. (B, N, D)
+            keys: The keys, the queries among them attended. (B, N, D)
         """
         # A token always reads itself, so a row with no other key stays finite
-        itself = torch.eye(tokens.shape[1], dtype=torch.bool, device=tokens.device)[
+        itself = torch.eye(keys.shape[1], dtype=torch.bool, device=keys.device)[
             fixed:
         ]  # (N', N)
-        mask = (attended.unsqueeze(1) | itself).unsqueeze(1)  # (B, 1, N', N)
+        mask = (readable.unsqueeze(1) | itself).unsqueeze(1)  # (B, 1, N', N)
         for block in self.blocks:
-            tokens = block(tokens, mask, position, fixed)
-        return self.norm(tokens)  # (B, N, D)
+            keys = block(keys, mask, position, fixed)
+        return self.norm(keys)  # (B, N, D)

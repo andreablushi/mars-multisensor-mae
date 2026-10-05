@@ -84,8 +84,8 @@ class Decoder(nn.Module):
         Returns:
             prediction: One patch per slot, meaningful where hidden. (B, K, *P)
         """
-        # The context at the decoder width, then one mask token per patch slot
-        tokens = torch.cat(
+        # The context at the decoder width, then one mask token per slot as a query
+        keys = torch.cat(
             [
                 self.expand(context),
                 self.mask.expand(*position.shape[:2], -1),
@@ -93,12 +93,11 @@ class Decoder(nn.Module):
             dim=1,
         )  # (B, S + K, D')
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 6)
-        # The visible context and the hidden patches attend, nothing else
-        attended = torch.cat([context_visible, hidden], dim=1)  # (B, S + K)
-        # The context is read alone, only the patch slots ask and are updated
-        decoded = self.blocks(
-            tokens + self.span(placed), attended, placed, context.shape[1]
-        )
-        # Write every sample of each patch slot from its decoded token
-        written = self.predict(decoded[:, context.shape[1] :])  # (B, K, prod P)
+        # The visible context and the hidden patches are read, nothing else
+        readable = torch.cat([context_visible, hidden], dim=1)  # (B, S + K)
+        # The context is only keys, only the patch slots ask as queries and are updated
+        keys = self.blocks(keys + self.span(placed), readable, placed, context.shape[1])
+        queries = keys[:, context.shape[1] :]  # (B, K, D')
+        # Write every sample of each patch slot from its query
+        written = self.predict(queries)  # (B, K, prod P)
         return written.unflatten(-1, self.shape)  # (B, K, *P)

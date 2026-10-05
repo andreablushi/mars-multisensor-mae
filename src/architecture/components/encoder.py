@@ -57,9 +57,9 @@ class Encoder(nn.Module):
         Returns:
             tokens: One per slot, meaningful where visible. (B, K, D)
         """
-        # One token per patch, from its measured samples alone
-        tokens = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
-        # Place the tokens on the ground and attend over the visible ones
+        # One token per patch, from its measured samples alone, each a key and a query
+        keys = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
+        # Place the keys on the ground and attend over the visible ones
         return self.blocks(
-            tokens + self.span(patches.position), visible, patches.position
+            keys + self.span(patches.position), visible, patches.position
         )  # (B, K, D)
