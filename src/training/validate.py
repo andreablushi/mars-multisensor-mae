@@ -37,9 +37,7 @@ def validation_terms(
     with torch.no_grad():
         for batch, _ in loader:
             batch = device_batch(batch, device)
-            visible, hidden, scored = drawn_masks(
-                batch, mask_ratio, model.attention_m, generator
-            )
+            visible, hidden, scored = drawn_masks(batch, mask_ratio, generator)
             for term, patches in scored.items():
                 counts[term] += float(patches.sum())
             held = batch_errors(model, batch, visible, hidden, scored)

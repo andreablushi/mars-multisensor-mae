@@ -29,7 +29,6 @@ class Encoder(nn.Module):
         heads: int,
         depth: int,
         stride: float,
-        radius: float,
     ) -> None:
         """Build the encoder for one instrument.
 
@@ -39,7 +38,6 @@ class Encoder(nn.Module):
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
             stride: How far apart two neighbouring patch centres sit, in metres.
-            radius: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
         # Map every sample of a patch into the token width
@@ -47,7 +45,7 @@ class Encoder(nn.Module):
         # Encode how far a patch reaches, at the patch spacing
         self.span = SpanEncoding(dim, stride)
         # The transformer the instrument's patch tokens attend over each other in
-        self.blocks = Transformer(dim, heads, depth, radius)
+        self.blocks = Transformer(dim, heads, depth)
 
     def forward(self, patches: Tokens, visible: Tensor) -> Tensor:
         """Return the encoded tokens.

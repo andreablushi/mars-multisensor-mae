@@ -1,4 +1,4 @@
-"""Attending over a set of tokens, each over the ones near it that carry something."""
+"""Attending over a set of tokens, each over the ones that carry something."""
 
 from __future__ import annotations
 
@@ -75,32 +75,29 @@ class Block(nn.Module):
 
 
 class Transformer(nn.Module):
-    """Pre-norm blocks of local attention stacked, normalised once more at the end.
+    """Pre-norm blocks of attention stacked, normalised once more at the end.
 
     Attributes:
-        radius: How far apart on the ground two tokens may attend, in metres.
         blocks: The blocks.
         norm: The last normalisation.
     """
 
-    def __init__(self, dim: int, heads: int, depth: int, radius: float) -> None:
+    def __init__(self, dim: int, heads: int, depth: int) -> None:
         """Build the stack for one token width.
 
         Args:
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            radius: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
-        self.radius = radius
         self.blocks = nn.ModuleList(Block(dim, heads) for _ in range(depth))
         self.norm = nn.LayerNorm(dim)
 
     def forward(
         self, tokens: Tensor, attended: Tensor, position: Tensor, fixed: int = 0
     ) -> Tensor:
-        """Return the tokens after attending over the near ones that carry something.
+        """Return the tokens after attending over the ones that carry something.
 
         Args:
             tokens: The tokens to attend over. (B, N, D)
@@ -111,13 +108,11 @@ class Transformer(nn.Module):
         Returns:
             tokens: The attended tokens. (B, N, D)
         """
-        ground = position[..., :2]  # (B, N, 2)
-        near = torch.cdist(ground[:, fixed:], ground) <= self.radius  # (B, N', N)
         # A token always reads itself, so a row with no other key stays finite
-        itself = torch.eye(near.shape[-1], dtype=torch.bool, device=near.device)[
+        itself = torch.eye(tokens.shape[1], dtype=torch.bool, device=tokens.device)[
             fixed:
         ]  # (N', N)
-        mask = ((near & attended.unsqueeze(1)) | itself).unsqueeze(1)  # (B, 1, N', N)
+        mask = (attended.unsqueeze(1) | itself).unsqueeze(1)  # (B, 1, N', N)
         for block in self.blocks:
             tokens = block(tokens, mask, position, fixed)
         return self.norm(tokens)  # (B, N, D)

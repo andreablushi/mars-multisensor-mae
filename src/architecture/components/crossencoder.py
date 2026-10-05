@@ -16,18 +16,17 @@ class CrossSensorEncoder(nn.Module):
         blocks: The transformer.
     """
 
-    def __init__(self, dim: int, heads: int, depth: int, radius: float) -> None:
+    def __init__(self, dim: int, heads: int, depth: int) -> None:
         """Build the shared stack.
 
         Args:
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
-            radius: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
         # The stack the instruments' tokens pass through together
-        self.blocks = Transformer(dim, heads, depth, radius)
+        self.blocks = Transformer(dim, heads, depth)
 
     def forward(self, tokens: Tensor, visible: Tensor, position: Tensor) -> Tensor:
         """Return the tokens mapped into the space every instrument shares.

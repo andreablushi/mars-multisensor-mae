@@ -2,8 +2,8 @@
 
 # A run is counted in steps, so how long a split happens to be settles nothing.
 max_steps: 12500
-# How many tiles one step's gradient is averaged over, each carrying every patch
-# of its own.
+# How many tiles one step's gradient is averaged over, each cut to the dataset's
+# budget.
 batch_size: 24
 # How many of them are held in memory at once: a step adds its gradients over
 # batch_size / memory_batch_size passes, so it must divide batch_size.

@@ -16,6 +16,8 @@ class DatasetConfig:
             instrument, an axis it omits taken whole.
         pool: How many ground samples of a patch are averaged into one, by
             instrument, one left out read whole.
+        budget: How many patches of each instrument a training or validation read
+            keeps, the ones nearest a centre drawn on the tile.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -24,6 +26,7 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
+    budget: dict[str, int]
     split: list[float]
     seed: int
 
@@ -35,7 +38,6 @@ class ModelConfig:
     Attributes:
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
-        attention_m: How far apart on the ground two tokens may attend, in metres.
         encoder_dim: How wide a token is everywhere but the decoders, a multiple of 6.
         encoder_heads: How many attention heads every encoder runs.
         encoder_depth: How many blocks each instrument encoder stacks.
@@ -47,7 +49,6 @@ class ModelConfig:
 
     instruments: list[str]
     delay: str
-    attention_m: float
     encoder_dim: int
     encoder_heads: int
     encoder_depth: int

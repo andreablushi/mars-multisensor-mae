@@ -30,7 +30,6 @@ class CrossSensorMAE(nn.Module):
         decoder_dim: int,
         decoder_heads: int,
         decoder_depth: int,
-        attention_m: float,
     ) -> None:
         """Build every part for the instruments the model reads.
 
@@ -44,7 +43,6 @@ class CrossSensorMAE(nn.Module):
             decoder_dim: How wide a token is in the decoders.
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
-            attention_m: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
         # One encoder per instrument, each from its patches to tokens
@@ -56,14 +54,13 @@ class CrossSensorMAE(nn.Module):
                     encoder_heads,
                     encoder_depth,
                     strides[name],
-                    attention_m,
                 )
                 for name, shape in shapes.items()
             }
         )
         # One stack the instruments read together pass through, on shared weights
         self.crossencoder = CrossSensorEncoder(
-            encoder_dim, encoder_heads, crossencoder_depth, attention_m
+            encoder_dim, encoder_heads, crossencoder_depth
         )
         # One decoder per instrument, each writing its patches back from the tokens
         self.decoders = nn.ModuleDict(
@@ -75,13 +72,10 @@ class CrossSensorMAE(nn.Module):
                     decoder_heads,
                     decoder_depth,
                     strides[name],
-                    attention_m,
                 )
                 for name, shape in shapes.items()
             }
         )
-        # How far apart on the ground two tokens may attend, in metres
-        self.attention_m = attention_m
 
     def shared_tokens(
         self,

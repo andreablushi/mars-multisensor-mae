@@ -15,7 +15,7 @@ from architecture.components.transformer import Transformer
 
 
 class Decoder(nn.Module):
-    """Let each hidden patch attend over the tokens near it, then write it.
+    """Let each hidden patch attend over the tokens of its tile, then write it.
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
@@ -34,7 +34,6 @@ class Decoder(nn.Module):
         heads: int,
         depth: int,
         stride: float,
-        radius: float,
     ) -> None:
         """Build the decoder for one instrument.
 
@@ -45,7 +44,6 @@ class Decoder(nn.Module):
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
             stride: How far apart two neighbouring patch centres sit, in metres.
-            radius: How far apart on the ground two tokens may attend, in metres.
         """
         super().__init__()
         # The shape of one patch, which the output is unflattened to
@@ -59,7 +57,7 @@ class Decoder(nn.Module):
         # Encode how far every token's patch reaches, at the patch spacing
         self.span = SpanEncoding(dim, stride)
         # The blocks the patches read the context through
-        self.blocks = Transformer(dim, heads, depth, radius)
+        self.blocks = Transformer(dim, heads, depth)
         # Write every sample of the patch from its token
         self.predict = nn.Linear(dim, math.prod(shape))
         # Start by predicting zero, the dataset's mean after standardisation

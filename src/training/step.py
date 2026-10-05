@@ -31,7 +31,6 @@ def device_batch(batch: dict[str, Tokens], device: torch.device) -> dict[str, To
 def drawn_masks(
     batch: dict[str, Tokens],
     mask_ratio: float,
-    radius: float,
     generator: torch.Generator,
 ) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[tuple[str, str], Tensor]]:
     """Return which patches are read and hidden, and which each loss term scores.
@@ -39,7 +38,6 @@ def drawn_masks(
     Args:
         batch: Each instrument's patches over the batch, on the device.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        radius: How far apart on the ground two tokens may attend, in metres.
         generator: What fixes the mask, on the device.
 
     Returns:
@@ -57,7 +55,7 @@ def drawn_masks(
         drawn = rank < (mask_ratio * present.sum(1, keepdim=True)).floor()  # (B, K)
         visible[name] = present & ~drawn  # (B, K)
         hidden[name] = present & drawn  # (B, K)
-    return visible, hidden, scored_patches(batch, visible, hidden, radius)
+    return visible, hidden, scored_patches(visible, hidden)
 
 
 def batch_errors(
@@ -108,9 +106,7 @@ def step_terms(
     drawn, counts = [], defaultdict(float)
     for batch, _ in passes:
         batch = device_batch(batch, device)
-        visible, hidden, scored = drawn_masks(
-            batch, mask_ratio, model.attention_m, generator
-        )
+        visible, hidden, scored = drawn_masks(batch, mask_ratio, generator)
         drawn.append((visible, hidden, scored))
         for term, patches in scored.items():
             counts[term] += float(patches.sum())
