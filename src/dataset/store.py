@@ -169,7 +169,7 @@ class DatasetBuild:
                     for name, drawn in read.items()
                 }
                 with atomic_path(held) as written, written.open("wb") as file:
-                    np.savez_compressed(
+                    np.savez(
                         file,
                         **{
                             f"{name}/{key}": array
