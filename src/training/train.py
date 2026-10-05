@@ -96,7 +96,10 @@ def train(
         optimizer.zero_grad()
         terms = step_terms(model, passes, mask_ratio, generator, device)
         # Stabilize training against exploding gradients
-        clip_grad_norm_(model.parameters(), 1.0)
+        norm = clip_grad_norm_(model.parameters(), 1.0)
+        if not torch.isfinite(norm):
+            tiles = [tile for _, identities in passes for tile in identities]
+            raise FloatingPointError(f"step {step} has a non-finite gradient: {tiles}")
         optimizer.step()
         scheduler.step()
         log_step(run, step, terms)
