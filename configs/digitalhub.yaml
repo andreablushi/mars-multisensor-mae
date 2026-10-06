@@ -17,7 +17,7 @@ stages:
   training:
     function: train-mae
     profile: 1xrtxa5000-shared
-    resources: {cpu: "10", gpu: "1", mem: 48Gi, disk: 64Gi}
+    resources: {cpu: "8", gpu: "1", mem: 48Gi, disk: 64Gi}
   evaluation:
     function: evaluate-mae
     profile: 1xrtxa5000-shared
