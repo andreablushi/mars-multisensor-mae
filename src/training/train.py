@@ -102,7 +102,7 @@ def train(
             raise FloatingPointError(f"step {step} has a non-finite gradient: {tiles}")
         optimizer.step()
         scheduler.step()
-        log_step(run, step, terms)
+        log_step(run, step, terms | {"grad_norm": norm})
         log.info(
             "step %d waited %.1f s for data, computed in %.1f s",
             step,

@@ -29,12 +29,12 @@ pool:
 # How many patches of each instrument a training or validation read keeps, the ones
 # nearest a centre drawn on one of the tile's patches; evaluation reads tiles whole.
 budget:
-  # About one median scan of a tile, 60% of its ground.
-  CTX: 1536
-  # Two observations, the whole of a median tile.
-  CRISM: 104
-  # Two tracks across the tile, of the median tile's four.
-  SHARAD: 224
+  # About 9 km square of one scan around the centre.
+  CTX: 192
+  # A quarter of one observation.
+  CRISM: 13
+  # A quarter of one track.
+  SHARAD: 28
 
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.95, 0.05]
