@@ -16,6 +16,8 @@ class DatasetConfig:
             instrument, an axis it omits taken whole.
         pool: How many ground samples of a patch are averaged into one, by
             instrument, one left out read whole.
+        budget: How many patches of each instrument a training or validation read
+            keeps, the ones nearest a centre drawn on the tile.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -24,6 +26,7 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
+    budget: dict[str, int]
     split: list[float]
     seed: int
 
@@ -35,19 +38,17 @@ class ModelConfig:
     Attributes:
         instruments: The instruments whose patches become tokens, the delay one apart.
         delay: The instrument whose rows give every surface patch its delay.
-        cell_m: How far a cell of a tile's grid runs along the ground, in metres.
-        encoder_dim: How wide a token is everywhere but the decoders, a multiple of 12.
-        encoder_heads: How many attention heads every encoder and the fusion run.
+        encoder_dim: How wide a token is everywhere but the decoders, a multiple of 6.
+        encoder_heads: How many attention heads every encoder runs.
         encoder_depth: How many blocks each instrument encoder stacks.
         crossencoder_depth: How many blocks the cross-sensor encoder stacks.
-        decoder_dim: How wide a token is in the decoders, a multiple of 12.
+        decoder_dim: How wide a token is in the decoders, a multiple of 6.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
     """
 
     instruments: list[str]
     delay: str
-    cell_m: float
     encoder_dim: int
     encoder_heads: int
     encoder_depth: int
@@ -71,7 +72,6 @@ class TrainingConfig:
         validate_every: How many steps between two validations.
         patience: How many validations without a lower loss before the run stops.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        drop_ratio: The chance each instrument is left out of the grid.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -84,7 +84,6 @@ class TrainingConfig:
     validate_every: int
     patience: int
     mask_ratio: float
-    drop_ratio: float
     checkpoints: str
 
 
@@ -94,14 +93,15 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        minimal_chamfer_cell_distance: How far, in cells along any axis, a
-            cell may be matched from its own offset, or None to match it anywhere
-            in the other tile.
-        delay_window: The first and last delay cell kept, counted from the surface.
+        minimal_chamfer_distance_m: How far east or north, in metres, a token may be
+            matched from where it sits, or None to match it anywhere in the other
+            tile.
+        delay_window: The first and last delay cell a sounder token is compared in,
+            counted from the cell of the surface beneath it.
     """
 
     build: str
-    minimal_chamfer_cell_distance: int | None
+    minimal_chamfer_distance_m: float | None
     delay_window: tuple[int, int]
 
 

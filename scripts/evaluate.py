@@ -17,11 +17,11 @@ from configs.load import load_config
 from configs.paths import results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
-from dataset.patches import read_patch_layout
+from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
-from evaluation.results import write_tile_distances
+from evaluation.results import EVERY_INSTRUMENT, write_tile_distances
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
@@ -38,7 +38,6 @@ def built_model(
     torch.device,
     dict[str, Mapping[str, int]],
     dict[str, tuple[int, ...]],
-    dict[str, float],
 ]:
     """Return the model a build's patch layout settles, on the GPU when there is one.
 
@@ -51,14 +50,12 @@ def built_model(
         device: Where it runs.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        strides: How far apart two neighbouring patch centres of each sensor sit.
     """
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
-    shapes, strides = read_patch_layout(build, sizes, config.dataset.pool)
+    shapes = read_patch_shapes(build, sizes, config.dataset.pool)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
-        strides,
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,
@@ -66,9 +63,8 @@ def built_model(
         config.model.decoder_dim,
         config.model.decoder_heads,
         config.model.decoder_depth,
-        config.model.cell_m,
     ).to(device)
-    return model, device, sizes, shapes, strides
+    return model, device, sizes, shapes
 
 
 def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
@@ -82,7 +78,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     # The model is built as the training build left it, whichever build the tiles
     # it never read come from.
     trained = published_build(config.dataset.build, config.dataset.root)
-    model, device, sizes, shapes, _ = built_model(config, trained)
+    model, device, sizes, shapes = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
     build = published_build(config.evaluation.build, config.dataset.root)
     classes = build.read_label_by_tile()
@@ -95,26 +91,34 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         config.dataset.pool,
         shapes,
         config.model.delay,
-        config.model.cell_m,
         config.training.memory_batch_size,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
+        budget=None,
+        seed=None,
     )
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
-    grids = evaluate_latent_space(
-        model,
-        loader,
-        device,
-        config.dataset.patchsize["SHARAD"]["delay"],
-        config.evaluation.delay_window,
+    tokens = evaluate_latent_space(
+        model, loader, sizes, config.evaluation.delay_window, device
     )
-    tiles = sorted(grids)
-    distances = chamfer_distances(
-        [grids[tile] for tile in tiles], config.evaluation.minimal_chamfer_cell_distance
-    )
+    tiles = sorted(next(iter(tokens.values())))
+    distances = {
+        name: chamfer_distances(
+            [held[tile] for tile in tiles],
+            config.evaluation.minimal_chamfer_distance_m,
+        )
+        for name, held in tokens.items()
+    }
+    # Every instrument weighs the same in the distance over all of them
+    distances[EVERY_INSTRUMENT] = torch.stack(list(distances.values())).mean(dim=0)
     results = results_path(config.run_name)
-    write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
+    write_tile_distances(
+        results,
+        tiles,
+        classes,
+        {name: one.double().cpu().numpy() for name, one in distances.items()},
+    )
     log.info("results written to %s", results)
     if project is not None:
         publish_results(project, results, config.run_name)

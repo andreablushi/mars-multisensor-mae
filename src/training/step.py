@@ -1,4 +1,4 @@
-"""One training step on the model device: patches hidden, instruments left out."""
+"""One training step on the model device: patches hidden, then predicted."""
 
 from __future__ import annotations
 
@@ -7,56 +7,42 @@ from collections import defaultdict
 import torch
 from torch import Tensor
 
-from architecture.grid import Cells
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens
-from training.loss import loss_terms, scored_patches, summed_errors
+from training.loss import cmr_errors, loss_terms, scored_counts, umr_errors
 
 
-def device_batch(
-    batch: dict[str, Tokens], cells: Cells, device: torch.device
-) -> tuple[dict[str, Tokens], Cells]:
+def device_batch(batch: dict[str, Tokens], device: torch.device) -> dict[str, Tokens]:
     """Return one batch held on the model device.
 
     Args:
         batch: Each instrument's patches over the batch.
-        cells: The cells the batch's patches reach.
         device: Where the model runs.
 
     Returns:
         batch: The patches, on the device.
-        cells: The cells, on the device.
     """
-    return (
-        {
-            name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
-            for name, tokens in batch.items()
-        },
-        Cells(*(one.to(device, non_blocking=True) for one in cells)),
-    )
+    return {
+        name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
+        for name, tokens in batch.items()
+    }
 
 
 def drawn_masks(
     batch: dict[str, Tokens],
     mask_ratio: float,
-    drop_ratio: float,
     generator: torch.Generator,
-) -> tuple[
-    dict[str, Tensor], dict[str, Tensor], list[str], dict[tuple[str, str], Tensor]
-]:
-    """Return which patches are read and hidden, which instruments kept, and scored.
+) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
+    """Return which patches are read and which are hidden.
 
     Args:
         batch: Each instrument's patches over the batch, on the device.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        drop_ratio: The chance each instrument is left out of the grid.
         generator: What fixes the mask, on the device.
 
     Returns:
         visible: Which patches each encoder reads, drawn for each on its own. (B, K)
         hidden: Which patches are predicted, none of them padding. (B, K)
-        kept: Which instruments the grid is read from, never none.
-        scored: The hidden patches each loss term scores. (B, K)
     """
     visible, hidden = {}, {}
     for name, tokens in batch.items():
@@ -68,48 +54,44 @@ def drawn_masks(
         drawn = rank < (mask_ratio * present.sum(1, keepdim=True)).floor()  # (B, K)
         visible[name] = present & ~drawn  # (B, K)
         hidden[name] = present & drawn  # (B, K)
-    draw = torch.rand(len(batch), generator=generator, device=generator.device)
-    dropped = (draw < drop_ratio).tolist()
-    # One instrument is always kept, so the grid is never empty
-    if all(dropped):
-        dropped[int(draw.argmax())] = False
-    kept = [name for name, out in zip(batch, dropped, strict=True) if not out]
-    return visible, hidden, kept, scored_patches(batch, visible, hidden, kept)
+    return visible, hidden
 
 
 def batch_errors(
     model: CrossSensorMAE,
     batch: dict[str, Tokens],
-    cells: Cells,
     visible: dict[str, Tensor],
     hidden: dict[str, Tensor],
-    kept: list[str],
-    scored: dict[tuple[str, str], Tensor],
 ) -> dict[tuple[str, str], Tensor]:
     """Return each term's error over one batch, summed over the patches it scores.
 
     Args:
         model: The model, on the device.
         batch: Each instrument's patches over the batch, on the device.
-        cells: The cells the batch's patches reach, on the device.
         visible: Which patches each encoder reads. (B, K)
         hidden: Which patches are predicted. (B, K)
-        kept: Which instruments the grid is read from.
-        scored: The hidden patches each loss term scores. (B, K)
 
     Returns:
-        sums: Per term, the summed error. ()
+        sums: Per term and instrument, the summed error. ()
     """
-    with torch.autocast(cells.offset.device.type, dtype=torch.bfloat16):
-        predictions = model(batch, visible, hidden, cells, kept)
-    return summed_errors(predictions, batch, scored)
+    device = next(iter(visible.values())).device
+    with torch.autocast(device.type, dtype=torch.bfloat16):
+        predictions = model(batch, visible, hidden)
+    errors = {
+        "umr": umr_errors(predictions["umr"], batch, hidden),
+        "cmr": cmr_errors(predictions["cmr"], batch, visible, hidden),
+    }
+    return {
+        (term, name): summed
+        for term, held in errors.items()
+        for name, summed in held.items()
+    }
 
 
 def step_terms(
     model: CrossSensorMAE,
-    passes: list[tuple[dict[str, Tokens], Cells, list[str]]],
+    passes: list[tuple[dict[str, Tokens], list[str]]],
     mask_ratio: float,
-    drop_ratio: float,
     generator: torch.Generator,
     device: torch.device,
 ) -> dict[str, Tensor]:
@@ -119,7 +101,6 @@ def step_terms(
         model: The model, on the device.
         passes: The batches the step is split into, each as the loader hands it.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        drop_ratio: The chance each instrument is left out of the grid.
         generator: What fixes the masks, on the device.
         device: Where the model runs.
 
@@ -128,19 +109,17 @@ def step_terms(
     """
     # Every pass is drawn first, so each term is averaged over the whole step
     drawn, counts = [], defaultdict(float)
-    for batch, cells, _ in passes:
-        batch, _ = device_batch(batch, cells, device)
-        visible, hidden, kept, scored = drawn_masks(
-            batch, mask_ratio, drop_ratio, generator
-        )
-        drawn.append((visible, hidden, kept, scored))
-        for term, patches in scored.items():
-            counts[term] += float(patches.sum())
+    for batch, _ in passes:
+        batch = device_batch(batch, device)
+        visible, hidden = drawn_masks(batch, mask_ratio, generator)
+        drawn.append((visible, hidden))
+        for term, count in scored_counts(visible, hidden).items():
+            counts[term] += count
     sums = defaultdict(float)
     # One pass on the device at a time, its gradients added to the step's
-    for (batch, cells, _), masks in zip(passes, drawn, strict=True):
-        batch, cells = device_batch(batch, cells, device)
-        held = batch_errors(model, batch, cells, *masks)
+    for (batch, _), masks in zip(passes, drawn, strict=True):
+        batch = device_batch(batch, device)
+        held = batch_errors(model, batch, *masks)
         loss_terms(held, counts)["loss"].backward()
         for term, value in held.items():
             sums[term] += value.detach()

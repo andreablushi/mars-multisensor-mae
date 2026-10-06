@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from training.loss import loss_terms
+from training.loss import loss_terms, scored_counts
 from training.step import batch_errors, device_batch, drawn_masks
 
 
@@ -16,7 +16,6 @@ def validation_terms(
     model: CrossSensorMAE,
     loader: DataLoader,
     mask_ratio: float,
-    drop_ratio: float,
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
@@ -26,7 +25,6 @@ def validation_terms(
         model: The model, which is switched to evaluation.
         loader: The split, in batches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        drop_ratio: The chance each instrument is left out of the grid.
         seed: What fixes the masks.
         device: Where the model runs.
 
@@ -37,14 +35,12 @@ def validation_terms(
     generator = torch.Generator(device=device).manual_seed(seed)
     sums, counts = defaultdict(float), defaultdict(float)
     with torch.no_grad():
-        for batch, cells, _ in loader:
-            batch, cells = device_batch(batch, cells, device)
-            visible, hidden, kept, scored = drawn_masks(
-                batch, mask_ratio, drop_ratio, generator
-            )
-            for term, patches in scored.items():
-                counts[term] += float(patches.sum())
-            held = batch_errors(model, batch, cells, visible, hidden, kept, scored)
+        for batch, _ in loader:
+            batch = device_batch(batch, device)
+            visible, hidden = drawn_masks(batch, mask_ratio, generator)
+            for term, count in scored_counts(visible, hidden).items():
+                counts[term] += count
+            held = batch_errors(model, batch, visible, hidden)
             for term, value in held.items():
                 sums[term] += value
     return {name: float(value) for name, value in loss_terms(sums, counts).items()}

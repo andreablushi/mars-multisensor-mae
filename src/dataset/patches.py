@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from collections import defaultdict
+import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -86,7 +86,7 @@ def cut_patch(
         delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
-        patch: The patch, copied, with what it measured and where it reaches.
+        patch: The patch, copied, with what it measured and where it sits.
     """
     axes = observation.axes
     origin = tuple(
@@ -115,23 +115,12 @@ def cut_patch(
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
         delay = origin[at] + lengths[at] / 2
-        delay_span = float(lengths[at])
     else:
         # A patch on the ground sounds at one row, the one its surface echo lands on.
-        delay_span = 0.0
         nearest = np.argmin(
             (delays[:, 0] - north_m) ** 2 + (delays[:, 1] - east_m) ** 2
         )
         delay = float(delays[nearest, 2]) + 0.5
-    side = lengths[observation.ground_axes[0]]
-    footprint = side / max(side - 1, 1)
-    spans = (np.ptp(north), np.ptp(east))
-    if north.ndim == 2:
-        down = [np.mean(one[-1] - one[0]) for one in (north, east)]
-        across = [np.mean(one[:, -1] - one[:, 0]) for one in (north, east)]
-        if abs(down[1] * across[0]) > abs(down[0] * across[1]):
-            down, across = across, down
-        spans = (abs(down[0]), abs(across[1]))
     return Patch(
         values=observation.values[window].copy(),
         measured=measured,
@@ -139,9 +128,6 @@ def cut_patch(
         north_m=north_m,
         east_m=east_m,
         delay=delay,
-        north_span_m=float(spans[0]) * footprint,
-        east_span_m=float(spans[1]) * footprint,
-        delay_span=delay_span,
     )
 
 
@@ -200,12 +186,12 @@ def patch_lengths(
     )
 
 
-def read_patch_layout(
+def read_patch_shapes(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
-) -> tuple[dict[str, tuple[int, ...]], dict[str, float]]:
-    """Return each instrument's patch shape and patch spacing.
+) -> dict[str, tuple[int, ...]]:
+    """Return the shape of one patch of each instrument as the model reads it.
 
     Args:
         build: The published build the instruments are read from.
@@ -214,26 +200,17 @@ def read_patch_layout(
 
     Returns:
         shapes: The shape of one patch of each instrument, keyed as ODE names it.
-        strides: How far apart two neighbouring patch centres of each sensor sit.
     """
     rows = build.read_row_by_instrument()
-    spacing = defaultdict(list)
-    for held in build.read_observation_metadata().values():
-        for name, records in held.items():
-            spacing[name].extend(min(one.sample_spacing_m) for one in records)
-    resolution = {name: float(np.median(held)) for name, held in spacing.items()}
-    return (
-        {
-            name: patch_lengths(
-                rows[name].shape,
-                rows[name].axes,
-                size | read_band_patchsize(name),
-                pool.get(name, 1),
-            )
-            for name, size in sizes.items()
-        },
-        {name: size[Axis.GROUND] * resolution[name] for name, size in sizes.items()},
-    )
+    return {
+        name: patch_lengths(
+            rows[name].shape,
+            rows[name].axes,
+            size | read_band_patchsize(name),
+            pool.get(name, 1),
+        )
+        for name, size in sizes.items()
+    }
 
 
 def patch_arrays(
@@ -263,17 +240,36 @@ def patch_arrays(
             -1, *measured_shape
         ),
         "position": np.array(
-            [
-                [
-                    one.east_m,
-                    one.north_m,
-                    one.delay,
-                    one.east_span_m,
-                    one.north_span_m,
-                    one.delay_span,
-                ]
-                for one in patches
-            ],
+            [[one.east_m, one.north_m, one.delay] for one in patches],
             np.float32,
-        ).reshape(-1, 6),
+        ).reshape(-1, 3),
     }
+
+
+def cropped_patch_arrays(
+    sample: dict[str, dict[str, np.ndarray]],
+    budget: Mapping[str, int],
+    draw: random.Random,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return a tile's patch arrays, each instrument cut to the ones nearest a centre.
+
+    Args:
+        sample: Each instrument's patch arrays over the tile.
+        budget: How many patches of each instrument are kept.
+        draw: What picks the centre.
+
+    Returns:
+        sample: Each instrument's kept patch arrays, nearest the centre first.
+    """
+    grounds = np.concatenate([arrays["position"][:, :2] for arrays in sample.values()])
+    # A tile holding no patch has nothing to cut
+    if not len(grounds):
+        return sample
+    # One patch of any instrument is the centre every instrument is cut around
+    centre = grounds[draw.randrange(len(grounds))]
+    cropped = {}
+    for name, arrays in sample.items():
+        apart = np.linalg.norm(arrays["position"][:, :2] - centre, axis=1)
+        kept = np.argsort(apart, kind="stable")[: budget[name]]
+        cropped[name] = {key: array[kept] for key, array in arrays.items()}
+    return cropped

@@ -54,7 +54,7 @@ def log_step(run: Run, step: int, terms: Mapping[str, Tensor]) -> None:
     Args:
         run: The tracked run.
         step: Which step of the whole run it is.
-        terms: Every loss term, keyed as the loss names them.
+        terms: Every loss term, keyed as the loss names them, and the gradient norm.
     """
     run.log(
         {f"train_{name}": value.item() for name, value in terms.items()},

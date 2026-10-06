@@ -1,17 +1,16 @@
 # How a trained model's latent space is read: every labelled tile of the evaluation
-# build is embedded, and what the grids come to is read against the class each tile
+# build is embedded, and what its tokens come to is read against the class each tile
 # carries.
 
 # The build the labelled tiles are read from, published as dataset-<build>.
 build: evaluation
 
-# How far, in cells along east, north and delay, a cell may be matched, the delay
-# counted from each tile's own surface so no absolute height is compared.
-# A feature is an arrangement of places and not only what those places are made
-# of, so a cell is matched near where it sits. Null matches it anywhere in the
-# other tile, which is the bare token set and keeps no arrangement at all.
-minimal_chamfer_cell_distance: 4
+# How far east or north, in metres, a token may be matched from where it sits.
+# Null matches it anywhere in the other tile, so a distance does not follow how
+# much of the tile each instrument happened to cover.
+minimal_chamfer_distance_m: null
 
-# The delay cells each tile is compared over, counted from its surface cell, so
-# every tile holds the same slab: from one cell above the surface to two below it.
+# The delay cells a sounder token is compared in, counted from the cell of the
+# surface beneath it, the one of its nearest ground token: from one cell above the
+# surface to two below it, so the empty sky and the deep noise are left out.
 delay_window: [-1, 2]

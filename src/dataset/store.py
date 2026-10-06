@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import random
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -23,14 +24,11 @@ from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from common.disk import parquet
 from common.disk.files import atomic_path
 
-from architecture.grid import Cells, tile_cells
 from architecture.tokens import Tokens, token_batch_padding
 from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
 from dataset.models.positioning import read_surface_delays
-from dataset.patches import patch_arrays, read_tile_patches
-
-CELLS = "cells"
+from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
 
 @dataclass(slots=True)
@@ -138,8 +136,9 @@ class DatasetBuild:
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
-        cell_m: float,
-    ) -> tuple[dict[str, Tokens], Cells, list[str]]:
+        budget: Mapping[str, int] | None,
+        seed: int | None,
+    ) -> tuple[dict[str, Tokens], list[str]]:
         """Return one batch of tiles, each read from the run's cache or cut and cached.
 
         Args:
@@ -150,16 +149,14 @@ class DatasetBuild:
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
-            cell_m: How far a cell of a tile's grid runs along the ground, in metres.
+            budget: How many patches of each instrument a tile keeps, or None to
+                read it whole.
+            seed: What fixes each tile's centre, or None to draw a new one each read.
 
         Returns:
             batch: Each instrument's patches over the batch, keyed as ODE names it.
-            cells: The cells the batch's patches reach.
             identities: The tile each read belongs to, in the batch's own order.
         """
-        delay_rows = next(
-            size[Axis.DELAY] for size in sizes.values() if Axis.DELAY in size
-        )
         samples = []
         for identity in identities:
             held = self.root / ready_tile_path(identity)
@@ -169,7 +166,6 @@ class DatasetBuild:
                     for packed in arrays.files:
                         name, key = packed.split("/")
                         sample.setdefault(name, {})[key] = arrays[packed]
-                cells = sample.pop(CELLS)
             else:
                 rows = tiles[identity]
                 delays = read_surface_delays(self, rows[delay])
@@ -178,18 +174,19 @@ class DatasetBuild:
                     name: patch_arrays(drawn, shapes[name], axes[name])
                     for name, drawn in read.items()
                 }
-                placed = np.concatenate([one["position"] for one in sample.values()])
-                cells = tile_cells(placed, cell_m, delay_rows)
                 with atomic_path(held) as written, written.open("wb") as file:
-                    np.savez_compressed(
+                    np.savez(
                         file,
                         **{
                             f"{name}/{key}": array
-                            for name, arrays in (sample | {CELLS: cells}).items()
+                            for name, arrays in sample.items()
                             for key, array in arrays.items()
                         },
                     )
-            samples.append((sample, cells, identity))
+            if budget is not None:
+                draw = random.Random(None if seed is None else f"{seed}/{identity}")
+                sample = cropped_patch_arrays(sample, budget, draw)
+            samples.append((sample, identity))
         return token_batch_padding(samples)
 
     def read_observation(self, path: str, beside: Sequence[str] = ()) -> Observation:
