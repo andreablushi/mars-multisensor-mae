@@ -102,10 +102,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     tokens = evaluate_latent_space(
         model,
         loader,
-        axes,
         device,
-        config.dataset.patchsize["SHARAD"]["delay"],
-        config.evaluation.delay_window,
     )
     tiles = sorted(tokens)
     distances = chamfer_distances(

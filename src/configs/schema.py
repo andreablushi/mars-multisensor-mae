@@ -96,12 +96,10 @@ class EvaluationConfig:
         minimal_chamfer_distance_m: How far east or north, in metres, a token may be
             matched from where it sits, or None to match it anywhere in the other
             tile.
-        delay_window: The first and last delay cell kept, counted from the surface.
     """
 
     build: str
     minimal_chamfer_distance_m: float | None
-    delay_window: tuple[int, int]
 
 
 @dataclass
