@@ -99,7 +99,9 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     )
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
-    tokens = evaluate_latent_space(model, loader, device)
+    tokens = evaluate_latent_space(
+        model, loader, sizes, config.evaluation.delay_window, device
+    )
     tiles = sorted(next(iter(tokens.values())))
     distances = {
         name: chamfer_distances(

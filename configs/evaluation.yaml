@@ -9,3 +9,8 @@ build: evaluation
 # Null matches it anywhere in the other tile, so a distance does not follow how
 # much of the tile each instrument happened to cover.
 minimal_chamfer_distance_m: null
+
+# The delay cells a sounder token is compared in, counted from the cell of the
+# surface beneath it, the one of its nearest ground token: from one cell above the
+# surface to two below it, so the empty sky and the deep noise are left out.
+delay_window: [-1, 2]
