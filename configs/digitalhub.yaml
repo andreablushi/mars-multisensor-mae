@@ -16,11 +16,11 @@ base_image: python:3.13-slim
 stages:
   training:
     function: train-mae
-    profile: 1xrtxa5000-shared
+    profile: 1xa40-shared
     resources: {cpu: "8", gpu: "1", mem: 48Gi, disk: 64Gi}
   evaluation:
     function: evaluate-mae
-    profile: 1xrtxa5000-shared
+    profile: 1xa40-shared
     resources: {cpu: "8", gpu: "1", mem: 32Gi, disk: 64Gi}
 
 # The volume a run keeps its ready tiles on, mounted as the dataset root: a new one per

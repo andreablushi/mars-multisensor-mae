@@ -7,7 +7,7 @@ max_steps: 12500
 batch_size: 90
 # How many of them are held in memory at once: a step adds its gradients over
 # batch_size / memory_batch_size passes, so it must divide batch_size.
-memory_batch_size: 30
+memory_batch_size: 45
 learning_rate: 0.00025
 weight_decay: 0.05
 warmup_steps: 50
