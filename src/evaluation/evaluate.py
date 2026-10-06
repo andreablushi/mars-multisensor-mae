@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 import torch
@@ -16,26 +17,23 @@ from training.step import device_batch
 
 @dataclass(frozen=True, slots=True)
 class TileTokens:
-    """One tile's tokens, where each sits and how much each weighs.
+    """One instrument's tokens of one tile, and where each sits.
 
     Attributes:
         values: The token vectors, of unit length. (S, D)
         ground: How far east and north of the tile centre each sits, in metres. (S, 2)
-        weight: What each token weighs, the same for every instrument and zero for
-            a token not compared. (S,)
     """
 
     values: Tensor
     ground: Tensor
-    weight: Tensor
 
 
 def evaluate_latent_space(
     model: CrossSensorMAE,
     loader: DataLoader,
     device: torch.device,
-) -> dict[str, TileTokens]:
-    """Return the tokens of every tile of one build, each instrument weighing the same.
+) -> dict[str, dict[str, TileTokens]]:
+    """Return the tokens of every tile of one build, each instrument kept apart.
 
     Args:
         model: The model, loaded from a checkpoint and on the device.
@@ -43,27 +41,27 @@ def evaluate_latent_space(
         device: Where the model runs.
 
     Returns:
-        tiles: One set of tokens per tile, keyed by the tile it stands for.
+        tiles: Each instrument's tokens of every tile, keyed by instrument, then by
+            the tile they stand for.
+
+    Raises:
+        ValueError: When a tile holds no token of an instrument the model reads.
     """
     model.eval()
-    tiles = {}
+    tiles = defaultdict(dict)
     with torch.no_grad():
         for batch, identities in loader:
             batch = device_batch(batch, device)
             present = {name: tokens.present for name, tokens in batch.items()}  # (B, K)
             with torch.autocast(device.type, dtype=torch.bfloat16):
-                values, placed, counted = model.embed(batch, present)
-            # Each instrument weighs the same, however many tokens it holds
-            parts = counted.split([one.position.shape[1] for one in batch.values()], 1)
-            counts = torch.stack([part.sum(dim=1) for part in parts], dim=1)  # (B, I)
-            instruments = (counts > 0).sum(dim=1, keepdim=True)  # (B, 1)
-            share = 1 / (counts * instruments).clamp(min=1)  # (B, I)
-            weight = torch.cat(
-                [part * share[:, [at]] for at, part in enumerate(parts)], dim=1
-            )  # (B, S)
-            for at, identity in enumerate(identities):
-                # Kept in full precision, since the distances are read in its dtype
-                tiles[identity] = TileTokens(
-                    values[at].float(), placed[at, :, :2], weight[at].float()
-                )
-    return tiles
+                embedded = model.embed(batch, present)
+            for name, values in embedded.items():
+                for at, identity in enumerate(identities):
+                    held = present[name][at]  # (K,)
+                    if not held.any():
+                        raise ValueError(f"{identity} holds no {name} token.")
+                    # Kept in full precision, since the distances are read in its dtype
+                    tiles[name][identity] = TileTokens(
+                        values[at, held].float(), batch[name].position[at, held, :2]
+                    )
+    return dict(tiles)

@@ -116,21 +116,23 @@ class CrossSensorMAE(nn.Module):
             torch.cat([readable[name] for name in read], 1),  # (B, S)
         )
 
-    def embed(self, batch: dict[str, Tokens], present: dict[str, Tensor]) -> Context:
-        """Return the tokens standing for each tile, over every instrument it holds.
+    def embed(
+        self, batch: dict[str, Tokens], present: dict[str, Tensor]
+    ) -> dict[str, Tensor]:
+        """Return the tokens standing for each tile, for every instrument it holds.
 
         Args:
             batch: Each instrument's patches over the batch.
             present: Which slots hold a patch rather than padding. (B, K)
 
         Returns:
-            context: Every instrument's tokens side by side, of unit length, their
-                centres and which of them hold a patch.
+            tokens: Each instrument's tokens, of unit length, meaningful where
+                present. (B, K, D)
         """
-        tokens, position, present = self.context(
-            self.shared_tokens(batch, present), batch, present, list(batch)
-        )
-        return Context(functional.normalize(tokens, dim=-1), position, present)
+        return {
+            name: functional.normalize(tokens, dim=-1)
+            for name, tokens in self.shared_tokens(batch, present).items()
+        }
 
     def forward(
         self,

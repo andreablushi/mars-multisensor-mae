@@ -21,11 +21,12 @@ def chamfer_distances(
 ) -> Tensor:
     """Return how far every tile stands from every other, over the tokens they hold.
 
-    A tile is its weighted tokens and nothing else, so two are compared by matching
-    each token of one to the nearest token of the other and averaging both ways by
-    weight. The cost of a match is the cosine distance between two tokens, which
-    their unit length puts in [0, 1], so the distance is already normalised. A token
-    whose neighbourhood holds nothing to match stands a whole mismatch from that tile.
+    A tile is its tokens and nothing else, so two are compared by matching each
+    token of one to the nearest token of the other and averaging both ways, every
+    token of a tile weighing the same. The cost of a match is the cosine distance
+    between two tokens, which their unit length puts in [0, 1], so the distance is
+    already normalised. A token whose neighbourhood holds nothing to match stands a
+    whole mismatch from that tile.
 
     Args:
         tiles: One set of tokens per tile, in the order the distances are wanted.
@@ -36,16 +37,15 @@ def chamfer_distances(
     Returns:
         distances: The distance between every pair of tiles, in [0, 1]. (T, T)
     """
-    counts = torch.tensor([int((one.weight > 0).sum()) for one in tiles])  # (T,)
-    width = int(counts.max())
+    width = max(len(one.values) for one in tiles)
     values = tiles[0].values.new_zeros(len(tiles), width, tiles[0].values.shape[-1])
     grounds = values.new_zeros(len(tiles), width, 2)
     weights = values.new_zeros(len(tiles), width)
     for at, tile in enumerate(tiles):
-        compared = tile.weight > 0
-        values[at, : counts[at]] = tile.values[compared]
-        grounds[at, : counts[at]] = tile.ground[compared]
-        weights[at, : counts[at]] = tile.weight[compared]
+        count = len(tile.values)
+        values[at, :count] = tile.values
+        grounds[at, :count] = tile.ground
+        weights[at, :count] = 1 / count
     held = weights > 0  # (T, W)
     distances = values.new_zeros(len(tiles), len(tiles))
     # Both ways round are the same sum, so only a tile against those after it is read.

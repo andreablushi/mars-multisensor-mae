@@ -6,7 +6,6 @@
 build: evaluation
 
 # How far east or north, in metres, a token may be matched from where it sits.
-# A feature is an arrangement of places and not only what those places are made
-# of, so a token is matched near where it sits. Null matches it anywhere in the
-# other tile, which is the bare token set and keeps no arrangement at all.
-minimal_chamfer_distance_m: 2560.0
+# Null matches it anywhere in the other tile, so a distance does not follow how
+# much of the tile each instrument happened to cover.
+minimal_chamfer_distance_m: null

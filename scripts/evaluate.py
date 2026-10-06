@@ -21,7 +21,7 @@ from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate_latent_space
 from evaluation.metrics import chamfer_distances
-from evaluation.results import write_tile_distances
+from evaluation.results import EVERY_INSTRUMENT, write_tile_distances
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
@@ -99,18 +99,24 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
     )
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
-    tokens = evaluate_latent_space(
-        model,
-        loader,
-        device,
-    )
-    tiles = sorted(tokens)
-    distances = chamfer_distances(
-        [tokens[tile] for tile in tiles],
-        config.evaluation.minimal_chamfer_distance_m,
-    )
+    tokens = evaluate_latent_space(model, loader, device)
+    tiles = sorted(next(iter(tokens.values())))
+    distances = {
+        name: chamfer_distances(
+            [held[tile] for tile in tiles],
+            config.evaluation.minimal_chamfer_distance_m,
+        )
+        for name, held in tokens.items()
+    }
+    # Every instrument weighs the same in the distance over all of them
+    distances[EVERY_INSTRUMENT] = torch.stack(list(distances.values())).mean(dim=0)
     results = results_path(config.run_name)
-    write_tile_distances(results, tiles, classes, distances.double().cpu().numpy())
+    write_tile_distances(
+        results,
+        tiles,
+        classes,
+        {name: one.double().cpu().numpy() for name, one in distances.items()},
+    )
     log.info("results written to %s", results)
     if project is not None:
         publish_results(project, results, config.run_name)
