@@ -6,8 +6,10 @@ import math
 
 import torch
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from architecture.components.transformer import Transformer
+from architecture.tokens import Context
 
 # B = batch, S = context tokens, K = target patches, D = token channels,
 # P = patch dimensions.
@@ -58,21 +60,21 @@ class Decoder(nn.Module):
         nn.init.zeros_(self.predict.weight)
         nn.init.zeros_(self.predict.bias)
 
-    def forward(
+    def reconstructed_patches(
         self,
         context: Tensor,
         context_position: Tensor,
-        context_visible: Tensor,
+        context_readable: Tensor,
         position: Tensor,
         hidden: Tensor,
     ) -> Tensor:
-        """Return the predicted values of the hidden patches.
+        """Return the hidden patches as read from one context.
 
         Args:
-            context: The tokens the prediction reads, of any sensor. (B, S, D)
-            context_position: Each one's centre and span, in metres or rows. (B, S, 6)
-            context_visible: Which of them hold anything. (B, S)
-            position: Each asked patch's centre and span, in metres or rows. (B, K, 6)
+            context: The tokens the prediction reads. (B, S, D)
+            context_position: Each one's patch centre, in metres or rows. (B, S, 3)
+            context_readable: Which of them count. (B, S)
+            position: Each asked patch's centre, in metres or rows. (B, K, 3)
             hidden: Which of them to predict. (B, K)
 
         Returns:
@@ -86,12 +88,36 @@ class Decoder(nn.Module):
             ],
             dim=1,
         )  # (B, S + K, D')
-        placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 6)
-        # The visible context and the hidden patches are read, nothing else
-        readable = torch.cat([context_visible, hidden], dim=1)  # (B, S + K)
+        placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
+        # The readable context and the hidden patches are read, nothing else
+        readable = torch.cat([context_readable, hidden], dim=1)  # (B, S + K)
         # The context is only keys, only the patch slots ask as queries and are updated
         keys = self.blocks(keys, readable, placed, context.shape[1])
         queries = keys[:, context.shape[1] :]  # (B, K, D')
         # Write every sample of each patch slot from its query
         written = self.predict(queries)  # (B, K, prod P)
         return written.unflatten(-1, self.shape)  # (B, K, *P)
+
+    def forward(
+        self, own: Context, others: Context, position: Tensor, hidden: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """Return the instrument's hidden patches, from its own tokens and the others'.
+
+        Args:
+            own: The instrument's own tokens.
+            others: Every other instrument's tokens.
+            position: Each asked patch's centre, in metres or rows. (B, K, 3)
+            hidden: Which of them to predict. (B, K)
+
+        Returns:
+            umr: The patches read from the instrument's own tokens. (B, K, *P)
+            cmr: The same patches read from every other instrument's. (B, K, *P)
+        """
+        # Each pass is recomputed on the way back, so only one is held at once
+        umr = checkpoint(
+            self.reconstructed_patches, *own, position, hidden, use_reentrant=False
+        )
+        cmr = checkpoint(
+            self.reconstructed_patches, *others, position, hidden, use_reentrant=False
+        )
+        return umr, cmr

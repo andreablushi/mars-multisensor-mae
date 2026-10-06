@@ -9,7 +9,7 @@ from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens
-from training.loss import loss_terms, scored_patches, summed_errors
+from training.loss import cmr_errors, loss_terms, scored_counts, umr_errors
 
 
 def device_batch(batch: dict[str, Tokens], device: torch.device) -> dict[str, Tokens]:
@@ -32,8 +32,8 @@ def drawn_masks(
     batch: dict[str, Tokens],
     mask_ratio: float,
     generator: torch.Generator,
-) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[tuple[str, str], Tensor]]:
-    """Return which patches are read and hidden, and which each loss term scores.
+) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
+    """Return which patches are read and which are hidden.
 
     Args:
         batch: Each instrument's patches over the batch, on the device.
@@ -43,7 +43,6 @@ def drawn_masks(
     Returns:
         visible: Which patches each encoder reads, drawn for each on its own. (B, K)
         hidden: Which patches are predicted, none of them padding. (B, K)
-        scored: The hidden patches each loss term scores. (B, K)
     """
     visible, hidden = {}, {}
     for name, tokens in batch.items():
@@ -55,7 +54,7 @@ def drawn_masks(
         drawn = rank < (mask_ratio * present.sum(1, keepdim=True)).floor()  # (B, K)
         visible[name] = present & ~drawn  # (B, K)
         hidden[name] = present & drawn  # (B, K)
-    return visible, hidden, scored_patches(visible, hidden)
+    return visible, hidden
 
 
 def batch_errors(
@@ -63,7 +62,6 @@ def batch_errors(
     batch: dict[str, Tokens],
     visible: dict[str, Tensor],
     hidden: dict[str, Tensor],
-    scored: dict[tuple[str, str], Tensor],
 ) -> dict[tuple[str, str], Tensor]:
     """Return each term's error over one batch, summed over the patches it scores.
 
@@ -72,15 +70,22 @@ def batch_errors(
         batch: Each instrument's patches over the batch, on the device.
         visible: Which patches each encoder reads. (B, K)
         hidden: Which patches are predicted. (B, K)
-        scored: The hidden patches each loss term scores. (B, K)
 
     Returns:
-        sums: Per term, the summed error. ()
+        sums: Per term and instrument, the summed error. ()
     """
     device = next(iter(visible.values())).device
     with torch.autocast(device.type, dtype=torch.bfloat16):
         predictions = model(batch, visible, hidden)
-    return summed_errors(predictions, batch, scored)
+    errors = {
+        "umr": umr_errors(predictions["umr"], batch, hidden),
+        "cmr": cmr_errors(predictions["cmr"], batch, visible, hidden),
+    }
+    return {
+        (term, name): summed
+        for term, held in errors.items()
+        for name, summed in held.items()
+    }
 
 
 def step_terms(
@@ -106,10 +111,10 @@ def step_terms(
     drawn, counts = [], defaultdict(float)
     for batch, _ in passes:
         batch = device_batch(batch, device)
-        visible, hidden, scored = drawn_masks(batch, mask_ratio, generator)
-        drawn.append((visible, hidden, scored))
-        for term, patches in scored.items():
-            counts[term] += float(patches.sum())
+        visible, hidden = drawn_masks(batch, mask_ratio, generator)
+        drawn.append((visible, hidden))
+        for term, count in scored_counts(visible, hidden).items():
+            counts[term] += count
     sums = defaultdict(float)
     # One pass on the device at a time, its gradients added to the step's
     for (batch, _), masks in zip(passes, drawn, strict=True):

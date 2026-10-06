@@ -86,7 +86,7 @@ def cut_patch(
         delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
-        patch: The patch, copied, with what it measured and where it reaches.
+        patch: The patch, copied, with what it measured and where it sits.
     """
     axes = observation.axes
     origin = tuple(
@@ -115,23 +115,12 @@ def cut_patch(
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
         delay = origin[at] + lengths[at] / 2
-        delay_span = float(lengths[at])
     else:
         # A patch on the ground sounds at one row, the one its surface echo lands on.
-        delay_span = 0.0
         nearest = np.argmin(
             (delays[:, 0] - north_m) ** 2 + (delays[:, 1] - east_m) ** 2
         )
         delay = float(delays[nearest, 2]) + 0.5
-    side = lengths[observation.ground_axes[0]]
-    footprint = side / max(side - 1, 1)
-    spans = (np.ptp(north), np.ptp(east))
-    if north.ndim == 2:
-        down = [np.mean(one[-1] - one[0]) for one in (north, east)]
-        across = [np.mean(one[:, -1] - one[:, 0]) for one in (north, east)]
-        if abs(down[1] * across[0]) > abs(down[0] * across[1]):
-            down, across = across, down
-        spans = (abs(down[0]), abs(across[1]))
     return Patch(
         values=observation.values[window].copy(),
         measured=measured,
@@ -139,9 +128,6 @@ def cut_patch(
         north_m=north_m,
         east_m=east_m,
         delay=delay,
-        north_span_m=float(spans[0]) * footprint,
-        east_span_m=float(spans[1]) * footprint,
-        delay_span=delay_span,
     )
 
 
@@ -254,19 +240,9 @@ def patch_arrays(
             -1, *measured_shape
         ),
         "position": np.array(
-            [
-                [
-                    one.east_m,
-                    one.north_m,
-                    one.delay,
-                    one.east_span_m,
-                    one.north_span_m,
-                    one.delay_span,
-                ]
-                for one in patches
-            ],
+            [[one.east_m, one.north_m, one.delay] for one in patches],
             np.float32,
-        ).reshape(-1, 6),
+        ).reshape(-1, 3),
     }
 
 

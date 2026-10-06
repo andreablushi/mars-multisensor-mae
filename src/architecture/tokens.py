@@ -1,4 +1,4 @@
-"""What one stage hands the next: a sensor's patches."""
+"""What one stage hands the next: a sensor's patches, and the tokens a decoder reads."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import pad_sequence
 
-# B = batch, K = patches, P = patch dimensions.
+# B = batch, K = patches, S = tokens read together, P = patch dimensions,
+# D = token channels.
 
 
 class Tokens(NamedTuple):
@@ -18,7 +19,7 @@ class Tokens(NamedTuple):
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
         measured: Whether each sample is a measurement, false over padding. (B, K, *P')
-        position: The patch centre and its span, in metres or rows. (B, K, 6)
+        position: The patch centre, east and north in metres, delay in rows. (B, K, 3)
     """
 
     values: Tensor
@@ -33,6 +34,20 @@ class Tokens(NamedTuple):
             present: True where any sample of the slot is a measurement. (B, K)
         """
         return self.measured.flatten(2).any(dim=-1)
+
+
+class Context(NamedTuple):
+    """Some instruments' tokens side by side, as a decoder reads them.
+
+    Attributes:
+        tokens: The tokens, in the space every instrument shares. (B, S, D)
+        position: Each one's patch centre, in metres or rows. (B, S, 3)
+        readable: Which of them count. (B, S)
+    """
+
+    tokens: Tensor
+    position: Tensor
+    readable: Tensor
 
 
 def token_batch_padding(

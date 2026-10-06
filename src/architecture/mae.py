@@ -5,12 +5,11 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
-from torch.utils.checkpoint import checkpoint
 
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.tokens import Tokens
+from architecture.tokens import Context, Tokens
 
 # B = batch, K = patches, S = tokens read together, D = token channels,
 # P = patch dimensions.
@@ -74,33 +73,50 @@ class CrossSensorMAE(nn.Module):
         )
 
     def shared_tokens(
-        self,
-        encoded: dict[str, Tensor],
-        batch: dict[str, Tokens],
-        counted: dict[str, Tensor],
-        read: list[str],
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Return some instruments' tokens side by side, attended over together.
+        self, batch: dict[str, Tokens], readable: dict[str, Tensor]
+    ) -> dict[str, Tensor]:
+        """Return each instrument's tokens in the shared space, each read on its own.
 
         Args:
-            encoded: Each instrument's tokens from its own encoder. (B, K, D)
-            batch: Each instrument's patches over the batch, which place the tokens.
-            counted: Which of its tokens count: visible while training, else present.
-            read: Which instruments are read together.
+            batch: Each instrument's patches over the batch.
+            readable: Which patches each encoder may read. (B, K)
 
         Returns:
-            tokens: The tokens, in the space every instrument shares. (B, S, D)
-            position: Each token's patch centre and span, in metres or rows. (B, S, 6)
-            counted: Which of them count. (B, S)
+            tokens: Each instrument's tokens, meaningful where readable. (B, K, D)
         """
-        position = torch.cat([batch[name].position for name in read], 1)  # (B, S, 6)
-        readable = torch.cat([counted[name] for name in read], 1)  # (B, S)
-        tokens = torch.cat([encoded[name] for name in read], 1)  # (B, S, D)
-        return self.crossencoder(tokens, readable, position), position, readable
+        # The shared weights see one instrument at a time, so none reads another
+        return {
+            name: self.crossencoder(
+                self.encoders[name](one, readable[name]), readable[name], one.position
+            )
+            for name, one in batch.items()
+        }
 
-    def embed(
-        self, batch: dict[str, Tokens], present: dict[str, Tensor]
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    @staticmethod
+    def context(
+        tokens: dict[str, Tensor],
+        batch: dict[str, Tokens],
+        readable: dict[str, Tensor],
+        read: list[str],
+    ) -> Context:
+        """Return some instruments' tokens side by side, as a decoder reads them.
+
+        Args:
+            tokens: Each instrument's tokens in the shared space. (B, K, D)
+            batch: Each instrument's patches over the batch, which place the tokens.
+            readable: Which of each instrument's tokens count. (B, K)
+            read: Which instruments are put side by side.
+
+        Returns:
+            context: Their tokens, centres and which of them count.
+        """
+        return Context(
+            torch.cat([tokens[name] for name in read], 1),  # (B, S, D)
+            torch.cat([batch[name].position for name in read], 1),  # (B, S, 3)
+            torch.cat([readable[name] for name in read], 1),  # (B, S)
+        )
+
+    def embed(self, batch: dict[str, Tokens], present: dict[str, Tensor]) -> Context:
         """Return the tokens standing for each tile, over every instrument it holds.
 
         Args:
@@ -108,25 +124,21 @@ class CrossSensorMAE(nn.Module):
             present: Which slots hold a patch rather than padding. (B, K)
 
         Returns:
-            tokens: Every instrument's tokens side by side, of unit length. (B, S, D)
-            position: Each token's patch centre and span, in metres or rows. (B, S, 6)
-            present: Which of them hold a patch. (B, S)
+            context: Every instrument's tokens side by side, of unit length, their
+                centres and which of them hold a patch.
         """
-        encoded = {
-            name: self.encoders[name](one, present[name]) for name, one in batch.items()
-        }
-        tokens, position, present = self.shared_tokens(
-            encoded, batch, present, list(batch)
+        tokens, position, present = self.context(
+            self.shared_tokens(batch, present), batch, present, list(batch)
         )
-        return functional.normalize(tokens, dim=-1), position, present
+        return Context(functional.normalize(tokens, dim=-1), position, present)
 
     def forward(
         self,
         batch: dict[str, Tokens],
         visible: dict[str, Tensor],
         hidden: dict[str, Tensor],
-    ) -> dict[tuple[str, str], Tensor]:
-        """Return every instrument's hidden patches, from all and from the others.
+    ) -> dict[str, dict[str, Tensor]]:
+        """Return every instrument's hidden patches, from its own tokens and others'.
 
         Args:
             batch: Each instrument's patches over the batch.
@@ -134,28 +146,17 @@ class CrossSensorMAE(nn.Module):
             hidden: Which patches are predicted, none of them padding. (B, K)
 
         Returns:
-            predictions: Under "umr" each instrument's patches read from every
-                instrument, under "cmr" from every other one. (B, K, *P)
+            predictions: Under "umr" each instrument's patches read from its own
+                tokens, under "cmr" from every other instrument's. (B, K, *P)
         """
-        encoded = {
-            name: self.encoders[name](one, visible[name]) for name, one in batch.items()
-        }
-        # None reads every instrument, a name every instrument but that one
-        shared = {
-            left: self.shared_tokens(
-                encoded, batch, visible, [one for one in batch if one != left]
-            )
-            for left in [None, *batch]
-        }
-        return {
-            # Recomputed on the way back, so only one decoder pass is held at once
-            (term, name): checkpoint(
-                self.decoders[name],
-                *shared[left],
+        tokens = self.shared_tokens(batch, visible)
+        predictions = {"umr": {}, "cmr": {}}
+        for name, one in batch.items():
+            others = [other for other in batch if other != name]
+            predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
+                self.context(tokens, batch, visible, [name]),
+                self.context(tokens, batch, visible, others),
                 one.position,
                 hidden[name],
-                use_reentrant=False,
-            )  # (B, K, *P)
-            for name, one in batch.items()
-            for term, left in (("umr", None), ("cmr", name))
-        }
+            )  # (B, K, *P) each
+        return predictions

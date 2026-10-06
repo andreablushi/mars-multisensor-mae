@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import torch
+from building.common.layout import Axis
 from torch import Tensor
 from torch.utils.data import DataLoader
 
@@ -33,6 +35,7 @@ class TileTokens:
 def evaluate_latent_space(
     model: CrossSensorMAE,
     loader: DataLoader,
+    axes: Mapping[str, tuple[str, ...]],
     device: torch.device,
     delay_rows: int,
     delay_window: tuple[int, int],
@@ -42,6 +45,7 @@ def evaluate_latent_space(
     Args:
         model: The model, loaded from a checkpoint and on the device.
         loader: The tiles to read, in batches, each tile read whole.
+        axes: What each axis of each instrument's values holds.
         device: Where the model runs.
         delay_rows: How many radar delay rows a delay cell spans.
         delay_window: The first and last delay cell kept, counted from the surface.
@@ -57,8 +61,14 @@ def evaluate_latent_space(
             present = {name: tokens.present for name, tokens in batch.items()}  # (B, K)
             with torch.autocast(device.type, dtype=torch.bfloat16):
                 values, placed, counted = model.embed(batch, present)
-            # A tile's surface cell is the median delay of its patches spanning none
-            surface = counted & (placed[..., 5] == 0)  # (B, S)
+            # A tile's surface cell is the median delay of its ground patches
+            surface = torch.cat(
+                [
+                    one.present & (Axis.DELAY not in axes[name])
+                    for name, one in batch.items()
+                ],
+                dim=1,
+            )  # (B, S)
             rows = placed[..., 2].masked_fill(~surface, torch.nan)  # (B, S)
             rows = rows.nanmedian(dim=1, keepdim=True).values  # (B, 1)
             # The delay cell of each token, counted from its tile's surface cell

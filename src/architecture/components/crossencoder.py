@@ -10,7 +10,7 @@ from architecture.components.transformer import Transformer
 
 
 class CrossSensorEncoder(nn.Module):
-    """Attend over the tokens of the sensors read together, on weights they share.
+    """Attend over one sensor's tokens at a time, on weights every sensor shares.
 
     Attributes:
         blocks: The transformer.
@@ -32,10 +32,9 @@ class CrossSensorEncoder(nn.Module):
         """Return the tokens mapped into the space every instrument shares.
 
         Args:
-            keys: The instruments' encoded tokens, side by side, each a key and a
-                query. (B, K, D)
+            keys: One instrument's encoded tokens, each a key and a query. (B, K, D)
             visible: Which of them carry a patch the encoder read. (B, K)
-            position: Each token's patch centre and span, in metres or rows. (B, K, 6)
+            position: Each token's patch centre, in metres or rows. (B, K, 3)
 
         Returns:
             tokens: The mapped tokens, meaningful where visible. (B, K, D)

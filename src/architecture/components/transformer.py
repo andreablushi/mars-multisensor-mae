@@ -51,7 +51,7 @@ class Block(nn.Module):
             keys: Every token, each read as a key and a value, those past the fixed
                 also asking as queries. (B, N, D)
             mask: Which key each query may attend to. (B, 1, N - fixed, N)
-            position: Each token's patch centre and span, in metres or rows. (B, N, 6)
+            position: Each token's patch centre, in metres or rows. (B, N, 3)
             fixed: How many leading tokens are keys alone, never queries.
 
         Returns:
@@ -104,7 +104,7 @@ class Transformer(nn.Module):
             keys: Every token, each read as a key and a value, those past the fixed
                 also asking as queries. (B, N, D)
             readable: Which keys carry something. (B, N)
-            position: Each token's patch centre and span, in metres or rows. (B, N, 6)
+            position: Each token's patch centre, in metres or rows. (B, N, 3)
             fixed: How many leading tokens are keys alone, never queries.
 
         Returns:

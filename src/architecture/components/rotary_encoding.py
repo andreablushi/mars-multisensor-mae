@@ -44,7 +44,7 @@ class RotaryEncoding(nn.Module):
 
         Args:
             heads: The queries or keys of every head. (B, H, N, E)
-            position: Each token's patch centre and span, in metres or rows. (B, N, 6)
+            position: Each token's patch centre, in metres or rows. (B, N, 3)
 
         Returns:
             rotated: The same heads, each pair turned by its coordinate. (B, H, N, E)

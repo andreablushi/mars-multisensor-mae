@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from training.loss import loss_terms
+from training.loss import loss_terms, scored_counts
 from training.step import batch_errors, device_batch, drawn_masks
 
 
@@ -37,10 +37,10 @@ def validation_terms(
     with torch.no_grad():
         for batch, _ in loader:
             batch = device_batch(batch, device)
-            visible, hidden, scored = drawn_masks(batch, mask_ratio, generator)
-            for term, patches in scored.items():
-                counts[term] += float(patches.sum())
-            held = batch_errors(model, batch, visible, hidden, scored)
+            visible, hidden = drawn_masks(batch, mask_ratio, generator)
+            for term, count in scored_counts(visible, hidden).items():
+                counts[term] += count
+            held = batch_errors(model, batch, visible, hidden)
             for term, value in held.items():
                 sums[term] += value
     return {name: float(value) for name, value in loss_terms(sums, counts).items()}
