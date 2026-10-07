@@ -17,6 +17,7 @@ from analysis.ground_truth.artifacts import LABELS
 from analysis.ground_truth.models.label import Label
 from building import paths as built
 from building.common.layout import Axis
+from building.configs.crism import LAYOUT
 from building.metadata.dataset import read_normalization
 from building.metadata.index import read_observation_metadata
 from building.metadata.observation import ObservationMetadata
@@ -29,6 +30,9 @@ from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
+
+STD_FLOOR = 1e-6
+CLIP = 2.0
 
 
 @dataclass(slots=True)
@@ -211,12 +215,15 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         axes = tuple(described["axes"])
+        values = standardised_values(
+            arrays[described["measurement"]],
+            axes,
+            self.read_stats().get(described["instrument"]),
+        )
+        if described["instrument"] == LAYOUT.instrument:
+            values = clipped_values(values, arrays[MEASURED])
         return Observation(
-            values=standardised_values(
-                arrays[described["measurement"]],
-                axes,
-                self.read_stats().get(described["instrument"]),
-            ),
+            values=values,
             axes=axes,
             measured=arrays[MEASURED],
             north=arrays[NORTH],
@@ -250,4 +257,18 @@ def standardised_values(
         np.asarray(constants[name], np.float32).reshape(shape)
         for name in ("mean", "std")
     )
-    return (values - mean) / std
+    return (values - mean) / np.maximum(std, STD_FLOOR)
+
+
+def clipped_values(values: np.ndarray, measured: np.ndarray) -> np.ndarray:
+    """Return standardised values clipped to the clip range, zero where not measured.
+
+    Args:
+        values: The standardised values, bands last. (lines, samples, bands)
+        measured: Whether each ground sample is a measurement. (lines, samples)
+
+    Returns:
+        values: The values clipped, zero at unmeasured and non-finite samples.
+    """
+    clipped = np.clip(values, -CLIP, CLIP)
+    return np.where(measured[..., None] & np.isfinite(clipped), clipped, 0.0)

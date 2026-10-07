@@ -12,11 +12,6 @@ import numpy as np
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 
-from dataset.bands import (
-    measures_read_bands,
-    observation_read_bands,
-    read_band_patchsize,
-)
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
 from dataset.models.positioning import metres_from_centre
@@ -48,12 +43,7 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
-            # An observation missing any band read is left out whole
-            if not measures_read_bands(name, record):
-                continue
-            observation = observation_read_bands(
-                name, build.read_observation(record.path)
-            )
+            observation = build.read_observation(record.path)
             shape = observation.values.shape
             lengths = patch_lengths(shape, record.axes, size)
             counts = tuple(
@@ -206,7 +196,7 @@ def read_patch_shapes(
         name: patch_lengths(
             rows[name].shape,
             rows[name].axes,
-            size | read_band_patchsize(name),
+            size,
             pool.get(name, 1),
         )
         for name, size in sizes.items()
