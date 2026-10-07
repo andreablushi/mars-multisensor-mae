@@ -43,6 +43,9 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
+            # An observation missing any band is left out whole
+            if record.band_valid_count and not all(record.band_valid_count):
+                continue
             observation = build.read_observation(record.path)
             shape = observation.values.shape
             lengths = patch_lengths(shape, record.axes, size)

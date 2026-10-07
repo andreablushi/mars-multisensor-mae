@@ -109,8 +109,7 @@ class DatasetBuild:
         """Return the mean and std each instrument is standardised by, read once.
 
         Returns:
-            stats: The constants of each instrument, per band where it has bands, an
-                instrument left unscaled absent.
+            stats: The constants of each instrument, per band where it has bands.
 
         Raises:
             ValueError: When the build records no normalization.
@@ -218,7 +217,7 @@ class DatasetBuild:
         values = standardised_values(
             arrays[described["measurement"]],
             axes,
-            self.read_stats().get(described["instrument"]),
+            self.read_stats()[described["instrument"]],
         )
         if described["instrument"] == LAYOUT.instrument:
             values = clipped_values(values, arrays[MEASURED])
@@ -234,23 +233,18 @@ class DatasetBuild:
 
 
 def standardised_values(
-    values: np.ndarray, axes: Sequence[str], constants: Mapping[str, Any] | None
+    values: np.ndarray, axes: Sequence[str], constants: Mapping[str, Any]
 ) -> np.ndarray:
     """Return one observation's values standardised by its instrument's constants.
 
     Args:
         values: The values, as the build stored them.
         axes: What each axis of the values holds.
-        constants: The instrument's mean and std, per band where it has bands, or
-            None for an instrument left unscaled.
+        constants: The instrument's mean and std, per band where it has bands.
 
     Returns:
-        values: The standardised values, or the stored ones where there are no
-            constants.
+        values: The standardised values.
     """
-    # Leave the values as they are when the build has no constants for this instrument.
-    if constants is None:
-        return values
     # Per band constants run along the wavelength axis, a scalar along none.
     shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
     mean, std = (
