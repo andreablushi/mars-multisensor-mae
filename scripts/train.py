@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from dhub.configs import stage_workers
-from dhub.publish import publish_checkpoint
-from dhub.store import published_build
-from dhub.submit import run_stage
+from dhub.store import publish_checkpoint, published_build
+from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
 from evaluate import built_model, evaluate_checkpoint
 

@@ -6,10 +6,8 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import torch
-from dhub.configs import stage_workers
-from dhub.publish import publish_results
-from dhub.store import published_build, published_checkpoint
-from dhub.submit import run_stage
+from dhub.store import publish_results, published_build, published_checkpoint
+from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE

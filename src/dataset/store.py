@@ -17,11 +17,11 @@ from analysis.ground_truth.artifacts import LABELS
 from analysis.ground_truth.models.label import Label
 from building import paths as built
 from building.common.layout import Axis
-from building.configs.crism import LAYOUT
 from building.metadata.dataset import read_normalization
 from building.metadata.index import read_observation_metadata
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
+from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 from common.disk import parquet
 from common.disk.files import atomic_path
 

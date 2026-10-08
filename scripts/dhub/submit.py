@@ -7,14 +7,30 @@ import os
 from collections.abc import Callable, Mapping
 
 import digitalhub as dh
+import yaml
 from dotenv import load_dotenv
 
-from configs.paths import ENV_PATH
-from dhub import credentials
-from dhub.configs import load_platform
+from configs.paths import ENV_PATH, PLATFORM_CONFIG_PATH
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
 PYTHONPATH = "/shared:/shared/src:/shared/scripts"
+
+SECRETS = [
+    "DHCORE_PERSONAL_ACCESS_TOKEN",
+    "WANDB_API_KEY",
+    "WANDB_ENTITY",
+    "WANDB_PROJECT",
+]
+
+
+def load_platform() -> dict:
+    """Return what a platform run is given, read from `configs/digitalhub.yaml`."""
+    return yaml.safe_load(PLATFORM_CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def stage_workers(stage: str) -> int:
+    """Return how many processes read tiles beside one stage's work, as its cores."""
+    return int(load_platform()["stages"][stage]["resources"]["cpu"])
 
 
 def run_stage(
@@ -53,23 +69,23 @@ def run_stage(
         return
     load_dotenv(ENV_PATH)
     platform = load_platform()
-    asked = platform.stages[stage]
+    asked = platform["stages"][stage]
     # The job installs the clone's requirements.txt at start, so no image is built
-    function = dh.get_or_create_project(platform.project).new_function(
+    function = dh.get_or_create_project(platform["project"]).new_function(
         name=asked["function"],
         kind="python",
-        python_version=platform.python_version,
-        base_image=platform.base_image,
-        code_src=f"git+{platform.repository}#{ref}",
+        python_version=platform["python_version"],
+        base_image=platform["base_image"],
+        code_src=f"git+{platform['repository']}#{ref}",
         handler=handler,
     )
-    tiles = f"dataset.root={platform.volume['mount_path']}"
+    tiles = f"dataset.root={platform['volume']['mount_path']}"
     job = function.run(
         action="job",
         profile=asked["profile"],
         resources=asked["resources"],
-        volumes=[platform.volume],
-        secrets=credentials.SECRETS,
+        volumes=[platform["volume"]],
+        secrets=SECRETS,
         envs=[
             {"name": "PYTHONPATH", "value": PYTHONPATH},
             {"name": "PYTORCH_CUDA_ALLOC_CONF", "value": "expandable_segments:True"},

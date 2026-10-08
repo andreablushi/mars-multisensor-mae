@@ -1,4 +1,4 @@
-"""Reading what DigitalHub published: a build of the dataset, a model, or results."""
+"""What a run reads from DigitalHub and publishes to it: builds, models, results."""
 
 from __future__ import annotations
 
@@ -7,12 +7,16 @@ from urllib.parse import urlparse
 
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
+from digitalhub.stores.client.base.factory import get_client
 
 from configs.paths import build_root, checkpoint_path, results_path
 from dataset.store import DatasetBuild
-from dhub import credentials
-from dhub.configs import load_platform
-from dhub.publish import published_name
+from dhub.submit import load_platform
+
+
+def refresh_credentials() -> None:
+    """Mint the run's credentials again, the platform's and the store's alike."""
+    get_client().eval_retry()
 
 
 def published_build(build: str, root: str) -> DatasetBuild:
@@ -25,10 +29,8 @@ def published_build(build: str, root: str) -> DatasetBuild:
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
     """
-    project = dh.get_or_create_project(load_platform().project)
-    published = urlparse(
-        project.get_artifact(published_name("dataset", build)).spec.path
-    )
+    project = dh.get_or_create_project(load_platform()["project"])
+    published = urlparse(project.get_artifact(f"dataset-{build}").spec.path)
     bucket = published.netloc
     prefix = published.path.strip("/") + "/"
     client = dh.get_s3_client()
@@ -41,7 +43,7 @@ def published_build(build: str, root: str) -> DatasetBuild:
             return client.get_object(Bucket=bucket, Key=key)["Body"].read()
         except (ClientError, ResponseStreamingError):
             # The store's credentials lapse and its streams break mid run.
-            credentials.refresh()
+            refresh_credentials()
             client = dh.get_s3_client()
             try:
                 return client.get_object(Bucket=bucket, Key=key)["Body"].read()
@@ -61,9 +63,9 @@ def published_checkpoint(run_name: str, checkpoints: str) -> Path:
     Returns:
         path: The checkpoint, on this machine.
     """
-    credentials.refresh()
-    project = dh.get_or_create_project(load_platform().project)
-    name = published_name("model", run_name)
+    refresh_credentials()
+    project = dh.get_or_create_project(load_platform()["project"])
+    name = f"model-{run_name}"
     destination = checkpoint_path(checkpoints, name)
     destination.parent.mkdir(parents=True, exist_ok=True)
     return Path(project.get_model(name).download(str(destination), overwrite=True))
@@ -75,9 +77,9 @@ def fetched_results() -> list[Path]:
     Returns:
         paths: One results file per run fetched, none where it was already here.
     """
-    credentials.refresh()
-    project = dh.get_or_create_project(load_platform().project)
-    prefix = published_name("results", "")
+    refresh_credentials()
+    project = dh.get_or_create_project(load_platform()["project"])
+    prefix = "results-"
     paths = []
     for artifact in project.list_artifacts():
         held = results_path(artifact.name.removeprefix(prefix))
@@ -86,3 +88,35 @@ def fetched_results() -> list[Path]:
         held.parent.mkdir(parents=True, exist_ok=True)
         paths.append(Path(artifact.download(str(held), overwrite=True)))
     return paths
+
+
+def publish_checkpoint(project, path: Path, run_name: str):
+    """Return one checkpoint published as a model of the project.
+
+    Args:
+        project: The DigitalHub project the model is logged into.
+        path: The checkpoint, on this machine.
+        run_name: What the run is called, which names the model.
+
+    Returns:
+        model: The logged model.
+    """
+    refresh_credentials()
+    return project.log_model(name=f"model-{run_name}", kind="model", source=str(path))
+
+
+def publish_results(project, path: Path, run_name: str):
+    """Return one evaluation's results published as an artifact of the project.
+
+    Args:
+        project: The DigitalHub project the results are logged into.
+        path: The results file, on this machine.
+        run_name: What the evaluated run is called, which names the artifact.
+
+    Returns:
+        artifact: The logged artifact.
+    """
+    refresh_credentials()
+    return project.log_artifact(
+        name=f"results-{run_name}", kind="artifact", source=str(path)
+    )
