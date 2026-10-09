@@ -92,8 +92,6 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         config.training.memory_batch_size,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
-        budget=None,
-        seed=None,
     )
     steps = load_checkpoint(checkpoint, model)
     log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)

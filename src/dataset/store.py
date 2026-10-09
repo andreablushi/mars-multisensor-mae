@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import random
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ from architecture.tokens import Tokens, token_batch_padding
 from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
 from dataset.models.positioning import read_surface_delays
-from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
+from dataset.patches import patch_arrays, read_tile_patches
 
 STD_FLOOR = 1e-6
 CLIP = 2.0
@@ -139,8 +138,6 @@ class DatasetBuild:
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
-        budget: Mapping[str, int] | None,
-        seed: int | None,
     ) -> tuple[dict[str, Tokens], list[str]]:
         """Return one batch of tiles, each read from the run's cache or cut and cached.
 
@@ -152,9 +149,6 @@ class DatasetBuild:
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
             delay: The instrument whose rows give every surface patch its delay.
-            budget: How many patches of each instrument a tile keeps, or None to
-                read it whole.
-            seed: What fixes each tile's centre, or None to draw a new one each read.
 
         Returns:
             batch: Each instrument's patches over the batch, keyed as ODE names it.
@@ -186,9 +180,6 @@ class DatasetBuild:
                             for key, array in arrays.items()
                         },
                     )
-            if budget is not None:
-                draw = random.Random(None if seed is None else f"{seed}/{identity}")
-                sample = cropped_patch_arrays(sample, budget, draw)
             samples.append((sample, identity))
         return token_batch_padding(samples)
 

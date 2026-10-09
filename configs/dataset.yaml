@@ -26,16 +26,6 @@ pool:
   # 128 samples at about 5 m pooled to 16 at about 40 m.
   CTX: 8
 
-# How many patches of each instrument a training or validation read keeps, the ones
-# nearest a centre drawn on one of the tile's patches; evaluation reads tiles whole.
-budget:
-  # About 9 km square of one scan around the centre.
-  CTX: 192
-  # A quarter of one observation.
-  CRISM: 13
-  # A quarter of one track.
-  SHARAD: 28
-
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.95, 0.05]
 

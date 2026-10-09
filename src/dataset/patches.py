@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import math
-import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -237,32 +236,3 @@ def patch_arrays(
             np.float32,
         ).reshape(-1, 3),
     }
-
-
-def cropped_patch_arrays(
-    sample: dict[str, dict[str, np.ndarray]],
-    budget: Mapping[str, int],
-    draw: random.Random,
-) -> dict[str, dict[str, np.ndarray]]:
-    """Return a tile's patch arrays, each instrument cut to the ones nearest a centre.
-
-    Args:
-        sample: Each instrument's patch arrays over the tile.
-        budget: How many patches of each instrument are kept.
-        draw: What picks the centre.
-
-    Returns:
-        sample: Each instrument's kept patch arrays, nearest the centre first.
-    """
-    grounds = np.concatenate([arrays["position"][:, :2] for arrays in sample.values()])
-    # A tile holding no patch has nothing to cut
-    if not len(grounds):
-        return sample
-    # One patch of any instrument is the centre every instrument is cut around
-    centre = grounds[draw.randrange(len(grounds))]
-    cropped = {}
-    for name, arrays in sample.items():
-        apart = np.linalg.norm(arrays["position"][:, :2] - centre, axis=1)
-        kept = np.argsort(apart, kind="stable")[: budget[name]]
-        cropped[name] = {key: array[kept] for key, array in arrays.items()}
-    return cropped

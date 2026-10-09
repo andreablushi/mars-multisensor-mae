@@ -16,8 +16,6 @@ class DatasetConfig:
             instrument, an axis it omits taken whole.
         pool: How many ground samples of a patch are averaged into one, by
             instrument, one left out read whole.
-        budget: How many patches of each instrument a training or validation read
-            keeps, the ones nearest a centre drawn on the tile.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -26,7 +24,6 @@ class DatasetConfig:
     root: str
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
-    budget: dict[str, int]
     split: list[float]
     seed: int
 
