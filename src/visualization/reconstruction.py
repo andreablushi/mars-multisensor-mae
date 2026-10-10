@@ -14,7 +14,6 @@ COMPOSITES = {
     "TRU": (600.0, 530.0, 440.0),
     "FAL": (2529.0, 1506.0, 1080.0),
 }
-STRETCH = (2, 98)
 
 
 def patch_canvas(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
@@ -65,22 +64,22 @@ def reconstruction_panels(one: Reconstruction) -> dict[str, np.ndarray]:
     return {name: patch_canvas(held, one.cell) for name, held in panels.items()}
 
 
-def stretched_composite(
+def band_composite(
     canvas: np.ndarray, reference: np.ndarray, wavelengths: tuple[float, ...]
 ) -> np.ndarray:
-    """Return three bands as an RGB image, stretched as the reference is.
+    """Return three bands as an RGB image, on one linear scale of model values.
 
     Args:
-        canvas: The spectral canvas to colour. (Y, X, B)
-        reference: The canvas the stretch is read from. (Y, X, B)
+        canvas: The spectral canvas to colour, as the model reads it. (Y, X, B)
+        reference: The canvas whose three bands set the scale's ends. (Y, X, B)
         wavelengths: The red, green and blue wavelengths, in nm.
 
     Returns:
         image: The composite, 0 to 255, MISSING_COLOR where nothing is. (Y, X, 3)
     """
     bands = [int(np.argmin(np.abs(np.asarray(BANDS_NM) - one))) for one in wavelengths]
-    low, high = np.nanpercentile(reference[..., bands], STRETCH, axis=(0, 1))
-    scaled = (canvas[..., bands] - low) / np.maximum(high - low, 1e-6)
+    low, high = np.nanmin(reference[..., bands]), np.nanmax(reference[..., bands])
+    scaled = (canvas[..., bands] - low) / max(high - low, 1e-6)
     image = np.clip(scaled, 0, 1) * 255
     return np.where(np.isnan(image), MISSING_COLOR, image).astype(np.uint8)
 
@@ -100,24 +99,18 @@ def reconstruction_figure(one: Reconstruction, title: str) -> go.Figure:
         horizontal_spacing=0.02,
         vertical_spacing=0.06,
     )
-    low, high = None, None
-    if not spectral:
-        low, high = np.nanpercentile(reference, STRETCH)
     for at, row in enumerate(rows, start=1):
         for column, canvas in enumerate(panels.values(), start=1):
             trace = (
                 go.Image(
-                    z=stretched_composite(canvas, reference, COMPOSITES[row]),
+                    z=band_composite(canvas, reference, COMPOSITES[row]),
                     hoverinfo="skip",
                 )
                 if spectral
                 else go.Heatmap(
                     z=canvas,
-                    colorscale="gray",
-                    zmin=low,
-                    zmax=high,
-                    showscale=False,
-                    hoverinfo="skip",
+                    coloraxis="coloraxis",
+                    hovertemplate="%{z:.2f}<extra></extra>",
                 )
             )
             figure.add_trace(trace, row=at, col=column)
@@ -128,6 +121,12 @@ def reconstruction_figure(one: Reconstruction, title: str) -> go.Figure:
     figure.update_layout(
         template=TEMPLATE,
         plot_bgcolor="rgb{}".format(MISSING_COLOR),
+        coloraxis={
+            "colorscale": "gray",
+            "cmin": np.nanmin(reference),
+            "cmax": np.nanmax(reference),
+            "colorbar": {"title": "standardised"},
+        },
         title=title,
         height=120 + len(rows) * side * float(np.clip(height / width, 0.5, 2.5)),
         width=60 + len(panels) * side,
