@@ -1,4 +1,4 @@
-"""Writing back what one observation of each instrument never showed the model."""
+"""Writing back the hidden middle of one observation of each instrument."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import numpy as np
 import torch
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
-from sklearn.neighbors import NearestNeighbors
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens
@@ -16,45 +15,6 @@ from dataset.models.positioning import read_surface_delays
 from dataset.patches import patch_arrays, read_tile_patches
 from dataset.store import DatasetBuild
 from evaluation.results import Reconstruction
-
-
-def unseen_cells(
-    cells: np.ndarray, ground: np.ndarray, delays: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return the cells of one observation's patch grid over the tile it never saw.
-
-    Args:
-        cells: The row and column of each patch in its observation's grid. (K, 2)
-        ground: Each patch's centre, east and north in metres. (K, 2)
-        delays: Which delay row the ground sounds at, over the tile. (N, 3)
-
-    Returns:
-        unseen: The row and column of every cell over the tile no patch holds. (U, 2)
-        position: The centre and delay row of each, as a patch gives them. (U, 3)
-    """
-    extent = delays[:, [1, 0]]  # (N, 2)
-    design = np.column_stack([np.ones(len(cells)), cells])  # (K, 3)
-    origin, *steps = np.linalg.lstsq(design, ground, rcond=None)[0]
-    steps = np.stack(steps)  # (2, 2)
-    reached = np.rint((extent - origin) @ np.linalg.inv(steps)).astype(int)  # (N, 2)
-    low, high = reached.min(0), reached.max(0)
-    seen = set(map(tuple, cells))
-    unseen = np.array(
-        [
-            (row, column)
-            for row in range(low[0], high[0] + 1)
-            for column in range(low[1], high[1] + 1)
-            if (row, column) not in seen
-        ],
-        dtype=int,
-    ).reshape(-1, 2)
-    centres = origin + unseen @ steps  # (U, 2)
-    tree = NearestNeighbors().fit(extent)
-    spacing = np.median(tree.kneighbors(extent, 2)[0][:, 1])
-    apart, nearest = (one[:, 0] for one in tree.kneighbors(centres, 1))
-    inside = apart <= max(spacing, np.linalg.norm(steps, axis=1).min() / 2)
-    position = np.column_stack([centres, delays[nearest, 2] + 0.5])
-    return unseen[inside], position[inside]
 
 
 def reconstructed_tile(
@@ -69,7 +29,7 @@ def reconstructed_tile(
     mask_ratio: float,
     device: torch.device,
 ) -> dict[str, Reconstruction]:
-    """Return one tile written back from one observation of each instrument.
+    """Return one tile written back, each instrument's observation hidden in its middle.
 
     Args:
         model: The model, on the device.
@@ -80,47 +40,45 @@ def reconstructed_tile(
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
-        mask_ratio: The share of the sounder's track hidden, in its middle.
+        mask_ratio: The share of each observation's patches hidden, as whole
+            columns in its middle.
         device: Where the model runs.
 
     Returns:
-        tiles: Each instrument's patches, what was read and what was written. An
-            imager is asked for the tile it never saw, the sounder for its middle.
+        tiles: Each instrument's patches of its first observation holding any, what
+            was read and what was written.
     """
     delays = read_surface_delays(build, rows[delay])  # (N, 3)
-    read = read_tile_patches(
-        {name: rows[name][:1] for name in sizes}, build, sizes, pool, delays
-    )
     batch, visible, hidden, cells = {}, {}, {}, {}
-    for name, drawn in read.items():
-        if not drawn:
+    for name in sizes:
+        drawn = next(
+            (
+                patches
+                for record in rows.get(name, ())
+                if (
+                    patches := read_tile_patches(
+                        {name: [record]}, build, {name: sizes[name]}, pool, delays
+                    )[name]
+                )
+            ),
+            None,
+        )
+        if drawn is None:
             continue
         arrays = patch_arrays(drawn, shapes[name], axes[name])
-        values, measured = arrays["values"], arrays["measured"]
-        position = arrays["position"]
         kept = [at for at, holds in enumerate(axes[name]) if holds != Axis.WAVELENGTH]
         cells[name] = np.array([[one.cell[at] for at in kept] for one in drawn])
-        if Axis.DELAY in axes[name]:
-            columns = cells[name][:, kept.index(axes[name].index(Axis.GROUND))]
-            columns = columns - columns.min()
-            count = columns.max() + 1
-            first = int(count * (1 - mask_ratio) / 2)
-            shut = (columns >= first) & (columns < first + int(count * mask_ratio))
-        else:
-            unseen, placed = unseen_cells(cells[name], position[:, :2], delays)
-            values = np.concatenate(
-                [values, np.zeros((len(unseen), *values.shape[1:]))]
-            )
-            measured = np.concatenate(
-                [measured, np.zeros((len(unseen), *measured.shape[1:]), bool)]
-            )
-            position = np.concatenate([position, placed])
-            cells[name] = np.concatenate([cells[name], unseen])
-            shut = np.arange(len(values)) >= len(drawn)
+        columns = cells[name][:, 1] - cells[name][:, 1].min()  # (K,)
+        counts = np.bincount(columns)  # (C,)
+        centre = (np.cumsum(counts) - counts / 2) / counts.sum()  # (C,)
+        shut = ((centre >= (1 - mask_ratio) / 2) & (centre < (1 + mask_ratio) / 2))[
+            columns
+        ]
         batch[name] = Tokens(
-            torch.as_tensor(values, dtype=torch.float32, device=device)[None],
-            torch.as_tensor(measured, device=device)[None],
-            torch.as_tensor(position, dtype=torch.float32, device=device)[None],
+            *(
+                torch.as_tensor(arrays[key], device=device)[None]
+                for key in ("values", "measured", "position")
+            )
         )
         visible[name] = torch.as_tensor(~shut, device=device)[None]
         hidden[name] = torch.as_tensor(shut, device=device)[None]
