@@ -26,6 +26,7 @@ CLASS_SYMBOLS = [
 ]
 F1_COLOR = "#2a78d6"
 BAND_COLOR = "#f0efec"
+MISSING_COLOR = (214, 228, 242)
 BLUES = [
     [0.0, "#cde2fb"],
     [0.25, "#86b6ef"],

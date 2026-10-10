@@ -1,13 +1,15 @@
-"""The results an evaluation keeps: one vector per labelled tile and instrument."""
+"""The results an evaluation keeps: tile vectors and reconstructed tiles."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import numpy as np
 from common.disk import parquet
+from common.disk.files import atomic_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +30,29 @@ class TileVector:
 
 
 RESULTS_SCHEMA = parquet.schema_of(TileVector)
+
+
+@dataclass(frozen=True, slots=True)
+class Reconstruction:
+    """One instrument's patches of one tile, what the model was shown and wrote back.
+
+    Attributes:
+        values: The patches, zero where nothing was measured. (K, *P)
+        measured: Whether each sample is a measurement. (K, *P')
+        cell: The row and column of the grid cell each patch is drawn at. (K, 2)
+        visible: Which patches the encoder read. (K,)
+        hidden: Which patches the decoder wrote. (K,)
+        umr: The patches written from the instrument's own tokens. (K, *P)
+        cmr: The patches written from every other instrument's tokens. (K, *P)
+    """
+
+    values: np.ndarray
+    measured: np.ndarray
+    cell: np.ndarray
+    visible: np.ndarray
+    hidden: np.ndarray
+    umr: np.ndarray
+    cmr: np.ndarray
 
 
 def write_tile_vectors(
@@ -75,3 +100,45 @@ def read_tile_vectors(path: Path) -> tuple[list[str], list[str], dict[str, np.nd
         held = vectors.setdefault(row.instrument, np.full((len(tiles), width), np.nan))
         held[at[row.tile]] = row.vector
     return tiles, [classes[tile] for tile in tiles], vectors
+
+
+def write_reconstructions(
+    path: Path, tiles: Mapping[str, Mapping[str, Reconstruction]]
+) -> None:
+    """Write every reconstructed tile into one compressed archive.
+
+    Args:
+        path: The archive to write, whose directory is made if missing.
+        tiles: Each instrument's reconstruction, keyed by tile, then instrument.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with atomic_path(path) as written, written.open("wb") as file:
+        np.savez_compressed(
+            file,
+            **{
+                f"{tile}/{name}/{field.name}": getattr(one, field.name)
+                for tile, by_instrument in tiles.items()
+                for name, one in by_instrument.items()
+                for field in fields(Reconstruction)
+            },
+        )
+
+
+def read_reconstructions(path: Path) -> dict[str, dict[str, Reconstruction]]:
+    """Return every reconstructed tile one evaluation wrote.
+
+    Args:
+        path: The archive written by write_reconstructions.
+
+    Returns:
+        tiles: Each instrument's reconstruction, keyed by tile, then instrument.
+    """
+    held = defaultdict(lambda: defaultdict(dict))
+    with np.load(path) as arrays:
+        for packed in arrays.files:
+            tile, name, field = packed.split("/")
+            held[tile][name][field] = arrays[packed]
+    return {
+        tile: {name: Reconstruction(**one) for name, one in by_instrument.items()}
+        for tile, by_instrument in held.items()
+    }

@@ -9,7 +9,14 @@ import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 from digitalhub.stores.client.base.factory import get_client
 
-from configs.paths import build_root, checkpoint_path, results_path
+from configs.paths import (
+    RECONSTRUCTION_FILE,
+    RESULTS_FILE,
+    build_root,
+    checkpoint_path,
+    reconstruction_path,
+    results_path,
+)
 from dataset.store import DatasetBuild
 from dhub.submit import load_platform
 
@@ -72,19 +79,23 @@ def published_checkpoint(run_name: str, checkpoints: str) -> Path:
 
 
 def fetched_results() -> list[Path]:
-    """Return where every published evaluation this machine lacked was fetched to.
+    """Return where every published evaluation file was fetched to, replacing any.
 
     Returns:
-        paths: One results file per run fetched, none where it was already here.
+        paths: One file per run and kind fetched.
     """
     refresh_credentials()
     project = dh.get_or_create_project(load_platform()["project"])
-    prefix = "results-"
+    held_at = {
+        Path(RESULTS_FILE).stem: results_path,
+        Path(RECONSTRUCTION_FILE).stem: reconstruction_path,
+    }
     paths = []
     for artifact in project.list_artifacts():
-        held = results_path(artifact.name.removeprefix(prefix))
-        if not artifact.name.startswith(prefix) or held.is_file():
+        kind, _, run = artifact.name.partition("-")
+        if kind not in held_at:
             continue
+        held = held_at[kind](run)
         held.parent.mkdir(parents=True, exist_ok=True)
         paths.append(Path(artifact.download(str(held), overwrite=True)))
     return paths
@@ -106,17 +117,17 @@ def publish_checkpoint(project, path: Path, run_name: str):
 
 
 def publish_results(project, path: Path, run_name: str):
-    """Return one evaluation's results published as an artifact of the project.
+    """Return one evaluation file published as an artifact of the project.
 
     Args:
-        project: The DigitalHub project the results are logged into.
-        path: The results file, on this machine.
+        project: The DigitalHub project the file is logged into.
+        path: The file, on this machine, whose stem names the artifact's kind.
         run_name: What the evaluated run is called, which names the artifact.
 
     Returns:
-        artifact: The logged artifact.
+        artifact: The logged artifact, named <stem>-<run_name>.
     """
     refresh_credentials()
     return project.log_artifact(
-        name=f"results-{run_name}", kind="artifact", source=str(path)
+        name=f"{path.stem}-{run_name}", kind="artifact", source=str(path)
     )
