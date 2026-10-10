@@ -1,4 +1,4 @@
-"""Writing back the hidden middle of one observation of each instrument."""
+"""Writing back the hidden middle of one crop of each instrument's observation."""
 
 from __future__ import annotations
 
@@ -16,6 +16,51 @@ from dataset.patches import patch_arrays, read_tile_patches
 from dataset.store import DatasetBuild
 from evaluation.results import Reconstruction
 
+SIDE = 16
+
+
+def cropped_patches(cells: np.ndarray, filled: np.ndarray, sounder: bool) -> np.ndarray:
+    """Return which patches one crop of an observation keeps.
+
+    Args:
+        cells: The row and column of each patch in its observation's grid. (K, 2)
+        filled: Whether every sample of each patch is a measurement. (K,)
+        sounder: Whether the rows are delay, kept whole, rather than ground.
+
+    Returns:
+        kept: For a sounder the middle SIDE columns of its track, for an imager the
+            largest square of filled patches up to SIDE on a side. (K,)
+    """
+    rows, columns = (cells - cells.min(0)).T
+    if sounder:
+        held = np.unique(columns)
+        start = held[max((len(held) - SIDE) // 2, 0)]
+        return (columns >= start) & (columns < start + SIDE)
+    grid = np.zeros((rows.max() + 1, columns.max() + 1), bool)
+    grid[rows[filled], columns[filled]] = True
+    size = np.zeros((grid.shape[0] + 1, grid.shape[1] + 1), int)
+    for row in range(grid.shape[0]):
+        for column in range(grid.shape[1]):
+            if grid[row, column]:
+                size[row + 1, column + 1] = (
+                    min(
+                        size[row, column + 1],
+                        size[row + 1, column],
+                        size[row, column],
+                        SIDE - 1,
+                    )
+                    + 1
+                )
+    bottom, right = np.unravel_index(size.argmax(), size.shape)
+    side = size[bottom, right]
+    return (
+        filled
+        & (rows >= bottom - side)
+        & (rows < bottom)
+        & (columns >= right - side)
+        & (columns < right)
+    )
+
 
 def reconstructed_tile(
     model: CrossSensorMAE,
@@ -29,7 +74,7 @@ def reconstructed_tile(
     mask_ratio: float,
     device: torch.device,
 ) -> dict[str, Reconstruction]:
-    """Return one tile written back, each instrument's observation hidden in its middle.
+    """Return one tile written back, a crop of each instrument hidden in its middle.
 
     Args:
         model: The model, on the device.
@@ -40,13 +85,12 @@ def reconstructed_tile(
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
-        mask_ratio: The share of each observation's patches hidden, as whole
-            columns in its middle.
+        mask_ratio: The share of each crop's columns hidden, in its middle.
         device: Where the model runs.
 
     Returns:
-        tiles: Each instrument's patches of its first observation holding any, what
-            was read and what was written.
+        tiles: Each instrument's crop of its first observation holding any patch,
+            what was read and what was written.
     """
     delays = read_surface_delays(build, rows[delay])  # (N, 3)
     batch, visible, hidden, cells = {}, {}, {}, {}
@@ -67,16 +111,18 @@ def reconstructed_tile(
             continue
         arrays = patch_arrays(drawn, shapes[name], axes[name])
         kept = [at for at, holds in enumerate(axes[name]) if holds != Axis.WAVELENGTH]
-        cells[name] = np.array([[one.cell[at] for at in kept] for one in drawn])
-        columns = cells[name][:, 1] - cells[name][:, 1].min()  # (K,)
-        counts = np.bincount(columns)  # (C,)
-        centre = (np.cumsum(counts) - counts / 2) / counts.sum()  # (C,)
-        shut = ((centre >= (1 - mask_ratio) / 2) & (centre < (1 + mask_ratio) / 2))[
-            columns
-        ]
+        grid = np.array([[one.cell[at] for at in kept] for one in drawn])  # (K, 2)
+        filled = arrays["measured"].reshape(len(drawn), -1).all(axis=1)  # (K,)
+        crop = cropped_patches(grid, filled, Axis.DELAY in axes[name])
+        cells[name] = grid[crop] - grid[crop].min(0)
+        columns = cells[name][:, 1]
+        count = columns.max() + 1
+        width = round(count * mask_ratio)
+        first = (count - width) // 2
+        shut = (columns >= first) & (columns < first + width)
         batch[name] = Tokens(
             *(
-                torch.as_tensor(arrays[key], device=device)[None]
+                torch.as_tensor(arrays[key][crop], device=device)[None]
                 for key in ("values", "measured", "position")
             )
         )
