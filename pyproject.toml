@@ -40,6 +40,7 @@ module-name = [
 [dependency-groups]
 dev = [
     "ipykernel>=7.3.0",
+    "ipywidgets>=8.1.9",
     "nbformat>=5.11.1",
     "pandas>=3.0.5",
     "ruff>=0.16.2",
