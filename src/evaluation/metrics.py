@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from sklearn.metrics import (
@@ -14,7 +15,71 @@ from sklearn.metrics import (
 )
 from umap import UMAP
 
+from evaluation.similarity import held_tiles
+
 TOP_K = (1, 5, 10, 20)
+
+
+@dataclass(frozen=True, slots=True)
+class ViewScores:
+    """Everything one model's view of the tiles comes to, over the tiles it holds.
+
+    Attributes:
+        tiles: The tiles the view holds.
+        labels: The class of each, in the same order.
+        retrieval: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
+        knn: Accuracy, balanced accuracy, macro F1 and per-class F1 of the kNN vote.
+        classes: The classes, in the order both matrices hold them.
+        confusion: Tiles of the row's class voted into the column's. (C, C)
+        distances: The mean cosine distance between the tiles of two classes. (C, C)
+        projection: Where each tile lands on the UMAP plane. (T, 2)
+    """
+
+    tiles: list[str]
+    labels: list[str]
+    retrieval: dict[str, np.ndarray]
+    knn: dict[str, float]
+    classes: list[str]
+    confusion: np.ndarray
+    distances: np.ndarray
+    projection: np.ndarray
+
+
+def view_scores(
+    similarities: np.ndarray,
+    tiles: Sequence[str],
+    labels: Sequence[str],
+    k: int,
+    seed: int,
+) -> ViewScores:
+    """Return every score of one view, over the tiles it holds.
+
+    Args:
+        similarities: The cosine of every pair of tiles, NaN where not comparable.
+            (T, T)
+        tiles: The tiles, in the same order.
+        labels: The class of each, in the same order.
+        k: How many neighbours the kNN vote reads.
+        seed: What the UMAP layout is drawn with.
+
+    Returns:
+        scores: The view's scores.
+    """
+    held = held_tiles(similarities)
+    kept = similarities[np.ix_(held, held)]
+    classes = [one for one, inside in zip(labels, held, strict=True) if inside]
+    predicted = knn_predictions(kept, classes, k)
+    order, distances = class_distances(kept, classes)
+    return ViewScores(
+        tiles=[one for one, inside in zip(tiles, held, strict=True) if inside],
+        labels=classes,
+        retrieval=retrieval_by_tile(kept, classes),
+        knn=knn_scores(classes, predicted),
+        classes=order,
+        confusion=knn_confusion(classes, predicted)[1],
+        distances=distances,
+        projection=umap_projection(kept, seed),
+    )
 
 
 def ranked_neighbours(similarities: np.ndarray) -> np.ndarray:

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
+
+EVERY_INSTRUMENT = "all"
 
 
 def cosine_similarities(vectors: np.ndarray) -> np.ndarray:
@@ -34,6 +36,20 @@ def fused_similarities(similarities: Sequence[np.ndarray]) -> np.ndarray:
     shared = np.isfinite(stacked).sum(axis=0)  # (T, T)
     summed = np.nansum(stacked, axis=0)  # (T, T)
     return np.where(shared > 0, summed / np.maximum(shared, 1), np.nan)
+
+
+def similarities_by_view(vectors: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    """Return the cosines of every instrument alone, and fused over all of them.
+
+    Args:
+        vectors: Each instrument's unit vectors, NaN for a tile without it. (T, D)
+
+    Returns:
+        similarities: The cosine of every pair, keyed by instrument and
+            EVERY_INSTRUMENT. (T, T)
+    """
+    alone = {name: cosine_similarities(held) for name, held in vectors.items()}
+    return alone | {EVERY_INSTRUMENT: fused_similarities(list(alone.values()))}
 
 
 def held_tiles(similarities: np.ndarray) -> np.ndarray:

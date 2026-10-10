@@ -34,6 +34,7 @@ module-name = [
     "evaluation",
     "logs",
     "training",
+    "visualization",
 ]
 
 [dependency-groups]
