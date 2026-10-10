@@ -8,7 +8,7 @@ delay: MOLA
 # The instrument encoders and the cross-sensor encoder, all one width.
 encoder_dim: 384
 encoder_heads: 6
-encoder_depth: 4
+encoder_depth: 8
 crossencoder_depth: 2
 
 # The decoders.

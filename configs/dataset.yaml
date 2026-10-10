@@ -14,8 +14,9 @@ root: data/dataset
 patchsize:
   # A scan at about 5 m a pixel: 3362 (6384) patches a tile.
   CTX: {ground: 128}
-  # A survey at about 200 m a pixel, its multispectral bands kept whole: 104 (164).
-  CRISM: {ground: 12}
+  # A survey at about 200 m a pixel, its multispectral bands kept whole: about 416
+  # (656), four times the count at 12.
+  CRISM: {ground: 6}
   # A sounder walks one line, so its ground is traces and its delay is depth: 336
   # (1120).
   SHARAD: {ground: 8, delay: 256}
@@ -32,7 +33,7 @@ budget:
   # About 9 km square of one scan around the centre.
   CTX: 192
   # A quarter of one observation.
-  CRISM: 13
+  CRISM: 52
   # A quarter of one track.
   SHARAD: 28
 
