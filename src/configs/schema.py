@@ -93,16 +93,9 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        minimal_chamfer_distance_m: How far east or north, in metres, a token may be
-            matched from where it sits, or None to match it anywhere in the other
-            tile.
-        delay_window: The first and last delay cell a sounder token is compared in,
-            counted from the cell of the surface beneath it.
     """
 
     build: str
-    minimal_chamfer_distance_m: float | None
-    delay_window: tuple[int, int]
 
 
 @dataclass

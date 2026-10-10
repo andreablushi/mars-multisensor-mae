@@ -1,71 +1,14 @@
-"""How far tiles stand from each other, and what that comes to against their classes."""
+"""What the distances between tiles come to against their classes."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import numpy as np
-import torch
 from sklearn.metrics import silhouette_samples
-from torch import Tensor
 from umap import UMAP
 
-from evaluation.evaluate import TileTokens
-
 TOP_K = (1, 5, 10, 20)
-PAIR_BATCH = 4
-
-
-def chamfer_distances(
-    tiles: Sequence[TileTokens], minimal_chamfer_distance_m: float | None = None
-) -> Tensor:
-    """Return how far every tile stands from every other, over the tokens they hold.
-
-    A tile is its tokens and nothing else, so two are compared by matching each
-    token of one to the nearest token of the other and averaging both ways, every
-    token of a tile weighing the same. The cost of a match is the cosine distance
-    between two tokens, which their unit length puts in [0, 1], so the distance is
-    already normalised. A token whose neighbourhood holds nothing to match stands a
-    whole mismatch from that tile.
-
-    Args:
-        tiles: One set of tokens per tile, in the order the distances are wanted.
-        minimal_chamfer_distance_m: How far east or north, in metres, a token may be
-            matched from where it sits, or None to match it anywhere in the other
-            tile.
-
-    Returns:
-        distances: The distance between every pair of tiles, in [0, 1]. (T, T)
-    """
-    width = max(len(one.values) for one in tiles)
-    values = tiles[0].values.new_zeros(len(tiles), width, tiles[0].values.shape[-1])
-    grounds = values.new_zeros(len(tiles), width, 2)
-    weights = values.new_zeros(len(tiles), width)
-    for at, tile in enumerate(tiles):
-        count = len(tile.values)
-        values[at, :count] = tile.values
-        grounds[at, :count] = tile.ground
-        weights[at, :count] = 1 / count
-    held = weights > 0  # (T, W)
-    distances = values.new_zeros(len(tiles), len(tiles))
-    # Both ways round are the same sum, so only a tile against those after it is read.
-    for at in range(len(tiles)):
-        for start in range(at, len(tiles), PAIR_BATCH):
-            rest = slice(start, min(start + PAIR_BATCH, len(tiles)))
-            cost = (
-                1.0 - torch.einsum("qd,tpd->tqp", values[at], values[rest])
-            ) / 2  # (R, W, W)
-            matched = held[at].view(1, -1, 1) & held[rest].unsqueeze(1)
-            if minimal_chamfer_distance_m is not None:
-                apart = (grounds[at][None, :, None] - grounds[rest][:, None]).abs()
-                matched &= (apart <= minimal_chamfer_distance_m).all(dim=-1)
-            cost.masked_fill_(~matched, torch.inf)
-            forward = cost.amin(dim=2).nan_to_num(posinf=1.0)
-            backward = cost.amin(dim=1).nan_to_num(posinf=1.0)
-            distances[at, rest] = (
-                (forward * weights[at]).sum(-1) + (backward * weights[rest]).sum(-1)
-            ) / 2
-    return (distances + distances.T).fill_diagonal_(0.0)
 
 
 def retrieval_by_tile(
