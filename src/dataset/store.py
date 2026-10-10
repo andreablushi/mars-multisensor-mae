@@ -32,7 +32,6 @@ from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
 STD_FLOOR = 1e-6
-CLIP = 2.0
 
 
 @dataclass(slots=True)
@@ -220,7 +219,8 @@ class DatasetBuild:
             self.read_stats()[described["instrument"]],
         )
         if described["instrument"] == LAYOUT.instrument:
-            values = clipped_values(values, arrays[MEASURED])
+            measured = arrays[MEASURED][..., None] & np.isfinite(values)
+            values = np.where(measured, values, 0.0)
         return Observation(
             values=values,
             axes=axes,
@@ -252,17 +252,3 @@ def standardised_values(
         for name in ("mean", "std")
     )
     return (values - mean) / np.maximum(std, STD_FLOOR)
-
-
-def clipped_values(values: np.ndarray, measured: np.ndarray) -> np.ndarray:
-    """Return standardised values clipped to the clip range, zero where not measured.
-
-    Args:
-        values: The standardised values, bands last. (lines, samples, bands)
-        measured: Whether each ground sample is a measurement. (lines, samples)
-
-    Returns:
-        values: The values clipped, zero at unmeasured and non-finite samples.
-    """
-    clipped = np.clip(values, -CLIP, CLIP)
-    return np.where(measured[..., None] & np.isfinite(clipped), clipped, 0.0)
