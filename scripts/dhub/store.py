@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 from digitalhub.stores.client.base.factory import get_client
+from urllib3.exceptions import SSLError
 
 from configs.paths import (
     RECONSTRUCTION_FILE,
@@ -19,6 +20,8 @@ from configs.paths import (
 )
 from dataset.store import DatasetBuild
 from dhub.submit import load_platform
+
+BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
 
 
 def refresh_credentials() -> None:
@@ -48,13 +51,13 @@ def published_build(build: str, root: str) -> DatasetBuild:
         key = prefix + path
         try:
             return client.get_object(Bucket=bucket, Key=key)["Body"].read()
-        except (ClientError, ResponseStreamingError):
+        except BROKEN_READS:
             # The store's credentials lapse and its streams break mid run.
             refresh_credentials()
             client = dh.get_s3_client()
             try:
                 return client.get_object(Bucket=bucket, Key=key)["Body"].read()
-            except (ClientError, ResponseStreamingError) as refused:
+            except BROKEN_READS as refused:
                 raise RuntimeError(f"{key}: {refused}") from None
 
     return DatasetBuild(root=build_root(build, root), fetch=fetch)
