@@ -17,41 +17,35 @@ class TileVector:
     Attributes:
         tile: The tile.
         label: The class it earned.
-        weights: Which model read it, TRAINED or RANDOM.
         instrument: The instrument the vector stands for.
         vector: Its tokens averaged, of unit length.
     """
 
     tile: str
     label: str
-    weights: str
     instrument: str
     vector: tuple[float, ...]
 
 
 RESULTS_SCHEMA = parquet.schema_of(TileVector)
 
-TRAINED = "trained"
-RANDOM = "random"
-
 
 def write_tile_vectors(
     path: Path,
     classes: Mapping[str, str],
-    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    vectors: Mapping[str, Mapping[str, np.ndarray]],
 ) -> None:
-    """Write one row per model, instrument and tile: its class and its vector.
+    """Write one row per instrument and tile: its class and its vector.
 
     Args:
         path: The parquet file to write, whose directory is made if missing.
         classes: The class each tile earned, keyed by the tile.
-        vectors: Each tile's vector, keyed by weights, then instrument, then tile.
+        vectors: Each tile's vector, keyed by instrument, then tile.
     """
     parquet.write_rows(
         [
-            TileVector(tile, classes[tile], weights, instrument, tuple(vector.tolist()))
-            for weights, by_instrument in vectors.items()
-            for instrument, by_tile in by_instrument.items()
+            TileVector(tile, classes[tile], instrument, tuple(vector.tolist()))
+            for instrument, by_tile in vectors.items()
             for tile, vector in sorted(by_tile.items())
         ],
         RESULTS_SCHEMA,
@@ -59,10 +53,8 @@ def write_tile_vectors(
     )
 
 
-def read_tile_vectors(
-    path: Path,
-) -> tuple[list[str], list[str], dict[str, dict[str, np.ndarray]]]:
-    """Return one evaluation's vectors, every model and instrument on one tile order.
+def read_tile_vectors(path: Path) -> tuple[list[str], list[str], dict[str, np.ndarray]]:
+    """Return one evaluation's vectors, every instrument on one tile order.
 
     Args:
         path: The parquet file written by write_tile_vectors.
@@ -71,7 +63,7 @@ def read_tile_vectors(
         tiles: Every tile any row holds, sorted.
         labels: The class of each, in the same order.
         vectors: Each tile's vector, NaN where it lacks the instrument, keyed by
-            weights, then instrument. (T, D)
+            instrument. (T, D)
     """
     rows = parquet.read_rows(TileVector, RESULTS_SCHEMA, path)
     classes = {row.tile: row.label for row in rows}
@@ -80,8 +72,6 @@ def read_tile_vectors(
     width = len(rows[0].vector)
     vectors = {}
     for row in rows:
-        held = vectors.setdefault(row.weights, {}).setdefault(
-            row.instrument, np.full((len(tiles), width), np.nan)
-        )
+        held = vectors.setdefault(row.instrument, np.full((len(tiles), width), np.nan))
         held[at[row.tile]] = row.vector
     return tiles, [classes[tile] for tile in tiles], vectors
