@@ -1,33 +1,53 @@
-"""What the distances between tiles come to against their classes."""
+"""What the similarities between tiles come to against their classes."""
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 
 import numpy as np
-from sklearn.metrics import silhouette_samples
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+    f1_score,
+)
 from umap import UMAP
 
 TOP_K = (1, 5, 10, 20)
 
 
+def ranked_neighbours(similarities: np.ndarray) -> np.ndarray:
+    """Return every tile's other tiles, most similar first.
+
+    Args:
+        similarities: The cosine of every pair of tiles, NaN where not comparable.
+            (T, T)
+
+    Returns:
+        ranked: Each row's other tiles by decreasing similarity, the incomparable
+            last. (T, T-1)
+    """
+    unreachable = np.eye(len(similarities), dtype=bool) | np.isnan(similarities)
+    held = np.where(unreachable, -np.inf, similarities)
+    # A tile is never its own neighbour, so its own column, ranked last, is dropped.
+    return np.argsort(-held, axis=1, kind="stable")[:, :-1]
+
+
 def retrieval_by_tile(
-    distances: np.ndarray, labels: Sequence[str]
+    similarities: np.ndarray, labels: Sequence[str]
 ) -> dict[str, np.ndarray]:
     """Return how far each tile's nearest tiles share its class.
 
     Args:
-        distances: The distance between every pair of tiles. (T, T)
+        similarities: The cosine of every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
 
     Returns:
         scores: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
     """
     held = np.asarray(labels)
-    itself = np.eye(len(held), dtype=bool)
-    # A tile is never its own neighbour, so its own column is put out of reach.
-    ranked = np.argsort(np.where(itself, np.inf, distances), axis=1)[:, :-1]  # (T, T-1)
-    relevant = held[ranked] == held[:, None]  # (T, T-1)
+    relevant = held[ranked_neighbours(similarities)] == held[:, None]  # (T, T-1)
     total = relevant.sum(axis=1)  # (T,)
     scores = {}
     for k in TOP_K:
@@ -43,43 +63,23 @@ def retrieval_by_tile(
     return scores
 
 
-def silhouette_by_class(
-    distances: np.ndarray, labels: Sequence[str]
-) -> dict[str, float]:
-    """Return how tightly each class sits together against the nearest other class.
-
-    Args:
-        distances: The distance between every pair of tiles. (T, T)
-        labels: The class each tile carries, in the same order.
-
-    Returns:
-        silhouettes: The silhouette over every tile, and the mean over each class.
-    """
-    held = np.asarray(labels)
-    samples = silhouette_samples(distances, held, metric="precomputed")  # (T,)
-    return {"silhouette": float(samples.mean())} | {
-        f"silhouette/{name}": float(samples[held == name].mean())
-        for name in sorted(set(labels))
-    }
-
-
 def class_distances(
-    distances: np.ndarray, labels: Sequence[str]
+    similarities: np.ndarray, labels: Sequence[str]
 ) -> tuple[list[str], np.ndarray]:
     """Return how far each class stands from each, averaged over the tiles they hold.
 
     Args:
-        distances: The distance between every pair of tiles. (T, T)
+        similarities: The cosine of every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
 
     Returns:
         classes: The classes, in the order the matrix holds them.
-        matrix: The mean distance between the tiles of two classes. (C, C)
+        matrix: The mean cosine distance between the tiles of two classes. (C, C)
     """
     held = np.asarray(labels)
     classes = sorted(set(labels))
     # A tile against itself says nothing, so it is left out of every mean.
-    counted = np.where(np.eye(len(held), dtype=bool), np.nan, distances)
+    counted = np.where(np.eye(len(held), dtype=bool), np.nan, 1 - similarities)
     matrix = np.array(
         [
             [
@@ -92,14 +92,78 @@ def class_distances(
     return classes, matrix
 
 
-def umap_projection(distances: np.ndarray, seed: int) -> np.ndarray:
-    """Return every tile laid on a plane by UMAP, read off the tile distances.
+def knn_predictions(
+    similarities: np.ndarray, labels: Sequence[str], k: int
+) -> np.ndarray:
+    """Return the class each tile's k nearest tiles vote for.
 
     Args:
-        distances: The distance between every pair of tiles. (T, T)
-        seed: What the layout is drawn with, so the same distances lay out the same.
+        similarities: The cosine of every pair of tiles. (T, T)
+        labels: The class each tile carries, in the same order.
+        k: How many neighbours vote.
+
+    Returns:
+        predicted: The most voted class, a tie going to the nearest of them. (T,)
+    """
+    votes = np.asarray(labels)[ranked_neighbours(similarities)[:, :k]]  # (T, k)
+    predicted = []
+    for row in votes:
+        counts = Counter(row)
+        most = max(counts.values())
+        predicted.append(next(one for one in row if counts[one] == most))
+    return np.array(predicted)
+
+
+def knn_scores(labels: Sequence[str], predicted: Sequence[str]) -> dict[str, float]:
+    """Return how well the voted classes match the true ones.
+
+    Args:
+        labels: The class each tile carries.
+        predicted: The class its neighbours voted for, in the same order.
+
+    Returns:
+        scores: Accuracy, balanced accuracy, macro F1 and the F1 of every class.
+    """
+    classes = sorted(set(labels))
+    per_class = f1_score(labels, predicted, labels=classes, average=None)
+    return {
+        "accuracy": float(accuracy_score(labels, predicted)),
+        "balanced accuracy": float(balanced_accuracy_score(labels, predicted)),
+        "macro f1": float(f1_score(labels, predicted, average="macro")),
+    } | {
+        f"f1/{name}": float(score)
+        for name, score in zip(classes, per_class, strict=True)
+    }
+
+
+def knn_confusion(
+    labels: Sequence[str], predicted: Sequence[str]
+) -> tuple[list[str], np.ndarray]:
+    """Return how many tiles of each class were voted into each.
+
+    Args:
+        labels: The class each tile carries.
+        predicted: The class its neighbours voted for, in the same order.
+
+    Returns:
+        classes: The classes, in the order the matrix holds them.
+        matrix: Tiles of the row's class voted into the column's. (C, C)
+    """
+    classes = sorted(set(labels))
+    return classes, confusion_matrix(labels, predicted, labels=classes)
+
+
+def umap_projection(similarities: np.ndarray, seed: int) -> np.ndarray:
+    """Return every tile laid on a plane by UMAP, read off the cosine distances.
+
+    Args:
+        similarities: The cosine of every pair of tiles, NaN where not comparable.
+            (T, T)
+        seed: What the layout is drawn with, so the same similarities lay out the same.
 
     Returns:
         projection: Where each tile lands on the plane, in the same order. (T, 2)
     """
+    distances = np.nan_to_num(np.clip(1 - similarities, 0, 2), nan=2.0)
+    np.fill_diagonal(distances, 0.0)
     return UMAP(metric="precomputed", random_state=seed).fit_transform(distances)

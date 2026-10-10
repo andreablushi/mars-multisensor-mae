@@ -59,13 +59,29 @@ def write_tile_vectors(
     )
 
 
-def read_tile_vectors(path: Path) -> list[TileVector]:
-    """Return every row one evaluation wrote.
+def read_tile_vectors(
+    path: Path,
+) -> tuple[list[str], list[str], dict[str, dict[str, np.ndarray]]]:
+    """Return one evaluation's vectors, every model and instrument on one tile order.
 
     Args:
         path: The parquet file written by write_tile_vectors.
 
     Returns:
-        rows: One per model, instrument and tile.
+        tiles: Every tile any row holds, sorted.
+        labels: The class of each, in the same order.
+        vectors: Each tile's vector, NaN where it lacks the instrument, keyed by
+            weights, then instrument. (T, D)
     """
-    return parquet.read_rows(TileVector, RESULTS_SCHEMA, path)
+    rows = parquet.read_rows(TileVector, RESULTS_SCHEMA, path)
+    classes = {row.tile: row.label for row in rows}
+    tiles = sorted(classes)
+    at = {tile: index for index, tile in enumerate(tiles)}
+    width = len(rows[0].vector)
+    vectors = {}
+    for row in rows:
+        held = vectors.setdefault(row.weights, {}).setdefault(
+            row.instrument, np.full((len(tiles), width), np.nan)
+        )
+        held[at[row.tile]] = row.vector
+    return tiles, [classes[tile] for tile in tiles], vectors
