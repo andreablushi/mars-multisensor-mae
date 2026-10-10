@@ -35,4 +35,6 @@ BLUES = [
     [1.0, "#0d366b"],
 ]
 OUTLINE_COLOR = "#eb6834"
+GAIN_COLOR = (27, 175, 122)
+LOSS_COLOR = (227, 73, 72)
 TEMPLATE = "plotly_white"

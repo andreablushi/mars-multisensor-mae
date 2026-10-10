@@ -5,17 +5,15 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
-from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
-    confusion_matrix,
-    f1_score,
-)
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, confusion_matrix
 from umap import UMAP
 
-from evaluation.similarity import held_tiles
+from configs.paths import RESULTS_FILE
+from evaluation.results import read_tile_vectors
+from evaluation.similarity import EVERY_INSTRUMENT, held_tiles, similarities_by_view
 
 TOP_K = (1, 5, 10, 20)
 
@@ -28,11 +26,12 @@ class ViewScores:
         tiles: The tiles the view holds.
         labels: The class of each, in the same order.
         retrieval: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
-        knn: Accuracy, balanced accuracy, macro F1 and per-class F1 of the kNN vote.
+        knn: Accuracy and balanced accuracy of the kNN vote.
         classes: The classes, in the order both matrices hold them.
         confusion: Tiles of the row's class voted into the column's. (C, C)
         distances: The mean cosine distance between the tiles of two classes. (C, C)
-        projection: Where each tile lands on the UMAP plane. (T, 2)
+        projection: Where each tile lands on the UMAP plane, or None where the view
+            is not laid out. (T, 2)
     """
 
     tiles: list[str]
@@ -42,7 +41,7 @@ class ViewScores:
     classes: list[str]
     confusion: np.ndarray
     distances: np.ndarray
-    projection: np.ndarray
+    projection: np.ndarray | None
 
 
 def view_scores(
@@ -50,7 +49,7 @@ def view_scores(
     tiles: Sequence[str],
     labels: Sequence[str],
     k: int,
-    seed: int,
+    seed: int | None,
 ) -> ViewScores:
     """Return every score of one view, over the tiles it holds.
 
@@ -60,7 +59,7 @@ def view_scores(
         tiles: The tiles, in the same order.
         labels: The class of each, in the same order.
         k: How many neighbours the kNN vote reads.
-        seed: What the UMAP layout is drawn with.
+        seed: What the UMAP layout is drawn with, or None to lay out nothing.
 
     Returns:
         scores: The view's scores.
@@ -78,7 +77,7 @@ def view_scores(
         classes=order,
         confusion=knn_confusion(classes, predicted)[1],
         distances=distances,
-        projection=umap_projection(kept, seed),
+        projection=None if seed is None else umap_projection(kept, seed),
     )
 
 
@@ -187,17 +186,11 @@ def knn_scores(labels: Sequence[str], predicted: Sequence[str]) -> dict[str, flo
         predicted: The class its neighbours voted for, in the same order.
 
     Returns:
-        scores: Accuracy, balanced accuracy, macro F1 and the F1 of every class.
+        scores: Accuracy and balanced accuracy.
     """
-    classes = sorted(set(labels))
-    per_class = f1_score(labels, predicted, labels=classes, average=None)
     return {
         "accuracy": float(accuracy_score(labels, predicted)),
         "balanced accuracy": float(balanced_accuracy_score(labels, predicted)),
-        "macro f1": float(f1_score(labels, predicted, average="macro")),
-    } | {
-        f"f1/{name}": float(score)
-        for name, score in zip(classes, per_class, strict=True)
     }
 
 
@@ -232,3 +225,30 @@ def umap_projection(similarities: np.ndarray, seed: int) -> np.ndarray:
     distances = np.nan_to_num(np.clip(1 - similarities, 0, 2), nan=2.0)
     np.fill_diagonal(distances, 0.0)
     return UMAP(metric="precomputed", random_state=seed).fit_transform(distances)
+
+
+def scores_by_run(root: Path, k: int, seed: int) -> dict[str, dict[str, ViewScores]]:
+    """Return every view's scores of every run evaluated under one root.
+
+    Args:
+        root: Where each run's results sit, in a directory of its own name.
+        k: How many neighbours the kNN vote reads.
+        seed: What the UMAP layout of the fused view is drawn with.
+
+    Returns:
+        scores: Each view's scores, keyed by run, then view.
+    """
+    scores = {}
+    for path in sorted(root.glob(f"*/{RESULTS_FILE}")):
+        tiles, labels, vectors = read_tile_vectors(path)
+        scores[path.parent.name] = {
+            view: view_scores(
+                similarities,
+                tiles,
+                labels,
+                k,
+                seed if view == EVERY_INSTRUMENT else None,
+            )
+            for view, similarities in similarities_by_view(vectors).items()
+        }
+    return scores
