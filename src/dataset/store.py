@@ -32,6 +32,7 @@ from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
 STD_FLOOR = 1e-6
+CLIP = 2.0
 
 
 @dataclass(slots=True)
@@ -220,7 +221,7 @@ class DatasetBuild:
         )
         if described["instrument"] == LAYOUT.instrument:
             measured = arrays[MEASURED][..., None] & np.isfinite(values)
-            values = np.where(measured, values, 0.0)
+            values = np.where(measured, np.clip(values, -CLIP, CLIP), 0.0)
         return Observation(
             values=values,
             axes=axes,
