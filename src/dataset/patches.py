@@ -225,8 +225,7 @@ def patch_arrays(
             -1, *measured_shape
         ),
         "position": np.array(
-            [[one.east_m, one.north_m, one.delay] for one in patches],
-            np.float32,
+            [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
         ).reshape(-1, 3),
     }
 
