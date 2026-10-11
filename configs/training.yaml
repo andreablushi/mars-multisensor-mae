@@ -4,15 +4,15 @@
 max_steps: 12500
 # How many tiles one step's gradient is averaged over, each cut to the dataset's
 # budget.
-batch_size: 90
-learning_rate: 0.00025
+batch_size: 128
+learning_rate: 0.0003
 weight_decay: 0.05
-warmup_steps: 50
+warmup_steps: 500
 
 # How often the validation split is read, and how many of those may fail to beat
 # the best before the run stops.
 validate_every: 125
-patience: 5
+patience: 15
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
