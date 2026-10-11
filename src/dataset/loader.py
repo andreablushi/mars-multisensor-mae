@@ -57,6 +57,7 @@ def loaders_by_split(
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
     budget: Mapping[str, int],
+    budget_scale: float,
     shares: Sequence[float],
     seed: int,
     delay: str,
@@ -71,6 +72,7 @@ def loaders_by_split(
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         budget: How many patches of each instrument a tile keeps.
+        budget_scale: The most a training batch's budget is multiplied by.
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in, and each validation tile's cut.
         delay: The instrument whose rows give every surface patch its delay.
@@ -95,6 +97,7 @@ def loaders_by_split(
             workers,
             name == TRAINING_SPLIT,
             budget,
+            budget_scale if name == TRAINING_SPLIT else 1.0,
             None if name == TRAINING_SPLIT else seed,
         )
         for name, held in split_tiles(by_tile, shares, seed).items()
@@ -113,6 +116,7 @@ def tile_loader(
     workers: int,
     shuffle: bool,
     budget: Mapping[str, int] | None,
+    scale: float,
     seed: int | None,
 ) -> DataLoader:
     """Return some tiles of a build in batches.
@@ -130,6 +134,7 @@ def tile_loader(
         shuffle: Whether the tiles come in a new order every pass.
         budget: How many patches of each instrument a tile keeps, or None to read
             it whole.
+        scale: The most the budget is multiplied by, drawn once per batch from 1.
         seed: What fixes each tile's cut, or None to draw a new one each read.
 
     Returns:
@@ -153,6 +158,7 @@ def tile_loader(
             shapes=shapes,
             delay=delay,
             budget=budget,
+            scale=scale,
             seed=seed,
         ),
     )

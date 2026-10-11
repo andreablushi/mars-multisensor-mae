@@ -37,6 +37,11 @@ budget:
   # A quarter of one track.
   SHARAD: 28
 
+# The most a training batch's budget is multiplied by, drawn from 1 for each batch, so
+# training sees crops up to twice as wide and evaluation's whole tiles stay closer to
+# what was trained on. Validation keeps the budget as it is.
+budget_scale: 4
+
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.95, 0.05]
 

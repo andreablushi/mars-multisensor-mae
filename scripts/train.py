@@ -44,6 +44,7 @@ def run_training(
         config.dataset.pool,
         shapes,
         config.dataset.budget,
+        config.dataset.budget_scale,
         config.dataset.split,
         config.dataset.seed,
         config.model.delay,

@@ -96,6 +96,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
         budget=None,
+        scale=1.0,
         seed=None,
     )
     if checkpoint is not None:

@@ -162,6 +162,7 @@ class DatasetBuild:
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
         budget: Mapping[str, int] | None,
+        scale: float,
         seed: int | None,
     ) -> tuple[dict[str, Tokens], list[str]]:
         """Return one batch of tiles, each read from the run's cache or cut and cached.
@@ -176,12 +177,16 @@ class DatasetBuild:
             delay: The instrument whose rows give every surface patch its delay.
             budget: How many patches of each instrument a tile keeps, or None to
                 read it whole.
+            scale: The most the budget is multiplied by, drawn once per batch from 1.
             seed: What fixes each tile's centre, or None to draw a new one each read.
 
         Returns:
             batch: Each instrument's patches over the batch, keyed as ODE names it.
             identities: The tile each read belongs to, in the batch's own order.
         """
+        if budget is not None:
+            factor = random.uniform(1.0, scale)
+            budget = {name: round(count * factor) for name, count in budget.items()}
         samples = []
         for identity in identities:
             held = self.root / ready_tile_path(identity)

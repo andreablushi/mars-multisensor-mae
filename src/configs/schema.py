@@ -18,6 +18,8 @@ class DatasetConfig:
             instrument, one left out read whole.
         budget: How many patches of each instrument a training or validation read
             keeps, the ones nearest a centre drawn on the tile.
+        budget_scale: The most a training batch's budget is multiplied by, drawn
+            from 1 for each batch.
         split: The share of the tiles each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
@@ -27,6 +29,7 @@ class DatasetConfig:
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
     budget: dict[str, int]
+    budget_scale: float
     split: list[float]
     seed: int
 
