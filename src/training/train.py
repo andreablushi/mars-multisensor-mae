@@ -17,8 +17,7 @@ from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
 from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
-from training.checkpoint import save_checkpoint
-from training.early_stopping import EarlyStopping
+from training.checkpoint import EarlyStopping, save_checkpoint
 from training.step import step_terms
 from training.validate import validation_terms
 
