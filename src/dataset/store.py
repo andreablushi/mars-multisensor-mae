@@ -121,6 +121,28 @@ class DatasetBuild:
             self.stats = stats
         return self.stats
 
+    def standardised_values(
+        self, values: np.ndarray, axes: Sequence[str], instrument: str
+    ) -> np.ndarray:
+        """Return one observation's values standardised by its instrument's constants.
+
+        Args:
+            values: The values, as the build stored them.
+            axes: What each axis of the values holds.
+            instrument: The instrument that took them.
+
+        Returns:
+            values: The standardised values.
+        """
+        constants = self.read_stats()[instrument]
+        # Per band constants run along the wavelength axis, a scalar along none.
+        shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
+        mean, std = (
+            np.asarray(constants[name], np.float32).reshape(shape)
+            for name in ("mean", "std")
+        )
+        return (values - mean) / np.maximum(std, STD_FLOOR)
+
     def read_label_by_tile(self) -> dict[str, str]:
         """Return the class the feature catalogue gave every tile the draw took.
 
@@ -214,10 +236,8 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         axes = tuple(described["axes"])
-        values = standardised_values(
-            arrays[described["measurement"]],
-            axes,
-            self.read_stats()[described["instrument"]],
+        values = self.standardised_values(
+            arrays[described["measurement"]], axes, described["instrument"]
         )
         if described["instrument"] == LAYOUT.instrument:
             measured = arrays[MEASURED][..., None] & np.isfinite(values)
@@ -231,25 +251,3 @@ class DatasetBuild:
             beside={name: arrays[name] for name in beside},
             described=described,
         )
-
-
-def standardised_values(
-    values: np.ndarray, axes: Sequence[str], constants: Mapping[str, Any]
-) -> np.ndarray:
-    """Return one observation's values standardised by its instrument's constants.
-
-    Args:
-        values: The values, as the build stored them.
-        axes: What each axis of the values holds.
-        constants: The instrument's mean and std, per band where it has bands.
-
-    Returns:
-        values: The standardised values.
-    """
-    # Per band constants run along the wavelength axis, a scalar along none.
-    shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
-    mean, std = (
-        np.asarray(constants[name], np.float32).reshape(shape)
-        for name in ("mean", "std")
-    )
-    return (values - mean) / np.maximum(std, STD_FLOOR)
