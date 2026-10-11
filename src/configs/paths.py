@@ -16,8 +16,6 @@ RESULTS_ROOT = REPO_ROOT / "results"
 
 RESULTS_FILE = "results.parquet"
 
-RECONSTRUCTION_FILE = "reconstruction.npz"
-
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.
@@ -67,15 +65,3 @@ def results_path(run_name: str) -> Path:
         path: That run's results file.
     """
     return RESULTS_ROOT / run_name / RESULTS_FILE
-
-
-def reconstruction_path(run_name: str) -> Path:
-    """Return where one run's reconstructed tiles are written on this machine.
-
-    Args:
-        run_name: What the run is called.
-
-    Returns:
-        path: That run's reconstruction file.
-    """
-    return RESULTS_ROOT / run_name / RECONSTRUCTION_FILE

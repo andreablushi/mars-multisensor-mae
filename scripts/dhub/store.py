@@ -10,14 +10,7 @@ from botocore.exceptions import ClientError, ResponseStreamingError
 from digitalhub.stores.client.base.factory import get_client
 from urllib3.exceptions import SSLError
 
-from configs.paths import (
-    RECONSTRUCTION_FILE,
-    RESULTS_FILE,
-    build_root,
-    checkpoint_path,
-    reconstruction_path,
-    results_path,
-)
+from configs.paths import RESULTS_FILE, build_root, checkpoint_path, results_path
 from dataset.store import DatasetBuild
 from dhub.submit import load_platform
 
@@ -89,16 +82,12 @@ def fetched_results() -> list[Path]:
     """
     refresh_credentials()
     project = dh.get_or_create_project(load_platform()["project"])
-    held_at = {
-        Path(RESULTS_FILE).stem: results_path,
-        Path(RECONSTRUCTION_FILE).stem: reconstruction_path,
-    }
     paths = []
     for artifact in project.list_artifacts():
         kind, _, run = artifact.name.partition("-")
-        if kind not in held_at:
+        if kind != Path(RESULTS_FILE).stem:
             continue
-        held = held_at[kind](run)
+        held = results_path(run)
         held.parent.mkdir(parents=True, exist_ok=True)
         paths.append(Path(artifact.download(str(held), overwrite=True)))
     return paths

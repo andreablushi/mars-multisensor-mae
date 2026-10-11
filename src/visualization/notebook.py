@@ -7,13 +7,11 @@ from collections.abc import Callable, Mapping, Sequence
 import ipywidgets as widgets
 from IPython.display import display
 
-from configs.paths import RECONSTRUCTION_FILE, RESULTS_ROOT, reconstruction_path
+from configs.paths import RESULTS_ROOT
 from evaluation.metrics import TOP_K, ViewScores, scores_by_run
-from evaluation.results import Reconstruction, read_reconstructions
 from evaluation.similarity import EVERY_INSTRUMENT
 from visualization.heatmap import confusion_figure, distance_figure
 from visualization.projection import projection_figure
-from visualization.reconstruction import reconstruction_figure
 from visualization.retrieval import f1_figure
 from visualization.table import compared_table, comparison_table
 
@@ -153,54 +151,3 @@ def show_confusion(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> No
         ).show(),
         models,
     )
-
-
-def read_reconstructions_by_run() -> dict[str, dict[str, dict[str, Reconstruction]]]:
-    """Return every reconstructed tile of every run fetched into the results directory.
-
-    Returns:
-        reconstructions: Each instrument's reconstruction, keyed by run, tile, then
-            instrument.
-    """
-    return {
-        path.parent.name: read_reconstructions(reconstruction_path(path.parent.name))
-        for path in sorted(RESULTS_ROOT.glob(f"*/{RECONSTRUCTION_FILE}"))
-    }
-
-
-def reconstruction_selector(
-    reconstructions: Mapping[str, Mapping[str, object]],
-) -> tuple[widgets.Dropdown, widgets.Dropdown]:
-    """Show a run and a tile to pick, and hand both back.
-
-    Args:
-        reconstructions: Each run's reconstructed tiles.
-
-    Returns:
-        model: The run picked.
-        tile: The tile picked.
-    """
-    runs = sorted(reconstructions)
-    model = widgets.Dropdown(options=runs, description="model")
-    tile = widgets.Dropdown(
-        options=sorted(reconstructions[runs[0]]), description="tile"
-    )
-    display(widgets.HBox([model, tile]))
-    return model, tile
-
-
-def show_reconstruction(
-    reconstructions: Mapping[str, Mapping[str, Mapping[str, Reconstruction]]],
-    model: widgets.Dropdown,
-    tile: widgets.Dropdown,
-    instrument: str,
-) -> None:
-    """Show one instrument of the picked run and tile, redrawn on every pick."""
-
-    def draw(model: str, tile: str) -> None:
-        """Draw the instrument read, hidden and written back, if the tile holds it."""
-        held = reconstructions[model][tile]
-        if instrument in held:
-            reconstruction_figure(held[instrument], f"{model} {tile}").show()
-
-    display(widgets.interactive_output(draw, {"model": model, "tile": tile}))

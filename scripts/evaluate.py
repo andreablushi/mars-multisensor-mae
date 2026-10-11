@@ -12,14 +12,13 @@ from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config
-from configs.paths import reconstruction_path, results_path
+from configs.paths import results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate_latent_space
-from evaluation.reconstruct import reconstructed_tile
-from evaluation.results import write_reconstructions, write_tile_vectors
+from evaluation.results import write_tile_vectors
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
@@ -104,36 +103,9 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
     log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
     write_tile_vectors(results, classes, evaluate_latent_space(model, loader, device))
-    picked = {}
-    for tile in sorted(classes):
-        held = by_tile.get(tile, {})
-        if classes[tile] not in picked and all(
-            name in held for name in [*sizes, config.model.delay]
-        ):
-            picked[classes[tile]] = tile
-    reconstructions = reconstruction_path(config.run_name)
-    write_reconstructions(
-        reconstructions,
-        {
-            tile: reconstructed_tile(
-                model,
-                build,
-                by_tile[tile],
-                axes,
-                sizes,
-                config.dataset.pool,
-                shapes,
-                config.model.delay,
-                config.training.mask_ratio,
-                device,
-            )
-            for tile in picked.values()
-        },
-    )
     log.info("results written to %s", results.parent)
     if project is not None:
-        for path in (results, reconstructions):
-            publish_results(project, path, config.run_name)
+        publish_results(project, results, config.run_name)
 
 
 @handler()
