@@ -1,7 +1,7 @@
 # How a run trains, validates and stops.
 
 # A run is counted in steps, so how long a split happens to be settles nothing.
-max_steps: 12500
+max_steps: 25000
 # How many tiles one step's gradient is averaged over, each cut to the dataset's
 # budget.
 batch_size: 128
