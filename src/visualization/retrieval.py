@@ -54,7 +54,7 @@ def f1_figure(scores: Mapping[str, Metrics], k: int) -> go.Figure:
         tickangle=-30,
         range=[-0.5, len(tiles) - 0.5],
     )
-    for start, end in list(zip(starts, ends, strict=True))[1::2]:
+    for start, end in zip(starts[1::2], ends[1::2], strict=True):
         figure.add_vrect(
             x0=start - 0.5,
             x1=end - 0.5,

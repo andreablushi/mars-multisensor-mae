@@ -193,12 +193,7 @@ def read_patch_shapes(
     """
     rows = build.read_row_by_instrument()
     return {
-        name: patch_lengths(
-            rows[name].shape,
-            rows[name].axes,
-            size,
-            pool.get(name, 1),
-        )
+        name: patch_lengths(rows[name].shape, rows[name].axes, size, pool.get(name, 1))
         for name, size in sizes.items()
     }
 

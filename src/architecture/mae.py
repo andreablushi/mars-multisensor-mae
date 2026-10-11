@@ -44,12 +44,7 @@ class CrossSensorMAE(nn.Module):
         # One encoder per instrument, each from its patches to tokens
         self.encoders = nn.ModuleDict(
             {
-                name: Encoder(
-                    shape,
-                    encoder_dim,
-                    encoder_heads,
-                    encoder_depth,
-                )
+                name: Encoder(shape, encoder_dim, encoder_heads, encoder_depth)
                 for name, shape in shapes.items()
             }
         )
@@ -61,11 +56,7 @@ class CrossSensorMAE(nn.Module):
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
-                    shape,
-                    encoder_dim,
-                    decoder_dim,
-                    decoder_heads,
-                    decoder_depth,
+                    shape, encoder_dim, decoder_dim, decoder_heads, decoder_depth
                 )
                 for name, shape in shapes.items()
             }

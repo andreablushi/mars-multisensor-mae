@@ -15,7 +15,6 @@ def console_logger(name: str) -> logging.Logger:
         log: The logger.
     """
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
     return logging.getLogger(name)
