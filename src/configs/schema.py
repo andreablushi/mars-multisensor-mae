@@ -20,7 +20,7 @@ class DatasetConfig:
             keeps, the ones nearest a centre drawn on the tile.
         budget_scale: The most a training batch's budget is multiplied by, drawn
             from 1 for each batch.
-        split: The share of the tiles each split holds, in the code's order.
+        split: The share of the observations each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
 

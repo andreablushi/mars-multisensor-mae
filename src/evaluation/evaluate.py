@@ -47,8 +47,5 @@ def evaluate(
                 stacked, torch.ones(stacked.shape[:2], dtype=torch.bool, device=device)
             )
             for view, held in pooled.items():
-                for identity, vector in zip(
-                    identities, held.cpu().numpy(), strict=True
-                ):
-                    vectors[view][identity] = vector
+                vectors[view].update(zip(identities, held.cpu().numpy(), strict=True))
     return dict(vectors)
