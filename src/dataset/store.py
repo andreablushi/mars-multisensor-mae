@@ -228,7 +228,8 @@ class DatasetBuild:
 
         Returns:
             observation: The observation, its values standardised by the build's own
-                constants and the rest as the build wrote them.
+                constants, CRISM's also clipped and zeroed where unmeasured or not
+                finite, and the rest as the build wrote them.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
