@@ -39,7 +39,17 @@ def published_build(build: str, root: str) -> DatasetBuild:
     client = dh.get_s3_client()
 
     def fetch(path: str) -> bytes:
-        """Return what one object of the build holds, straight from the store."""
+        """Return what one object of the build holds, straight from the store.
+
+        Args:
+            path: The object, relative to the build.
+
+        Returns:
+            data: The object's bytes.
+
+        Raises:
+            RuntimeError: When the read breaks again once the credentials are minted.
+        """
         nonlocal client
         key = prefix + path
         try:
