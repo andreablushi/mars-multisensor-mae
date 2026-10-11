@@ -1,7 +1,8 @@
-"""The results an evaluation keeps: one vector per tile and view."""
+"""What an evaluation keeps, one vector per tile and view, and what it comes to."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,13 +13,13 @@ from common.disk import parquet
 
 @dataclass(frozen=True, slots=True)
 class TileVector:
-    """One labelled tile, its class and its vector over one instrument.
+    """One labelled tile, its class and its vector over one view.
 
     Attributes:
         tile: The tile.
         label: The class it earned.
-        instrument: The instrument the vector stands for.
-        vector: Its tokens averaged, of unit length.
+        instrument: The instrument the vector stands for, or all of them.
+        vector: Its tokens pooled, of unit length.
     """
 
     tile: str
@@ -30,22 +31,47 @@ class TileVector:
 RESULTS_SCHEMA = parquet.schema_of(TileVector)
 
 
+@dataclass(frozen=True, slots=True)
+class Metrics:
+    """Everything one view of the tiles comes to.
+
+    Attributes:
+        tiles: The tiles.
+        labels: The class of each, in the same order.
+        retrieval: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
+        knn: Accuracy and balanced accuracy of the kNN vote.
+        classes: The classes, in the order both matrices hold them.
+        confusion: Tiles of the row's class voted into the column's. (C, C)
+        distances: The mean cosine distance between the tiles of two classes. (C, C)
+        projection: Where each tile lands on the UMAP plane. (T, 2)
+    """
+
+    tiles: list[str]
+    labels: list[str]
+    retrieval: dict[str, np.ndarray]
+    knn: dict[str, float]
+    classes: list[str]
+    confusion: np.ndarray
+    distances: np.ndarray
+    projection: np.ndarray
+
+
 def write_tile_vectors(
     path: Path,
     classes: Mapping[str, str],
     vectors: Mapping[str, Mapping[str, np.ndarray]],
 ) -> None:
-    """Write one row per instrument and tile: its class and its vector.
+    """Write one row per view and tile: its class and its vector.
 
     Args:
         path: The parquet file to write, whose directory is made if missing.
         classes: The class each tile earned, keyed by the tile.
-        vectors: Each tile's vector, keyed by instrument, then tile.
+        vectors: Each tile's vector, keyed by view, then tile.
     """
     parquet.write_rows(
         [
-            TileVector(tile, classes[tile], instrument, tuple(vector.tolist()))
-            for instrument, by_tile in vectors.items()
+            TileVector(tile, classes[tile], view, tuple(vector.tolist()))
+            for view, by_tile in vectors.items()
             for tile, vector in sorted(by_tile.items())
         ],
         RESULTS_SCHEMA,
@@ -54,24 +80,23 @@ def write_tile_vectors(
 
 
 def read_tile_vectors(path: Path) -> tuple[list[str], list[str], dict[str, np.ndarray]]:
-    """Return one evaluation's vectors, every instrument on one tile order.
+    """Return one evaluation's vectors, every view on one tile order.
 
     Args:
         path: The parquet file written by write_tile_vectors.
 
     Returns:
-        tiles: Every tile any row holds, sorted.
+        tiles: Every tile, sorted.
         labels: The class of each, in the same order.
-        vectors: Each tile's vector, NaN where it lacks the instrument, keyed by
-            instrument. (T, D)
+        vectors: Each tile's vector, keyed by view. (T, D)
     """
     rows = parquet.read_rows(TileVector, RESULTS_SCHEMA, path)
     classes = {row.tile: row.label for row in rows}
     tiles = sorted(classes)
-    at = {tile: index for index, tile in enumerate(tiles)}
-    width = len(rows[0].vector)
-    vectors = {}
+    by_view = defaultdict(dict)
     for row in rows:
-        held = vectors.setdefault(row.instrument, np.full((len(tiles), width), np.nan))
-        held[at[row.tile]] = row.vector
+        by_view[row.instrument][row.tile] = row.vector
+    vectors = {
+        view: np.array([held[tile] for tile in tiles]) for view, held in by_view.items()
+    }
     return tiles, [classes[tile] for tile in tiles], vectors

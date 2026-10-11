@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 import ipywidgets as widgets
+import plotly.graph_objects as go
 from IPython.display import display
 
-from configs.paths import RESULTS_ROOT
-from evaluation.metrics import TOP_K, ViewScores, scores_by_run
-from evaluation.similarity import EVERY_INSTRUMENT
+from configs.paths import RESULTS_FILE, RESULTS_ROOT
+from evaluation.metrics import TOP_K, compute_metrics
+from evaluation.results import Metrics, read_tile_vectors
+from evaluation.similarity import cosine_similarity
 from visualization.heatmap import confusion_figure, distance_figure
 from visualization.projection import projection_figure
 from visualization.retrieval import f1_figure
@@ -24,16 +26,25 @@ RETRIEVAL_ROWS = [
 ]
 KNN_ROWS = ["accuracy", "balanced accuracy"]
 
-Scores = Mapping[str, Mapping[str, ViewScores]]
+Scores = Mapping[str, Mapping[str, Metrics]]
 
 
-def read_scores() -> dict[str, dict[str, ViewScores]]:
-    """Return every view's scores of every run fetched into the results directory.
+def read_scores() -> dict[str, dict[str, Metrics]]:
+    """Return every view's metrics of every run fetched into the results directory.
 
     Returns:
-        scores: Each view's scores, keyed by run, then view.
+        scores: Each view's metrics, keyed by run, then view.
     """
-    return scores_by_run(RESULTS_ROOT, NEIGHBOURS, LAYOUT_SEED)
+    scores = {}
+    for path in sorted(RESULTS_ROOT.glob(f"*/{RESULTS_FILE}")):
+        tiles, labels, vectors = read_tile_vectors(path)
+        scores[path.parent.name] = {
+            view: compute_metrics(
+                cosine_similarity(held), tiles, labels, NEIGHBOURS, LAYOUT_SEED
+            )
+            for view, held in vectors.items()
+        }
+    return scores
 
 
 def model_selector(runs: Sequence[str]) -> dict[str, widgets.Checkbox]:
@@ -68,15 +79,28 @@ def shown(
     display(widgets.interactive_output(ticked, dict(models)))
 
 
+def shown_by_view(
+    figure: Callable[[dict[str, Metrics]], go.Figure],
+    scores: Scores,
+    models: Mapping[str, widgets.Checkbox],
+) -> None:
+    """Show one figure per view of the ticked runs, redrawn whenever a tick changes."""
+
+    def draw(chosen: list[str]) -> None:
+        """Draw every view of the chosen runs."""
+        for view in next(iter(scores.values())):
+            figure({run: scores[run][view] for run in chosen}).update_layout(
+                title=view
+            ).show()
+
+    shown(draw, models)
+
+
 def show_projection(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
-    """Show every ticked run's tiles on the UMAP plane, over every instrument."""
-    classes = sorted(set(next(iter(scores.values()))[EVERY_INSTRUMENT].labels))
-    shown(
-        lambda chosen: projection_figure(
-            {run: scores[run][EVERY_INSTRUMENT] for run in chosen}, classes
-        ).show(),
-        models,
-    )
+    """Show every ticked run's tiles on the UMAP plane, one figure per view."""
+    first = next(iter(next(iter(scores.values())).values()))
+    classes = sorted(set(first.labels))
+    shown_by_view(lambda one: projection_figure(one, classes), scores, models)
 
 
 def show_retrieval(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
@@ -105,23 +129,13 @@ def show_retrieval(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> No
 
 
 def show_f1(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
-    """Show every query tile's F1 at K over every instrument."""
-    shown(
-        lambda chosen: f1_figure(
-            {run: scores[run][EVERY_INSTRUMENT] for run in chosen}, K
-        ).show(),
-        models,
-    )
+    """Show every query tile's F1 at K, one figure per view."""
+    shown_by_view(lambda one: f1_figure(one, K), scores, models)
 
 
 def show_distances(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
-    """Show the mean distance between classes over every instrument."""
-    shown(
-        lambda chosen: distance_figure(
-            {run: scores[run][EVERY_INSTRUMENT] for run in chosen}
-        ).show(),
-        models,
-    )
+    """Show the mean distance between classes, one figure per view."""
+    shown_by_view(distance_figure, scores, models)
 
 
 def show_knn(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
@@ -144,10 +158,5 @@ def show_knn(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
 
 
 def show_confusion(scores: Scores, models: Mapping[str, widgets.Checkbox]) -> None:
-    """Show where the kNN vote put each class over every instrument."""
-    shown(
-        lambda chosen: confusion_figure(
-            {run: scores[run][EVERY_INSTRUMENT] for run in chosen}
-        ).show(),
-        models,
-    )
+    """Show where the kNN vote put each class, one figure per view."""
+    shown_by_view(confusion_figure, scores, models)

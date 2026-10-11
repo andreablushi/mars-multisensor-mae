@@ -7,11 +7,11 @@ from collections.abc import Mapping
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from evaluation.metrics import ViewScores
+from evaluation.results import Metrics
 from visualization.style import BAND_COLOR, F1_COLOR, TEMPLATE
 
 
-def f1_figure(scores: Mapping[str, ViewScores], k: int) -> go.Figure:
+def f1_figure(scores: Mapping[str, Metrics], k: int) -> go.Figure:
     """Draw every query tile's F1 at k, a row per model, tiles grouped by class."""
     first = next(iter(scores.values()))
     order = sorted(

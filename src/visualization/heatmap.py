@@ -8,11 +8,11 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from evaluation.metrics import ViewScores
+from evaluation.results import Metrics
 from visualization.style import BLUES, OUTLINE_COLOR, TEMPLATE
 
 
-def distance_figure(scores: Mapping[str, ViewScores]) -> go.Figure:
+def distance_figure(scores: Mapping[str, Metrics]) -> go.Figure:
     """Draw the mean distance between classes, each row's nearest class outlined."""
     figure = make_subplots(rows=1, cols=len(scores), subplot_titles=list(scores))
     for column, one in enumerate(scores.values(), start=1):
@@ -62,7 +62,7 @@ def distance_figure(scores: Mapping[str, ViewScores]) -> go.Figure:
     return figure
 
 
-def confusion_figure(scores: Mapping[str, ViewScores]) -> go.Figure:
+def confusion_figure(scores: Mapping[str, Metrics]) -> go.Figure:
     """Draw how many tiles of each class the kNN vote put into each."""
     figure = make_subplots(rows=1, cols=len(scores), subplot_titles=list(scores))
     for column, one in enumerate(scores.values(), start=1):

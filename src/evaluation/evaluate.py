@@ -6,17 +6,19 @@ from collections import defaultdict
 
 import numpy as np
 import torch
-from torch.nn import functional
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from training.step import device_batch
+from architecture.tokens import Tokens
+from evaluation.similarity import global_average_pooling
+
+EVERY_INSTRUMENT = "all"
 
 
-def evaluate_latent_space(
+def evaluate(
     model: CrossSensorMAE, loader: DataLoader, device: torch.device
 ) -> dict[str, dict[str, np.ndarray]]:
-    """Return one vector per tile and instrument: its tokens averaged, of unit length.
+    """Return one vector per tile and view: each instrument's, and all of them.
 
     Args:
         model: The model, on the device.
@@ -24,22 +26,29 @@ def evaluate_latent_space(
         device: Where the model runs.
 
     Returns:
-        vectors: Each instrument's vector of every tile holding it, keyed by
-            instrument, then by tile. (D,)
+        vectors: Each tile's unit vector, keyed by instrument or EVERY_INSTRUMENT,
+            then by tile. (D,)
     """
     model.eval()
     vectors = defaultdict(dict)
     with torch.no_grad():
         for batch, identities in loader:
-            batch = device_batch(batch, device)
-            present = {name: tokens.present for name, tokens in batch.items()}  # (B, K)
-            with torch.autocast(device.type, dtype=torch.bfloat16):
-                embedded = model.embed(batch, present)
-            for name, tokens in embedded.items():
-                held = present[name].unsqueeze(-1)  # (B, K, 1)
-                summed = (tokens.float() * held).sum(dim=1)  # (B, D)
-                pooled = functional.normalize(summed, dim=-1).cpu().numpy()
-                for at, identity in enumerate(identities):
-                    if present[name][at].any():
-                        vectors[name][identity] = pooled[at]
+            batch = {
+                name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
+                for name, tokens in batch.items()
+            }
+            present = {name: tokens.present for name, tokens in batch.items()}
+            pooled = {
+                name: global_average_pooling(tokens, present[name])
+                for name, tokens in model.shared_tokens(batch, present).items()
+            }
+            stacked = torch.stack(list(pooled.values()), dim=1)  # (B, M, D)
+            pooled[EVERY_INSTRUMENT] = global_average_pooling(
+                stacked, torch.ones(stacked.shape[:2], dtype=torch.bool, device=device)
+            )
+            for view, held in pooled.items():
+                for identity, vector in zip(
+                    identities, held.cpu().numpy(), strict=True
+                ):
+                    vectors[view][identity] = vector
     return dict(vectors)

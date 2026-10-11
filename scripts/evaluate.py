@@ -17,7 +17,7 @@ from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
-from evaluation.evaluate import evaluate_latent_space
+from evaluation.evaluate import evaluate
 from evaluation.results import write_tile_vectors
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
@@ -102,7 +102,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
         log.info("%s trained for %d steps", checkpoint, steps)
     log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
-    write_tile_vectors(results, classes, evaluate_latent_space(model, loader, device))
+    write_tile_vectors(results, classes, evaluate(model, loader, device))
     log.info("results written to %s", results.parent)
     if project is not None:
         publish_results(project, results, config.run_name)

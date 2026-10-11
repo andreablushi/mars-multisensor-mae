@@ -8,12 +8,12 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from evaluation.metrics import ViewScores
+from evaluation.results import Metrics
 from visualization.style import CLASS_COLORS, CLASS_SYMBOLS, TEMPLATE
 
 
 def projection_figure(
-    scores: Mapping[str, ViewScores], classes: Sequence[str]
+    scores: Mapping[str, Metrics], classes: Sequence[str]
 ) -> go.Figure:
     """Lay every model's tiles on the UMAP plane, one panel each, coloured by class."""
     figure = make_subplots(rows=1, cols=len(scores), subplot_titles=list(scores))
