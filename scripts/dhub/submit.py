@@ -29,8 +29,8 @@ def load_platform() -> dict:
 
 
 def stage_workers(stage: str) -> int:
-    """Return how many processes read tiles beside one stage's work, as its cores."""
-    return int(load_platform()["stages"][stage]["resources"]["cpu"])
+    """Return how many processes read tiles beside one stage's work, twice its cores."""
+    return 2 * int(load_platform()["stages"][stage]["resources"]["cpu"])
 
 
 def run_stage(

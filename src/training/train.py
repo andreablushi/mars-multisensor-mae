@@ -69,7 +69,9 @@ def train(
         lr=learning_rate,
         weight_decay=weight_decay,
         betas=(0.9, 0.95),
+        fused=True,
     )
+    torch.set_float32_matmul_precision("high")
 
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:
