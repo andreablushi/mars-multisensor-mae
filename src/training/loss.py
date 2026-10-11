@@ -4,54 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-import torch
 from torch import Tensor
 
 from architecture.tokens import Tokens
 
 
-def cmr_patches(
-    visible: dict[str, Tensor], hidden: dict[str, Tensor]
-) -> dict[str, Tensor]:
-    """Return the hidden patches CMR scores, those of a tile another instrument shows.
-
-    Args:
-        visible: Which patches each encoder reads. (B, K)
-        hidden: Which patches are predicted. (B, K)
-
-    Returns:
-        scored: Each instrument's hidden patches of the tiles where another
-            instrument has a visible patch. (B, K)
-    """
-    scored = {}
-    for name in hidden:
-        others = [visible[one].any(dim=1) for one in visible if one != name]
-        read = torch.stack(others).any(dim=0)  # (B,)
-        scored[name] = hidden[name] & read[:, None]
-    return scored
-
-
-def scored_counts(
-    visible: dict[str, Tensor], hidden: dict[str, Tensor]
-) -> dict[tuple[str, str], float]:
-    """Return how many patches each term scores, keyed by term and instrument.
-
-    Args:
-        visible: Which patches each encoder reads. (B, K)
-        hidden: Which patches are predicted. (B, K)
-
-    Returns:
-        counts: Under "umr" every hidden patch, under "cmr" those CMR scores.
-    """
-    return {
-        (term, name): float(patches.sum())
-        for term, scored in (("umr", hidden), ("cmr", cmr_patches(visible, hidden)))
-        for name, patches in scored.items()
-    }
-
-
-def summed_error(prediction: Tensor, target: Tokens, scored: Tensor) -> Tensor:
-    """Return the error of one instrument's prediction, summed over the patches scored.
+def mse(prediction: Tensor, target: Tokens, scored: Tensor) -> Tensor:
+    """Return the mean squared error over the scored patches.
 
     Args:
         prediction: The predicted patches. (B, K, *P)
@@ -59,75 +18,69 @@ def summed_error(prediction: Tensor, target: Tokens, scored: Tensor) -> Tensor:
         scored: Which patches are scored. (B, K)
 
     Returns:
-        sum: Each scored patch's mean squared error over its measured samples,
-            added up. ()
+        error: Each scored patch's squared error over its measured samples,
+            averaged over the patches. ()
     """
     measured = target.measured.to(target.values.dtype).expand_as(target.values)
     samples = tuple(range(2, target.values.dim()))
     # Each patch's squared error, averaged over its measured samples
     error = ((prediction - target.values) ** 2 * measured).sum(dim=samples)
     error = error / measured.sum(dim=samples).clamp(min=1)  # (B, K)
-    return (error * scored).sum()  # ()
+    return error[scored].mean()  # ()
 
 
-def umr_errors(
-    umr: Mapping[str, Tensor], batch: dict[str, Tokens], hidden: dict[str, Tensor]
+def umr(
+    predictions: Mapping[str, Tensor],
+    batch: Mapping[str, Tokens],
+    hidden: Mapping[str, Tensor],
 ) -> dict[str, Tensor]:
     """Return each instrument's UMR error, read from its own tokens.
 
     Args:
-        umr: Each instrument's hidden patches read from its own tokens. (B, K, *P)
+        predictions: Each instrument's patches read from its own tokens. (B, K, *P)
         batch: Each instrument's patches over the batch.
         hidden: Which patches are predicted. (B, K)
 
     Returns:
-        sums: Each instrument's error, summed over its hidden patches. ()
+        errors: Each instrument's error over its hidden patches. ()
     """
-    return {name: summed_error(umr[name], batch[name], hidden[name]) for name in umr}
+    return {name: mse(predictions[name], batch[name], hidden[name]) for name in batch}
 
 
-def cmr_errors(
-    cmr: Mapping[str, Tensor],
-    batch: dict[str, Tokens],
-    visible: dict[str, Tensor],
-    hidden: dict[str, Tensor],
+def cmr(
+    predictions: Mapping[str, Tensor],
+    batch: Mapping[str, Tokens],
+    hidden: Mapping[str, Tensor],
 ) -> dict[str, Tensor]:
     """Return each instrument's CMR error, read from every other instrument's tokens.
 
     Args:
-        cmr: Each instrument's hidden patches read from the others' tokens. (B, K, *P)
+        predictions: Each instrument's patches read from the others' tokens.
+            (B, K, *P)
         batch: Each instrument's patches over the batch.
-        visible: Which patches each encoder reads. (B, K)
         hidden: Which patches are predicted. (B, K)
 
     Returns:
-        sums: Each instrument's error, summed over the hidden patches CMR scores. ()
+        errors: Each instrument's error over its hidden patches. ()
     """
-    scored = cmr_patches(visible, hidden)
-    return {name: summed_error(cmr[name], batch[name], scored[name]) for name in cmr}
+    return {name: mse(predictions[name], batch[name], hidden[name]) for name in batch}
 
 
-def loss_terms(
-    sums: Mapping[tuple[str, str], Tensor], counts: Mapping[tuple[str, str], float]
+def total(
+    umr_errors: Mapping[str, Tensor], cmr_errors: Mapping[str, Tensor]
 ) -> dict[str, Tensor]:
-    """Return each term's mean error over the patches it scored, and the loss.
+    """Return every term and the loss, their sum.
 
     Args:
-        sums: Each term's error, summed over the patches it scored. ()
-        counts: How many patches each term scored, over every pass pooled.
+        umr_errors: Each instrument's UMR error. ()
+        cmr_errors: Each instrument's CMR error. ()
 
     Returns:
-        terms: "<term>/<instrument>" for every term, nan where it scored no patch,
-            and "loss", the sum of every term that scored one.
+        terms: "<term>/<instrument>" for every term, and "loss". ()
     """
-    held = next(iter(sums.values()))
-    terms = {}
-    loss = held.new_zeros(())
-    for (term, name), summed in sums.items():
-        mean = torch.full((), torch.nan, device=held.device)
-        if counts[term, name]:
-            mean = summed / counts[term, name]
-            loss = loss + mean
-        terms[f"{term}/{name}"] = mean
-    terms["loss"] = loss
-    return terms
+    terms = {
+        f"{term}/{name}": error
+        for term, errors in (("umr", umr_errors), ("cmr", cmr_errors))
+        for name, error in errors.items()
+    }
+    return terms | {"loss": sum(terms.values())}

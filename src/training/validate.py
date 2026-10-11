@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-
 import torch
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from training.loss import loss_terms, scored_counts
-from training.step import batch_errors, device_batch, drawn_masks
+from training.step import step_terms
 
 
 def validation_terms(
@@ -29,18 +26,16 @@ def validation_terms(
         device: Where the model runs.
 
     Returns:
-        metrics: Every loss term over the whole split, as if it were one batch.
+        metrics: Every loss term, averaged over the split's batches.
     """
     model.eval()
     generator = torch.Generator(device=device).manual_seed(seed)
-    sums, counts = defaultdict(float), defaultdict(float)
     with torch.no_grad():
-        for batch, _ in loader:
-            batch = device_batch(batch, device)
-            visible, hidden = drawn_masks(batch, mask_ratio, generator)
-            for term, count in scored_counts(visible, hidden).items():
-                counts[term] += count
-            held = batch_errors(model, batch, visible, hidden)
-            for term, value in held.items():
-                sums[term] += value
-    return {name: float(value) for name, value in loss_terms(sums, counts).items()}
+        terms = [
+            step_terms(model, batch, mask_ratio, generator, device)
+            for batch, _ in loader
+        ]
+    return {
+        name: float(torch.stack([one[name] for one in terms]).mean())
+        for name in terms[0]
+    }

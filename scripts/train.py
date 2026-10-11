@@ -36,11 +36,6 @@ def run_training(
         model: The published checkpoint, or where it was written on a run here.
     """
     config = load_config(overrides or [])
-    accumulate, rest = divmod(
-        config.training.batch_size, config.training.memory_batch_size
-    )
-    if rest:
-        raise ValueError("training.batch_size must be a multiple of memory_batch_size.")
     build = published_build(config.dataset.build, config.dataset.root)
     model, device, sizes, shapes = built_model(config, build)
     loaders = loaders_by_split(
@@ -52,7 +47,7 @@ def run_training(
         config.dataset.split,
         config.dataset.seed,
         config.model.delay,
-        config.training.memory_batch_size,
+        config.training.batch_size,
         stage_workers(TRAINING_STAGE),
     )
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
@@ -76,7 +71,6 @@ def run_training(
         training,
         validation,
         config.training.max_steps,
-        accumulate,
         config.training.learning_rate,
         config.training.weight_decay,
         config.training.warmup_steps,

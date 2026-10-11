@@ -60,7 +60,7 @@ def loaders_by_split(
     shares: Sequence[float],
     seed: int,
     delay: str,
-    memory_batch_size: int,
+    batch_size: int,
     workers: int,
 ) -> dict[str, DataLoader]:
     """Return every split of a build in batches, each tile cut to the budget.
@@ -74,7 +74,7 @@ def loaders_by_split(
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in, and each validation tile's cut.
         delay: The instrument whose rows give every surface patch its delay.
-        memory_batch_size: How many tiles one pass holds in memory.
+        batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the training.
 
     Returns:
@@ -91,7 +91,7 @@ def loaders_by_split(
             pool,
             shapes,
             delay,
-            memory_batch_size,
+            batch_size,
             workers,
             name == TRAINING_SPLIT,
             budget,
@@ -109,7 +109,7 @@ def tile_loader(
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
     delay: str,
-    memory_batch_size: int,
+    batch_size: int,
     workers: int,
     shuffle: bool,
     budget: Mapping[str, int] | None,
@@ -125,7 +125,7 @@ def tile_loader(
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
-        memory_batch_size: How many tiles one batch holds in memory.
+        batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the model.
         shuffle: Whether the tiles come in a new order every pass.
         budget: How many patches of each instrument a tile keeps, or None to read
@@ -138,7 +138,7 @@ def tile_loader(
     gc.freeze()
     return DataLoader(
         list(tiles),
-        batch_size=memory_batch_size,
+        batch_size=batch_size,
         shuffle=shuffle,
         num_workers=workers,
         persistent_workers=workers > 0,

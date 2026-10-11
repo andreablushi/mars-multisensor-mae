@@ -25,6 +25,7 @@ from training.checkpoint import load_checkpoint
 EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 RANDOM = "random"
+EVALUATION_BATCH_SIZE = 1
 
 log = console_logger(__name__)
 
@@ -91,7 +92,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
         config.dataset.pool,
         shapes,
         config.model.delay,
-        config.training.memory_batch_size,
+        EVALUATION_BATCH_SIZE,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
         budget=None,
