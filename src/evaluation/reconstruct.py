@@ -13,7 +13,12 @@ from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
-from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
+from dataset.patches import (
+    condition_width,
+    cropped_patch_arrays,
+    patch_arrays,
+    read_tile_patches,
+)
 from dataset.store import CLIP, STANDARDISED_BY, DatasetBuild
 from training.step import drawn_masks
 
@@ -65,7 +70,9 @@ def reconstruct(
     read = read_tile_patches(shown, build, sizes, pool)
     sample = cropped_patch_arrays(
         {
-            name: patch_arrays(held, shapes[name], axes[name])
+            name: patch_arrays(
+                held, shapes[name], axes[name], condition_width(name, shapes[name])
+            )
             | {"cell": np.array([one.cell for one in held])}
             for name, held in read.items()
         },

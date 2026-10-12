@@ -19,11 +19,13 @@ class Tokens(NamedTuple):
     Attributes:
         values: The normalised patches, zero where padded. (B, K, *P)
         measured: Whether each sample is a measurement, false over padding. (B, K, *P')
+        condition: What each patch is conditioned on, flattened, or nothing. (B, K, C)
         position: The patch centre, east and north in metres, delay in rows. (B, K, 3)
     """
 
     values: Tensor
     measured: Tensor
+    condition: Tensor
     position: Tensor
 
     @property

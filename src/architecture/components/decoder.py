@@ -22,6 +22,7 @@ class Decoder(nn.Module):
         shape: The shape of one patch this decoder predicts.
         expand: From the shared width to the decoder width.
         mask: The token standing in for a hidden patch. (D')
+        condition: What a hidden patch's condition is mapped into its token by. (D', C)
         blocks: The transformer the patches read the context through.
         predict: From a token to every sample of its patch.
     """
@@ -29,6 +30,7 @@ class Decoder(nn.Module):
     def __init__(
         self,
         shape: tuple[int, ...],
+        condition: int,
         shared: int,
         dim: int,
         heads: int,
@@ -38,6 +40,7 @@ class Decoder(nn.Module):
 
         Args:
             shape: The shape of one patch of the instrument.
+            condition: How many values each patch is conditioned on.
             shared: The width the cross-sensor encoder hands tokens at.
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
@@ -52,6 +55,8 @@ class Decoder(nn.Module):
         self.mask = nn.Parameter(torch.zeros(dim))  # (D')
         # Start the mask token small, as transformer embeddings are
         nn.init.normal_(self.mask, std=0.02)
+        # Start every hidden patch from the mask token alone
+        self.condition = nn.Parameter(torch.zeros(dim, condition))  # (D', C)
         # The blocks the patches read the context through
         self.blocks = Transformer(dim, heads, depth)
         # Write every sample of the patch from its token
@@ -67,6 +72,7 @@ class Decoder(nn.Module):
         context_readable: Tensor,
         position: Tensor,
         hidden: Tensor,
+        condition: Tensor,
     ) -> Tensor:
         """Return the hidden patches as read from one context.
 
@@ -76,14 +82,14 @@ class Decoder(nn.Module):
             context_readable: Which of them count. (B, S)
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
             hidden: Which of them to predict. (B, K)
+            condition: What each asked patch is conditioned on. (B, K, C)
 
         Returns:
             prediction: One patch per slot, meaningful where hidden. (B, K, *P)
         """
-        # The context at the decoder width, then one mask token per slot as a query
-        keys = torch.cat(
-            [self.expand(context), self.mask.expand(*position.shape[:2], -1)], dim=1
-        )  # (B, S + K, D')
+        # One mask token per slot as a query, told what its patch is conditioned on
+        queries = self.mask + condition @ self.condition.T  # (B, K, D')
+        keys = torch.cat([self.expand(context), queries], dim=1)  # (B, S + K, D')
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
         # The readable context and the hidden patches are read, nothing else
         readable = torch.cat([context_readable, hidden], dim=1)  # (B, S + K)
@@ -95,7 +101,12 @@ class Decoder(nn.Module):
         return written.unflatten(-1, self.shape)  # (B, K, *P)
 
     def forward(
-        self, own: Context, others: Context, position: Tensor, hidden: Tensor
+        self,
+        own: Context,
+        others: Context,
+        position: Tensor,
+        hidden: Tensor,
+        condition: Tensor,
     ) -> tuple[Tensor, Tensor]:
         """Return the instrument's hidden patches, from its own tokens and its sources'.
 
@@ -104,6 +115,7 @@ class Decoder(nn.Module):
             others: The tokens of the instruments it is rebuilt from.
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
             hidden: Which of them to predict. (B, K)
+            condition: What each asked patch is conditioned on. (B, K, C)
 
         Returns:
             umr: The patches read from the instrument's own tokens. (B, K, *P)
@@ -111,9 +123,19 @@ class Decoder(nn.Module):
         """
         # Each pass is recomputed on the way back, so only one is held at once
         umr = checkpoint(
-            self.reconstructed_patches, *own, position, hidden, use_reentrant=False
+            self.reconstructed_patches,
+            *own,
+            position,
+            hidden,
+            condition,
+            use_reentrant=False,
         )
         cmr = checkpoint(
-            self.reconstructed_patches, *others, position, hidden, use_reentrant=False
+            self.reconstructed_patches,
+            *others,
+            position,
+            hidden,
+            condition,
+            use_reentrant=False,
         )
         return umr, cmr

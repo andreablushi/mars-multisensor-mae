@@ -20,6 +20,8 @@ from dataset.models.positioning import metres_from_centre
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
+CONDITIONS = {sharad.LAYOUT.instrument: ("clutter",)}
+
 
 def read_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
@@ -42,7 +44,7 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
-            observation = build.read_observation(record.path)
+            observation = build.read_observation(record.path, CONDITIONS.get(name, ()))
             shape = observation.values.shape
             lengths = patch_lengths(shape, record.axes, size)
             counts = tuple(
@@ -103,9 +105,15 @@ def cut_patch(
     else:
         # Every ground patch sits at the areoid row, so delay only places a sounder
         delay = float(sharad.AREOID_ROW)
+    # What the instrument is conditioned on, cut as its values and flattened
+    condition = np.array(
+        [observation.beside[one][window] * measured for one in observation.beside],
+        np.float32,
+    ).ravel()
     return Patch(
         values=observation.values[window].copy(),
         measured=measured,
+        condition=condition,
         axes=axes,
         north_m=north_m,
         east_m=east_m,
@@ -195,6 +203,7 @@ def patch_arrays(
     patches: Sequence[Patch],
     shape: Sequence[int],
     axes: Sequence[str],
+    width: int,
 ) -> dict[str, np.ndarray]:
     """Return one instrument's read patches as the arrays a model is handed.
 
@@ -202,9 +211,10 @@ def patch_arrays(
         patches: The patches, all of one instrument.
         shape: The shape of one patch of it as the model reads it.
         axes: What each axis of its values holds.
+        width: How many values each patch is conditioned on.
 
     Returns:
-        arrays: The patches under "values", "measured" and "position".
+        arrays: The patches under "values", "measured", "condition" and "position".
     """
     measured_shape = tuple(
         held if holds == Axis.GROUND else 1
@@ -217,10 +227,26 @@ def patch_arrays(
         "measured": np.array([one.measured for one in patches], bool).reshape(
             -1, *measured_shape
         ),
+        "condition": np.array([one.condition for one in patches], np.float32).reshape(
+            len(patches), width
+        ),
         "position": np.array(
             [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
         ).reshape(-1, 3),
     }
+
+
+def condition_width(name: str, shape: Sequence[int]) -> int:
+    """Return how many values each patch of one instrument is conditioned on.
+
+    Args:
+        name: The instrument, keyed as ODE names it.
+        shape: The shape of one of its patches as the model reads it.
+
+    Returns:
+        width: One value per sample of every array it is conditioned on, else none.
+    """
+    return len(CONDITIONS.get(name, ())) * math.prod(shape)
 
 
 def cropped_patch_arrays(

@@ -15,7 +15,7 @@ from configs.load import load_config
 from configs.paths import RECONSTRUCTION_FILE, results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
-from dataset.patches import read_patch_shapes
+from dataset.patches import condition_width, read_patch_shapes
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate
 from evaluation.reconstruct import reconstruct
@@ -56,6 +56,7 @@ def built_model(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
+        {name: condition_width(name, shape) for name, shape in shapes.items()},
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,

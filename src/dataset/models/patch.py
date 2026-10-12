@@ -14,6 +14,8 @@ class Patch:
     Attributes:
         values: The patch's own values, in the observation's axis order.
         measured: Whether each sample is a measurement, broadcasting over the values.
+        condition: What the model reads beside the values, flattened, zero where
+            unmeasured: the cluttergram for SHARAD, nothing for the rest.
         axes: What each axis of the values holds, in that same order.
         north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
@@ -24,6 +26,7 @@ class Patch:
 
     values: np.ndarray
     measured: np.ndarray
+    condition: np.ndarray
     axes: tuple[str, ...]
     north_m: float
     east_m: float

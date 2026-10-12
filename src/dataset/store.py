@@ -28,7 +28,12 @@ from common.disk.files import atomic_path
 from architecture.tokens import Tokens, token_batch_padding
 from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
-from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
+from dataset.patches import (
+    condition_width,
+    cropped_patch_arrays,
+    patch_arrays,
+    read_tile_patches,
+)
 
 CLIP = 2.0
 
@@ -197,7 +202,12 @@ class DatasetBuild:
             else:
                 read = read_tile_patches(tiles[identity], self, sizes, pool)
                 sample = {
-                    name: patch_arrays(drawn, shapes[name], axes[name])
+                    name: patch_arrays(
+                        drawn,
+                        shapes[name],
+                        axes[name],
+                        condition_width(name, shapes[name]),
+                    )
                     for name, drawn in read.items()
                 }
                 with atomic_path(held) as written, written.open("wb") as file:
@@ -220,7 +230,8 @@ class DatasetBuild:
 
         Args:
             path: Where that object sits, as the index names it.
-            beside: What else the instrument stores to read, none of it by default.
+            beside: What else the instrument stores to read, none of it by default,
+                each standardised by the build's constants of its own name.
 
         Returns:
             observation: The observation, its values standardised by the build's own
@@ -250,6 +261,9 @@ class DatasetBuild:
             measured=arrays[MEASURED],
             north=arrays[NORTH],
             east=arrays[EAST],
-            beside={name: arrays[name] for name in beside},
+            beside={
+                name: self.standardised_values(arrays[name], axes, name)
+                for name in beside
+            },
             described=described,
         )

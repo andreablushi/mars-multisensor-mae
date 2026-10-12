@@ -22,6 +22,7 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
+        conditions: dict[str, int],
         encoder_dim: int,
         encoder_heads: int,
         encoder_depth: int,
@@ -34,6 +35,7 @@ class CrossSensorMAE(nn.Module):
 
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
+            conditions: How many values each instrument's patches are conditioned on.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
@@ -46,7 +48,9 @@ class CrossSensorMAE(nn.Module):
         # One encoder per instrument, each from its patches to tokens
         self.encoders = nn.ModuleDict(
             {
-                name: Encoder(shape, encoder_dim, encoder_heads, encoder_depth)
+                name: Encoder(
+                    shape, conditions[name], encoder_dim, encoder_heads, encoder_depth
+                )
                 for name, shape in shapes.items()
             }
         )
@@ -58,7 +62,12 @@ class CrossSensorMAE(nn.Module):
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
-                    shape, encoder_dim, decoder_dim, decoder_heads, decoder_depth
+                    shape,
+                    conditions[name],
+                    encoder_dim,
+                    decoder_dim,
+                    decoder_heads,
+                    decoder_depth,
                 )
                 for name, shape in shapes.items()
             }
@@ -139,5 +148,6 @@ class CrossSensorMAE(nn.Module):
                 self.context(tokens, batch, visible, sources[name]),
                 one.position,
                 hidden[name],
+                one.condition,
             )  # (B, K, *P) each
         return predictions

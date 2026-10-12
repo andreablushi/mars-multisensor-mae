@@ -26,6 +26,7 @@ class Encoder(nn.Module):
     def __init__(
         self,
         shape: tuple[int, ...],
+        condition: int,
         dim: int,
         heads: int,
         depth: int,
@@ -34,13 +35,14 @@ class Encoder(nn.Module):
 
         Args:
             shape: The shape of one patch of the instrument.
+            condition: How many values each patch is conditioned on.
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
         """
         super().__init__()
-        # Map every sample of a patch into the token width
-        self.embed = nn.Linear(math.prod(shape), dim)
+        # Map every sample of a patch and its condition into the token width
+        self.embed = nn.Linear(math.prod(shape) + condition, dim)
         # One learned CLS token, started small as transformer embeddings are
         self.cls = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.cls, std=0.02)
@@ -58,8 +60,9 @@ class Encoder(nn.Module):
             tokens: The CLS token, then one per slot, meaningful where visible.
                 (B, 1 + K, D)
         """
-        # One token per patch, from its measured samples alone, each a key and a query
-        keys = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
+        # One token per patch, from its measured samples and its condition
+        read = (patches.values * patches.measured).flatten(2)  # (B, K, prod P)
+        keys = self.embed(torch.cat([read, patches.condition], -1))  # (B, K, D)
         keys = torch.cat([self.cls.expand(len(keys), 1, -1), keys], 1)  # (B, 1 + K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
         return checkpoint(
