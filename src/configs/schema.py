@@ -18,7 +18,9 @@ class DatasetConfig:
             instrument, one left out read whole.
         budget: How many patches of each instrument a training or validation read
             keeps, the ones nearest a centre drawn on the tile.
-        split: The share of the tiles each split holds, in the code's order.
+        budget_scale: The most a training batch's budget is multiplied by, drawn
+            from 1 for each batch.
+        split: The share of the observations each split holds, in the code's order.
         seed: The number that fixes which split a tile falls in.
     """
 
@@ -27,6 +29,7 @@ class DatasetConfig:
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
     budget: dict[str, int]
+    budget_scale: float
     split: list[float]
     seed: int
 
@@ -65,7 +68,6 @@ class TrainingConfig:
     Attributes:
         max_steps: How many steps the run takes, at most.
         batch_size: How many tiles one step's gradient is averaged over.
-        memory_batch_size: How many of them one pass holds in memory, dividing it.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -77,7 +79,6 @@ class TrainingConfig:
 
     max_steps: int
     batch_size: int
-    memory_batch_size: int
     learning_rate: float
     weight_decay: float
     warmup_steps: int
@@ -93,16 +94,9 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        minimal_chamfer_distance_m: How far east or north, in metres, a token may be
-            matched from where it sits, or None to match it anywhere in the other
-            tile.
-        delay_window: The first and last delay cell a sounder token is compared in,
-            counted from the cell of the surface beneath it.
     """
 
     build: str
-    minimal_chamfer_distance_m: float | None
-    delay_window: tuple[int, int]
 
 
 @dataclass

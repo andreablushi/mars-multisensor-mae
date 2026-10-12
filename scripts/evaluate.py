@@ -17,14 +17,15 @@ from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
-from evaluation.evaluate import evaluate_latent_space
-from evaluation.metrics import chamfer_distances
-from evaluation.results import EVERY_INSTRUMENT, write_tile_distances
+from evaluation.evaluate import evaluate
+from evaluation.results import write_tile_vectors
 from logs.console import console_logger
 from training.checkpoint import load_checkpoint
 
 EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
+RANDOM = "random"
+EVALUATION_BATCH_SIZE = 1
 
 log = console_logger(__name__)
 
@@ -65,17 +66,19 @@ def built_model(
     return model, device, sizes, shapes
 
 
-def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
+def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -> None:
     """Measure one checkpoint's latent space over the labelled tiles, and keep it.
 
     Args:
         config: What the run reads, the model it builds, and how it is measured.
-        checkpoint: The checkpoint to measure, on this machine.
+        checkpoint: The checkpoint to measure, on this machine, or None to measure
+            the weights the run's seed draws.
         project: The DigitalHub project the results are published in, or None here.
     """
     # The model is built as the training build left it, whichever build the tiles
     # it never read come from.
     trained = published_build(config.dataset.build, config.dataset.root)
+    torch.manual_seed(config.dataset.seed)
     model, device, sizes, shapes = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
     build = published_build(config.evaluation.build, config.dataset.root)
@@ -89,35 +92,20 @@ def evaluate_checkpoint(config: Config, checkpoint: Path, project=None) -> None:
         config.dataset.pool,
         shapes,
         config.model.delay,
-        config.training.memory_batch_size,
+        EVALUATION_BATCH_SIZE,
         stage_workers(EVALUATION_STAGE),
         shuffle=False,
         budget=None,
+        scale=1.0,
         seed=None,
     )
-    steps = load_checkpoint(checkpoint, model)
-    log.info("evaluating %s, trained for %d steps, on %s", checkpoint, steps, device)
-    tokens = evaluate_latent_space(
-        model, loader, sizes, config.evaluation.delay_window, device
-    )
-    tiles = sorted(next(iter(tokens.values())))
-    distances = {
-        name: chamfer_distances(
-            [held[tile] for tile in tiles],
-            config.evaluation.minimal_chamfer_distance_m,
-        )
-        for name, held in tokens.items()
-    }
-    # Every instrument weighs the same in the distance over all of them
-    distances[EVERY_INSTRUMENT] = torch.stack(list(distances.values())).mean(dim=0)
+    if checkpoint is not None:
+        steps = load_checkpoint(checkpoint, model)
+        log.info("%s trained for %d steps", checkpoint, steps)
+    log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
-    write_tile_distances(
-        results,
-        tiles,
-        classes,
-        {name: one.double().cpu().numpy() for name, one in distances.items()},
-    )
-    log.info("results written to %s", results)
+    write_tile_vectors(results, classes, evaluate(model, loader, device))
+    log.info("results written to %s", results.parent)
     if project is not None:
         publish_results(project, results, config.run_name)
 
@@ -131,7 +119,9 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
         overrides: What to compose the config with, as hydra spells them.
     """
     config = load_config(overrides or [])
-    checkpoint = published_checkpoint(config.run_name, config.training.checkpoints)
+    checkpoint = None
+    if config.run_name != RANDOM:
+        checkpoint = published_checkpoint(config.run_name, config.training.checkpoints)
     evaluate_checkpoint(config, checkpoint, project)
 
 

@@ -8,17 +8,18 @@ build: training
 root: data/dataset
 
 # How far a patch runs along an axis holding each thing, an axis left out taken
-# whole. A tile is 32 km: a CTX patch spans about 640 m of its ground, and every
-# other about 2.5 km. Patches a tile are counted over the training build's index,
+# whole. A tile is 32 km: a CTX or CRISM patch spans about 640 m of its ground, and a
+# SHARAD one about 930 m along its track. Patches a tile are counted over the training build's index,
 # median (90th percentile), before the empty corners of a crop are dropped.
 patchsize:
   # A scan at about 5 m a pixel: 3362 (6384) patches a tile.
   CTX: {ground: 128}
-  # A survey at about 200 m a pixel, its multispectral bands kept whole: 104 (164).
-  CRISM: {ground: 12}
-  # A sounder walks one line, so its ground is traces and its delay is depth: 336
-  # (1120).
-  SHARAD: {ground: 8, delay: 256}
+  # A survey at about 200 m a pixel, its multispectral bands kept whole: about 1660
+  # (2620), scaled from 12 pixel patches.
+  CRISM: {ground: 3}
+  # A sounder walks one line, so its ground is traces about 465 m apart and its delay
+  # is depth: 1946 (5002).
+  SHARAD: {ground: 2, delay: 256}
 
 # How many ground samples of a patch are averaged into one along each ground axis,
 # an instrument left out read whole.
@@ -31,10 +32,15 @@ pool:
 budget:
   # About 9 km square of one scan around the centre.
   CTX: 192
-  # A quarter of one observation.
-  CRISM: 13
-  # A quarter of one track.
-  SHARAD: 28
+  # The same ground as CTX.
+  CRISM: 192
+  # About 7 km of one track, every delay.
+  SHARAD: 112
+
+# The most a training batch's budget is multiplied by, drawn from 1 for each batch, so
+# training sees crops up to twice as wide and evaluation's whole tiles stay closer to
+# what was trained on. Validation keeps the budget as it is.
+budget_scale: 4
 
 # The shares the tiles are split into, in the code's order: train, validation.
 split: [0.95, 0.05]

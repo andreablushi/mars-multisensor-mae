@@ -32,13 +32,16 @@ module-name = [
     "configs",
     "dataset",
     "evaluation",
+    "figures",
     "logs",
     "training",
 ]
 
 [dependency-groups]
 dev = [
+    "anywidget>=0.11.0",
     "ipykernel>=7.3.0",
+    "ipywidgets>=8.1.9",
     "nbformat>=5.11.1",
     "pandas>=3.0.5",
     "ruff>=0.16.2",

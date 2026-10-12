@@ -12,7 +12,7 @@ python_version: PYTHON3_13
 base_image: python:3.13-slim
 
 # What each stage is registered as and gets: a -shared profile queues on the shared
-# pool, and the cores are also the workers reading tiles.
+# pool, and twice the cores are the workers reading tiles.
 stages:
   training:
     function: train-mae
@@ -21,7 +21,7 @@ stages:
   evaluation:
     function: evaluate-mae
     profile: 1xa40-shared
-    resources: {cpu: "8", gpu: "1", mem: 32Gi, disk: 64Gi}
+    resources: {cpu: "8", gpu: "1", mem: 16Gi, disk: 64Gi}
 
 # The volume a run keeps its ready tiles on, mounted as the dataset root: a new one per
 # run, so it starts empty and keeps each tile the first time it is read.

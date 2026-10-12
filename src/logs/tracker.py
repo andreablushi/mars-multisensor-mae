@@ -38,12 +38,7 @@ def start_logging(
     ):
         if tracked.job_type == stage:
             tracked.delete()
-    run = wandb.init(
-        config=dict(config),
-        name=run_name,
-        group=run_name,
-        job_type=stage,
-    )
+    run = wandb.init(config=dict(config), name=run_name, group=run_name, job_type=stage)
     run.config.update(dict(facts))
     return run
 

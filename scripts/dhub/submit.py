@@ -24,13 +24,24 @@ SECRETS = [
 
 
 def load_platform() -> dict:
-    """Return what a platform run is given, read from `configs/digitalhub.yaml`."""
+    """Return what a platform run is given, read from `configs/digitalhub.yaml`.
+
+    Returns:
+        platform: Where and how each stage runs on DigitalHub, keyed as the file is.
+    """
     return yaml.safe_load(PLATFORM_CONFIG_PATH.read_text(encoding="utf-8"))
 
 
 def stage_workers(stage: str) -> int:
-    """Return how many processes read tiles beside one stage's work, as its cores."""
-    return int(load_platform()["stages"][stage]["resources"]["cpu"])
+    """Return how many processes read tiles beside one stage's work, twice its cores.
+
+    Args:
+        stage: Which stage, as `configs/digitalhub.yaml` names it.
+
+    Returns:
+        workers: Twice the cores the stage is given.
+    """
+    return 2 * int(load_platform()["stages"][stage]["resources"]["cpu"])
 
 
 def run_stage(

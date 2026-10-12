@@ -82,11 +82,7 @@ class Decoder(nn.Module):
         """
         # The context at the decoder width, then one mask token per slot as a query
         keys = torch.cat(
-            [
-                self.expand(context),
-                self.mask.expand(*position.shape[:2], -1),
-            ],
-            dim=1,
+            [self.expand(context), self.mask.expand(*position.shape[:2], -1)], dim=1
         )  # (B, S + K, D')
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
         # The readable context and the hidden patches are read, nothing else

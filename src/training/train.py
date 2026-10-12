@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from itertools import chain, islice, repeat
+from itertools import chain, repeat
 from pathlib import Path
 
 import torch
@@ -17,8 +17,7 @@ from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
 from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
-from training.checkpoint import save_checkpoint
-from training.early_stopping import EarlyStopping
+from training.checkpoint import EarlyStopping, save_checkpoint
 from training.step import step_terms
 from training.validate import validation_terms
 
@@ -30,7 +29,6 @@ def train(
     training: DataLoader,
     validation: DataLoader,
     max_steps: int,
-    accumulate: int,
     learning_rate: float,
     weight_decay: float,
     warmup_steps: int,
@@ -49,8 +47,6 @@ def train(
         training: The training split, in batches.
         validation: The validation split, in batches.
         max_steps: How many steps the run takes, at most.
-        accumulate: How many batches one step adds its gradients over, pooled
-            so the step equals one batch of all their tiles.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -73,7 +69,9 @@ def train(
         lr=learning_rate,
         weight_decay=weight_decay,
         betas=(0.9, 0.95),
+        fused=True,
     )
+    torch.set_float32_matmul_precision("high")
 
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:
@@ -91,15 +89,17 @@ def train(
     model.train()
     for step in range(1, max_steps + 1):
         began = time.perf_counter()
-        passes = list(islice(batches, accumulate))
+        batch, identities = next(batches)
         waited = time.perf_counter() - began
         optimizer.zero_grad()
-        terms = step_terms(model, passes, mask_ratio, generator, device)
+        terms = step_terms(model, batch, mask_ratio, generator, device)
+        terms["loss"].backward()
         # Stabilize training against exploding gradients
         norm = clip_grad_norm_(model.parameters(), 1.0)
         if not torch.isfinite(norm):
-            tiles = [tile for _, identities in passes for tile in identities]
-            raise FloatingPointError(f"step {step} has a non-finite gradient: {tiles}")
+            raise FloatingPointError(
+                f"step {step} has a non-finite gradient: {identities}"
+            )
         optimizer.step()
         scheduler.step()
         log_step(run, step, terms | {"grad_norm": norm})

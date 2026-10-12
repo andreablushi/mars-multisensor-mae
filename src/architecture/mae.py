@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor, nn
-from torch.nn import functional
 
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
@@ -45,12 +44,7 @@ class CrossSensorMAE(nn.Module):
         # One encoder per instrument, each from its patches to tokens
         self.encoders = nn.ModuleDict(
             {
-                name: Encoder(
-                    shape,
-                    encoder_dim,
-                    encoder_heads,
-                    encoder_depth,
-                )
+                name: Encoder(shape, encoder_dim, encoder_heads, encoder_depth)
                 for name, shape in shapes.items()
             }
         )
@@ -62,11 +56,7 @@ class CrossSensorMAE(nn.Module):
         self.decoders = nn.ModuleDict(
             {
                 name: Decoder(
-                    shape,
-                    encoder_dim,
-                    decoder_dim,
-                    decoder_heads,
-                    decoder_depth,
+                    shape, encoder_dim, decoder_dim, decoder_heads, decoder_depth
                 )
                 for name, shape in shapes.items()
             }
@@ -115,24 +105,6 @@ class CrossSensorMAE(nn.Module):
             torch.cat([batch[name].position for name in read], 1),  # (B, S, 3)
             torch.cat([readable[name] for name in read], 1),  # (B, S)
         )
-
-    def embed(
-        self, batch: dict[str, Tokens], present: dict[str, Tensor]
-    ) -> dict[str, Tensor]:
-        """Return the tokens standing for each tile, for every instrument it holds.
-
-        Args:
-            batch: Each instrument's patches over the batch.
-            present: Which slots hold a patch rather than padding. (B, K)
-
-        Returns:
-            tokens: Each instrument's tokens, of unit length, meaningful where
-                present. (B, K, D)
-        """
-        return {
-            name: functional.normalize(tokens, dim=-1)
-            for name, tokens in self.shared_tokens(batch, present).items()
-        }
 
     def forward(
         self,

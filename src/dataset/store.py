@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 from analysis import paths as labelled
-from analysis.ground_truth.artifacts import LABELS
+from analysis.ground_truth.catalogue import LABELS
 from analysis.ground_truth.models.label import Label
 from building import paths as built
 from building.common.layout import Axis
@@ -31,7 +31,6 @@ from dataset.models.observation import Observation
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
-STD_FLOOR = 1e-6
 CLIP = 2.0
 
 
@@ -121,6 +120,28 @@ class DatasetBuild:
             self.stats = stats
         return self.stats
 
+    def standardised_values(
+        self, values: np.ndarray, axes: Sequence[str], instrument: str
+    ) -> np.ndarray:
+        """Return one observation's values standardised by its instrument's constants.
+
+        Args:
+            values: The values, as the build stored them.
+            axes: What each axis of the values holds.
+            instrument: The instrument that took them.
+
+        Returns:
+            values: The standardised values.
+        """
+        constants = self.read_stats()[instrument]
+        # Per band constants run along the wavelength axis, a scalar along none.
+        shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
+        mean, std = (
+            np.asarray(constants[name], np.float32).reshape(shape)
+            for name in ("mean", "std")
+        )
+        return (values - mean) / std
+
     def read_label_by_tile(self) -> dict[str, str]:
         """Return the class the feature catalogue gave every tile the draw took.
 
@@ -140,6 +161,7 @@ class DatasetBuild:
         shapes: Mapping[str, tuple[int, ...]],
         delay: str,
         budget: Mapping[str, int] | None,
+        scale: float,
         seed: int | None,
     ) -> tuple[dict[str, Tokens], list[str]]:
         """Return one batch of tiles, each read from the run's cache or cut and cached.
@@ -154,12 +176,16 @@ class DatasetBuild:
             delay: The instrument whose rows give every surface patch its delay.
             budget: How many patches of each instrument a tile keeps, or None to
                 read it whole.
+            scale: The most the budget is multiplied by, drawn once per batch from 1.
             seed: What fixes each tile's centre, or None to draw a new one each read.
 
         Returns:
             batch: Each instrument's patches over the batch, keyed as ODE names it.
             identities: The tile each read belongs to, in the batch's own order.
         """
+        if budget is not None:
+            factor = random.uniform(1.0, scale)
+            budget = {name: round(count * factor) for name, count in budget.items()}
         samples = []
         for identity in identities:
             held = self.root / ready_tile_path(identity)
@@ -201,7 +227,8 @@ class DatasetBuild:
 
         Returns:
             observation: The observation, its values standardised by the build's own
-                constants and the rest as the build wrote them.
+                constants, CRISM's also clipped and zeroed where unmeasured or not
+                finite, and the rest as the build wrote them.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
@@ -214,13 +241,12 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         axes = tuple(described["axes"])
-        values = standardised_values(
-            arrays[described["measurement"]],
-            axes,
-            self.read_stats()[described["instrument"]],
+        values = self.standardised_values(
+            arrays[described["measurement"]], axes, described["instrument"]
         )
         if described["instrument"] == LAYOUT.instrument:
-            values = clipped_values(values, arrays[MEASURED])
+            measured = arrays[MEASURED][..., None] & np.isfinite(values)
+            values = np.where(measured, np.clip(values, -CLIP, CLIP), 0.0)
         return Observation(
             values=values,
             axes=axes,
@@ -230,39 +256,3 @@ class DatasetBuild:
             beside={name: arrays[name] for name in beside},
             described=described,
         )
-
-
-def standardised_values(
-    values: np.ndarray, axes: Sequence[str], constants: Mapping[str, Any]
-) -> np.ndarray:
-    """Return one observation's values standardised by its instrument's constants.
-
-    Args:
-        values: The values, as the build stored them.
-        axes: What each axis of the values holds.
-        constants: The instrument's mean and std, per band where it has bands.
-
-    Returns:
-        values: The standardised values.
-    """
-    # Per band constants run along the wavelength axis, a scalar along none.
-    shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
-    mean, std = (
-        np.asarray(constants[name], np.float32).reshape(shape)
-        for name in ("mean", "std")
-    )
-    return (values - mean) / np.maximum(std, STD_FLOOR)
-
-
-def clipped_values(values: np.ndarray, measured: np.ndarray) -> np.ndarray:
-    """Return standardised values clipped to the clip range, zero where not measured.
-
-    Args:
-        values: The standardised values, bands last. (lines, samples, bands)
-        measured: Whether each ground sample is a measurement. (lines, samples)
-
-    Returns:
-        values: The values clipped, zero at unmeasured and non-finite samples.
-    """
-    clipped = np.clip(values, -CLIP, CLIP)
-    return np.where(measured[..., None] & np.isfinite(clipped), clipped, 0.0)

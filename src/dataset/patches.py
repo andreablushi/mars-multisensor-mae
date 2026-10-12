@@ -43,9 +43,6 @@ def read_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows.get(name, ()):
-            # An observation missing any band is left out whole
-            if record.band_valid_count and not all(record.band_valid_count):
-                continue
             observation = build.read_observation(record.path)
             shape = observation.values.shape
             lengths = patch_lengths(shape, record.axes, size)
@@ -196,12 +193,7 @@ def read_patch_shapes(
     """
     rows = build.read_row_by_instrument()
     return {
-        name: patch_lengths(
-            rows[name].shape,
-            rows[name].axes,
-            size,
-            pool.get(name, 1),
-        )
+        name: patch_lengths(rows[name].shape, rows[name].axes, size, pool.get(name, 1))
         for name, size in sizes.items()
     }
 
@@ -233,8 +225,7 @@ def patch_arrays(
             -1, *measured_shape
         ),
         "position": np.array(
-            [[one.east_m, one.north_m, one.delay] for one in patches],
-            np.float32,
+            [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
         ).reshape(-1, 3),
     }
 

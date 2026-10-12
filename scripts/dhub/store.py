@@ -8,10 +8,13 @@ from urllib.parse import urlparse
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 from digitalhub.stores.client.base.factory import get_client
+from urllib3.exceptions import SSLError
 
-from configs.paths import build_root, checkpoint_path, results_path
+from configs.paths import RESULTS_FILE, build_root, checkpoint_path, results_path
 from dataset.store import DatasetBuild
 from dhub.submit import load_platform
+
+BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
 
 
 def refresh_credentials() -> None:
@@ -36,18 +39,28 @@ def published_build(build: str, root: str) -> DatasetBuild:
     client = dh.get_s3_client()
 
     def fetch(path: str) -> bytes:
-        """Return what one object of the build holds, straight from the store."""
+        """Return what one object of the build holds, straight from the store.
+
+        Args:
+            path: The object, relative to the build.
+
+        Returns:
+            data: The object's bytes.
+
+        Raises:
+            RuntimeError: When the read breaks again once the credentials are minted.
+        """
         nonlocal client
         key = prefix + path
         try:
             return client.get_object(Bucket=bucket, Key=key)["Body"].read()
-        except (ClientError, ResponseStreamingError):
+        except BROKEN_READS:
             # The store's credentials lapse and its streams break mid run.
             refresh_credentials()
             client = dh.get_s3_client()
             try:
                 return client.get_object(Bucket=bucket, Key=key)["Body"].read()
-            except (ClientError, ResponseStreamingError) as refused:
+            except BROKEN_READS as refused:
                 raise RuntimeError(f"{key}: {refused}") from None
 
     return DatasetBuild(root=build_root(build, root), fetch=fetch)
@@ -72,19 +85,19 @@ def published_checkpoint(run_name: str, checkpoints: str) -> Path:
 
 
 def fetched_results() -> list[Path]:
-    """Return where every published evaluation this machine lacked was fetched to.
+    """Return where every published evaluation file was fetched to, replacing any.
 
     Returns:
-        paths: One results file per run fetched, none where it was already here.
+        paths: One file per run and kind fetched.
     """
     refresh_credentials()
     project = dh.get_or_create_project(load_platform()["project"])
-    prefix = "results-"
     paths = []
     for artifact in project.list_artifacts():
-        held = results_path(artifact.name.removeprefix(prefix))
-        if not artifact.name.startswith(prefix) or held.is_file():
+        kind, _, run = artifact.name.partition("-")
+        if kind != Path(RESULTS_FILE).stem:
             continue
+        held = results_path(run)
         held.parent.mkdir(parents=True, exist_ok=True)
         paths.append(Path(artifact.download(str(held), overwrite=True)))
     return paths
@@ -106,17 +119,17 @@ def publish_checkpoint(project, path: Path, run_name: str):
 
 
 def publish_results(project, path: Path, run_name: str):
-    """Return one evaluation's results published as an artifact of the project.
+    """Return one evaluation file published as an artifact of the project.
 
     Args:
-        project: The DigitalHub project the results are logged into.
-        path: The results file, on this machine.
+        project: The DigitalHub project the file is logged into.
+        path: The file, on this machine, whose stem names the artifact's kind.
         run_name: What the evaluated run is called, which names the artifact.
 
     Returns:
-        artifact: The logged artifact.
+        artifact: The logged artifact, named <stem>-<run_name>.
     """
     refresh_credentials()
     return project.log_artifact(
-        name=f"results-{run_name}", kind="artifact", source=str(path)
+        name=f"{path.stem}-{run_name}", kind="artifact", source=str(path)
     )
