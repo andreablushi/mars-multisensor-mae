@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 from analysis import paths as labelled
-from analysis.ground_truth.artifacts import LABELS
+from analysis.ground_truth.catalogue import LABELS
 from analysis.ground_truth.models.label import Label
 from building import paths as built
 from building.common.layout import Axis
