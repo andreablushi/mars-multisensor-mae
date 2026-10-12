@@ -72,6 +72,7 @@ class TrainingConfig:
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        phase: Which phase of the training the run is.
         cmr: The instruments each instrument is rebuilt from cross-modally.
         frozen: The modules left as they are, named as the model holds them.
         checkpoints: Where checkpoints are written, relative to the repository.
@@ -85,6 +86,7 @@ class TrainingConfig:
     warmup_epochs: int
     validate_every: int
     mask_ratio: float
+    phase: str
     cmr: dict[str, list[str]]
     frozen: list[str]
     checkpoints: str
@@ -106,8 +108,7 @@ class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
-        run_name: What the run is called, which names the model it saves and the
-            tracked run it logs to.
+        run_name: What the run is called, which groups its phases.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
@@ -119,3 +120,12 @@ class Config:
     model: ModelConfig
     training: TrainingConfig
     evaluation: EvaluationConfig
+
+    @property
+    def model_name(self) -> str:
+        """Return what the model a phase trains is called, and its tracked run.
+
+        Returns:
+            name: The run's name and its phase.
+        """
+        return f"{self.run_name}-{self.training.phase}"

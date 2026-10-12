@@ -1,0 +1,12 @@
+# @package _global_
+# The first phase: MOLA and SHARAD alone, each rebuilt from the other, so elevation
+# and delay meet before any surface image.
+
+model:
+  instruments: [MOLA, SHARAD]
+
+training:
+  phase: dem_delay
+  cmr:
+    MOLA: [SHARAD]
+    SHARAD: [MOLA]

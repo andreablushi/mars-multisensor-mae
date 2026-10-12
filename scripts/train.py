@@ -87,7 +87,7 @@ def run_training(
     run.finish()
     published = last
     if project is not None:
-        published = publish_checkpoint(project, last, config.run_name)
+        published = publish_checkpoint(project, last, config.model_name)
     if evaluate:
         evaluate_checkpoint(config, last, project)
     return published

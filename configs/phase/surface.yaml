@@ -1,0 +1,17 @@
+# @package _global_
+# The second phase: CTX and CRISM learn to reach the space MOLA and SHARAD left,
+# everything the first phase trained left as it is.
+
+training:
+  phase: surface
+  cmr:
+    CTX: [CRISM, MOLA]
+    CRISM: [CTX, MOLA]
+    MOLA: [SHARAD, CTX, CRISM]
+    SHARAD: [MOLA]
+  frozen:
+    - encoders.MOLA
+    - encoders.SHARAD
+    - decoders.MOLA
+    - decoders.SHARAD
+    - crossencoder

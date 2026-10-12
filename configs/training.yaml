@@ -1,4 +1,5 @@
-# How a run trains, validates and stops.
+# How a run trains, validates and stops, each phase in configs/phase changing
+# what it needs.
 
 # A run is a fixed number of passes over the training split, as CSMAE trains, and
 # its last checkpoint is the one kept.
@@ -19,12 +20,11 @@ validate_every: 10
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
-# The instruments each instrument is rebuilt from cross-modally.
-cmr:
-  CTX: [CRISM, MOLA]
-  CRISM: [CTX, MOLA]
-  MOLA: [SHARAD, CTX, CRISM]
-  SHARAD: [MOLA]
+# Which phase of the training the run is, which names the model and its tracked run,
+# and the instruments each instrument is rebuilt from cross-modally: both set by the
+# phase.
+phase: ???
+cmr: ???
 
 # The modules left as they are, named as the model holds them: encoders.MOLA.
 frozen: []
