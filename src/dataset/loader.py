@@ -60,7 +60,6 @@ def loaders_by_split(
     budget_scale: float,
     shares: Sequence[float],
     seed: int,
-    delay: str,
     batch_size: int,
     workers: int,
 ) -> dict[str, DataLoader]:
@@ -75,7 +74,6 @@ def loaders_by_split(
         budget_scale: The most a training batch's budget is multiplied by.
         shares: The share of the observations each split holds, in the code's order.
         seed: What fixes which split a tile falls in, and each validation tile's cut.
-        delay: The instrument whose rows give every surface patch its delay.
         batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the training.
 
@@ -92,7 +90,6 @@ def loaders_by_split(
             sizes,
             pool,
             shapes,
-            delay,
             batch_size,
             workers,
             name == TRAINING_SPLIT,
@@ -111,7 +108,6 @@ def tile_loader(
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
-    delay: str,
     batch_size: int,
     workers: int,
     shuffle: bool,
@@ -128,7 +124,6 @@ def tile_loader(
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
-        delay: The instrument whose rows give every surface patch its delay.
         batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the model.
         shuffle: Whether the tiles come in a new order every pass.
@@ -156,7 +151,6 @@ def tile_loader(
             sizes=sizes,
             pool=pool,
             shapes=shapes,
-            delay=delay,
             budget=budget,
             scale=scale,
             seed=seed,

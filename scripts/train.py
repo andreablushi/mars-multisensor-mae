@@ -47,7 +47,6 @@ def run_training(
         config.dataset.budget_scale,
         config.dataset.split,
         config.dataset.seed,
-        config.model.delay,
         config.training.batch_size,
         stage_workers(TRAINING_STAGE),
     )

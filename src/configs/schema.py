@@ -39,8 +39,7 @@ class ModelConfig:
     """What the model reads, and how wide and deep each of its parts is.
 
     Attributes:
-        instruments: The instruments whose patches become tokens, the delay one apart.
-        delay: The instrument whose rows give every surface patch its delay.
+        instruments: The instruments whose patches become tokens.
         encoder_dim: How wide a token is everywhere but the decoders, a multiple of 6.
         encoder_heads: How many attention heads every encoder runs.
         encoder_depth: How many blocks each instrument encoder stacks.
@@ -51,7 +50,6 @@ class ModelConfig:
     """
 
     instruments: list[str]
-    delay: str
     encoder_dim: int
     encoder_heads: int
     encoder_depth: int

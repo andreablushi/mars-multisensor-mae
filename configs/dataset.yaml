@@ -17,6 +17,8 @@ patchsize:
   # A survey at about 200 m a pixel, its multispectral bands kept whole: about 1660
   # (2620), scaled from 12 pixel patches.
   CRISM: {ground: 3}
+  # A gridded elevation at about 463 m a pixel: about 930 m, as a SHARAD patch.
+  MOLA: {ground: 2}
   # A sounder walks one line, so its ground is traces about 465 m apart and its delay
   # is depth: 1946 (5002).
   SHARAD: {ground: 2, delay: 256}
@@ -34,6 +36,8 @@ budget:
   CTX: 192
   # The same ground as CTX.
   CRISM: 192
+  # The same ground as CTX.
+  MOLA: 92
   # About 7 km of one track, every delay.
   SHARAD: 112
 

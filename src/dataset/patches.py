@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from building.common.layout import Axis
+from building.configs import sharad
 from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
@@ -25,7 +26,6 @@ def read_tile_patches(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
-    delays: np.ndarray,
 ) -> dict[str, list[Patch]]:
     """Return every patch of every observation one tile holds, by instrument.
 
@@ -34,7 +34,6 @@ def read_tile_patches(
         build: The published build the observations are read from.
         sizes: How far a patch of each instrument runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
-        delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
         read: The patches of each instrument, none empty, keyed as ODE names it.
@@ -50,7 +49,7 @@ def read_tile_patches(
                 length // patch for length, patch in zip(shape, lengths, strict=True)
             )
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, at, lengths, counts, delays)
+                patch = cut_patch(observation, at, lengths, counts)
                 if patch.measured.any():
                     if name in pool:
                         patch = downsampled_patch(patch, pool[name])
@@ -64,7 +63,6 @@ def cut_patch(
     index: int,
     lengths: tuple[int, ...],
     counts: tuple[int, ...],
-    delays: np.ndarray,
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -73,7 +71,6 @@ def cut_patch(
         index: Which patch, counting whole ones as the axes run, the last fastest.
         lengths: How far one patch of it runs along each axis.
         counts: How many whole patches each of those axes holds.
-        delays: Which delay row the ground sounds at, over the tile. (N, 3)
 
     Returns:
         patch: The patch, copied, with what it measured and where it sits.
@@ -104,11 +101,8 @@ def cut_patch(
         at = axes.index(Axis.DELAY)
         delay = origin[at] + lengths[at] / 2
     else:
-        # A patch on the ground sounds at one row, the one its surface echo lands on.
-        nearest = np.argmin(
-            (delays[:, 0] - north_m) ** 2 + (delays[:, 1] - east_m) ** 2
-        )
-        delay = float(delays[nearest, 2]) + 0.5
+        # Every ground patch sits at the areoid row, so delay only places a sounder
+        delay = float(sharad.AREOID_ROW)
     return Patch(
         values=observation.values[window].copy(),
         measured=measured,

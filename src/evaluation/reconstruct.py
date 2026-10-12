@@ -13,7 +13,6 @@ from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
-from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 from dataset.store import CLIP, STANDARDISED_BY, DatasetBuild
 from training.step import drawn_masks
@@ -27,7 +26,6 @@ def reconstruct(
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
-    delay: str,
     budget: Mapping[str, int],
     mask_ratio: float,
     seed: int,
@@ -43,7 +41,6 @@ def reconstruct(
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
-        delay: The instrument whose rows give every surface patch its delay.
         budget: How many patches of each instrument are kept.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         seed: What fixes the cut and the masks.
@@ -63,9 +60,7 @@ def reconstruct(
         for name in sizes
         if name in rows
     }
-    read = read_tile_patches(
-        shown, build, sizes, pool, read_surface_delays(build, rows[delay])
-    )
+    read = read_tile_patches(shown, build, sizes, pool)
     sample = cropped_patch_arrays(
         {
             name: patch_arrays(held, shapes[name], axes[name])

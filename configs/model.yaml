@@ -1,9 +1,8 @@
 # An encoder and a decoder per instrument, one cross-sensor encoder between them.
 
-# The instruments read as tokens, MOLA instead giving every surface patch the
-# radargram row its echo lands on, so every patch is placed in delay alone.
-instruments: [CTX, CRISM, SHARAD]
-delay: MOLA
+# The instruments read as tokens. Every surface patch sits at the areoid row, so
+# delay places SHARAD alone.
+instruments: [CTX, CRISM, MOLA, SHARAD]
 
 # The instrument encoders and the cross-sensor encoder, all one width.
 encoder_dim: 384

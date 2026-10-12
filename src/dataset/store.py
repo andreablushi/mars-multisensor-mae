@@ -28,7 +28,6 @@ from common.disk.files import atomic_path
 from architecture.tokens import Tokens, token_batch_padding
 from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
-from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
 CLIP = 2.0
@@ -161,7 +160,6 @@ class DatasetBuild:
         sizes: Mapping[str, Mapping[str, int]],
         pool: Mapping[str, int],
         shapes: Mapping[str, tuple[int, ...]],
-        delay: str,
         budget: Mapping[str, int] | None,
         scale: float,
         seed: int | None,
@@ -175,7 +173,6 @@ class DatasetBuild:
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             pool: How many ground samples of a patch each instrument averages into one.
             shapes: The shape of one patch of each instrument as the model reads it.
-            delay: The instrument whose rows give every surface patch its delay.
             budget: How many patches of each instrument a tile keeps, or None to
                 read it whole.
             scale: The most the budget is multiplied by, drawn once per batch from 1.
@@ -198,9 +195,7 @@ class DatasetBuild:
                         name, key = packed.split("/")
                         sample.setdefault(name, {})[key] = arrays[packed]
             else:
-                rows = tiles[identity]
-                delays = read_surface_delays(self, rows[delay])
-                read = read_tile_patches(rows, self, sizes, pool, delays)
+                read = read_tile_patches(tiles[identity], self, sizes, pool)
                 sample = {
                     name: patch_arrays(drawn, shapes[name], axes[name])
                     for name, drawn in read.items()

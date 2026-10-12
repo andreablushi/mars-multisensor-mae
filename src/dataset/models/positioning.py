@@ -1,12 +1,8 @@
-"""Where the samples of one observation sit around their tile centre, and its delays."""
+"""Where the samples of one observation sit around their tile centre."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
-
 import numpy as np
-from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common import geometry, relative_positioning
 from building.preprocessing.common.models.position import Position
 from building.preprocessing.common.store import STORED
@@ -14,9 +10,6 @@ from common.maths.geodesy import SPHEROID, PolarGrid
 from common.models.tile import Tile
 
 from dataset.models.observation import Observation
-
-if TYPE_CHECKING:
-    from dataset.store import DatasetBuild
 
 
 # It's done there for memory reasons
@@ -65,29 +58,3 @@ def metres_from_centre(
         easting[block] = span * np.sin(bearing)
         northing[block] = span * np.cos(bearing)
     return northing, easting
-
-
-def read_surface_delays(
-    build: DatasetBuild, observations: Sequence[ObservationMetadata]
-) -> np.ndarray:
-    """Return the row every sample of the delay instrument sounds at, over a tile.
-
-    Args:
-        build: The published build the observations are read from.
-        observations: The tile's index rows of the instrument carrying the delay.
-
-    Returns:
-        delays: One row per sample: north, east and the delay row. (N, 3)
-    """
-    placed = []
-    for record in observations:
-        # Loads specifically the delay plane, which is beside the measured values.
-        observation = build.read_observation(record.path, ("delay",))
-        measured = observation.measured
-        north, east = metres_from_centre(observation)
-        rows = observation.beside["delay"]
-        # Unmeasured samples have no delay row.
-        placed.append(
-            np.stack([north[measured], east[measured], rows[measured]], axis=1)
-        )  # (n, 3)
-    return np.concatenate(placed).astype(np.float64)  # (N, 3)
