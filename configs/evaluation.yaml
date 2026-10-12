@@ -4,3 +4,6 @@
 
 # The build the labelled tiles are read from, published as dataset-<build>.
 build: evaluation
+
+# The instruments read as views, each on its own and all together.
+views: [CTX, CRISM, SHARAD]

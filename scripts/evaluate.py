@@ -89,7 +89,8 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
         build,
         {tile: rows for tile, rows in by_tile.items() if tile in classes},
         axes,
-        sizes,
+        # Only the views are read, whatever else the model holds
+        {name: sizes[name] for name in config.evaluation.views if name in sizes},
         config.dataset.pool,
         shapes,
         EVALUATION_BATCH_SIZE,
