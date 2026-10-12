@@ -67,6 +67,7 @@ class TrainingConfig:
         epochs: How many passes over the training split the run takes.
         batch_size: How many tiles one step's gradient is averaged over.
         learning_rate: The peak learning rate, reached after the warmup.
+        crossencoder_rate: What the crossencoder's learning rate is scaled by.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         validate_every: How many epochs between two validations.
@@ -79,6 +80,7 @@ class TrainingConfig:
     epochs: int
     batch_size: int
     learning_rate: float
+    crossencoder_rate: float
     weight_decay: float
     warmup_epochs: int
     validate_every: int

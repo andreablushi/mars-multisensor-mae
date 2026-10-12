@@ -7,6 +7,8 @@ epochs: 150
 # budget.
 batch_size: 128
 learning_rate: 0.0003
+# What the crossencoder's learning rate is scaled by.
+crossencoder_rate: 1.0
 weight_decay: 0.05
 # How many epochs the rate climbs before the cosine decay.
 warmup_epochs: 10

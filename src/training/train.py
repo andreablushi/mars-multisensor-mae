@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from itertools import chain, repeat
 from pathlib import Path
@@ -23,6 +24,8 @@ from training.validate import validation_terms
 
 log = console_logger(__name__)
 
+CROSSENCODER = "crossencoder."
+
 
 def train(
     model: CrossSensorMAE,
@@ -30,6 +33,7 @@ def train(
     validation: DataLoader,
     epochs: int,
     learning_rate: float,
+    crossencoder_rate: float,
     weight_decay: float,
     warmup_epochs: int,
     validate_every: int,
@@ -49,6 +53,7 @@ def train(
         validation: The validation split, in batches.
         epochs: How many passes over the training split the run takes.
         learning_rate: The peak learning rate, reached after the warmup.
+        crossencoder_rate: What the crossencoder's learning rate is scaled by.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         validate_every: How many epochs between two validations.
@@ -65,12 +70,20 @@ def train(
     """
     for name in frozen:
         model.get_submodule(name).requires_grad_(False)
-    trained = [one for one in model.parameters() if one.requires_grad]
+    groups = defaultdict(list)
+    for name, one in model.named_parameters():
+        if one.requires_grad:
+            groups[name.startswith(CROSSENCODER), one.ndim > 1].append(one)
     # Biases, norms and learned vectors are not decayed, as MAE leaves them
-    decayed = [one for one in trained if one.ndim > 1]
-    kept = [one for one in trained if one.ndim <= 1]
     optimizer = torch.optim.AdamW(
-        [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
+        [
+            {
+                "params": held,
+                "lr": learning_rate * (crossencoder_rate if shared else 1.0),
+                "weight_decay": weight_decay if decayed else 0.0,
+            }
+            for (shared, decayed), held in groups.items()
+        ],
         lr=learning_rate,
         weight_decay=weight_decay,
         betas=(0.9, 0.95),

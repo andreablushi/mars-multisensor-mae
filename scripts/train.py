@@ -72,6 +72,7 @@ def run_training(
         validation,
         config.training.epochs,
         config.training.learning_rate,
+        config.training.crossencoder_rate,
         config.training.weight_decay,
         config.training.warmup_epochs,
         config.training.validate_every,
