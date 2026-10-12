@@ -24,5 +24,8 @@ cmr:
   MOLA: [SHARAD, CTX, CRISM]
   SHARAD: [MOLA]
 
+# The modules left as they are, named as the model holds them: encoders.MOLA.
+frozen: []
+
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

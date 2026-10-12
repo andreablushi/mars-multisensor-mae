@@ -35,6 +35,7 @@ def train(
     validate_every: int,
     mask_ratio: float,
     sources: Mapping[str, Sequence[str]],
+    frozen: Sequence[str],
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -53,6 +54,7 @@ def train(
         validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         sources: The instruments each instrument is rebuilt from cross-modally.
+        frozen: The modules left as they are, named as the model holds them.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -61,9 +63,12 @@ def train(
     Returns:
         last: The checkpoint the run ended on.
     """
+    for name in frozen:
+        model.get_submodule(name).requires_grad_(False)
+    trained = [one for one in model.parameters() if one.requires_grad]
     # Biases, norms and learned vectors are not decayed, as MAE leaves them
-    decayed = [one for one in model.parameters() if one.ndim > 1]
-    kept = [one for one in model.parameters() if one.ndim <= 1]
+    decayed = [one for one in trained if one.ndim > 1]
+    kept = [one for one in trained if one.ndim <= 1]
     optimizer = torch.optim.AdamW(
         [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
         lr=learning_rate,

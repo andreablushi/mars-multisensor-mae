@@ -72,6 +72,7 @@ class TrainingConfig:
         validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         cmr: The instruments each instrument is rebuilt from cross-modally.
+        frozen: The modules left as they are, named as the model holds them.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -83,6 +84,7 @@ class TrainingConfig:
     validate_every: int
     mask_ratio: float
     cmr: dict[str, list[str]]
+    frozen: list[str]
     checkpoints: str
 
 

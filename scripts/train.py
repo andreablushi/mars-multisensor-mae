@@ -77,6 +77,7 @@ def run_training(
         config.training.validate_every,
         config.training.mask_ratio,
         config.training.cmr,
+        config.training.frozen,
         config.training.checkpoints,
         config.dataset.seed,
         device,
