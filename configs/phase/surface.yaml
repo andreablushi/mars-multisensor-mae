@@ -4,6 +4,7 @@
 
 training:
   phase: surface
+  init: dem_delay
   cmr:
     CTX: [CRISM, MOLA]
     CRISM: [CTX, MOLA]

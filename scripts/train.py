@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from dhub.store import publish_checkpoint, published_build
+import torch
+from dhub.store import publish_checkpoint, published_build, published_checkpoint
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
 from evaluate import built_model, evaluate_checkpoint
@@ -38,6 +39,15 @@ def run_training(
     config = load_config(overrides or [])
     build = published_build(config.dataset.build, config.dataset.root)
     model, device, sizes, shapes = built_model(config, build)
+    if config.training.init is not None:
+        # A later phase holds instruments an earlier one never trained
+        held = published_checkpoint(
+            config.phase_model_name(config.training.init), config.training.checkpoints
+        )
+        log.info("starting from %s", held)
+        model.load_state_dict(
+            torch.load(held, map_location="cpu")["model"], strict=False
+        )
     loaders = loaders_by_split(
         build,
         sizes,

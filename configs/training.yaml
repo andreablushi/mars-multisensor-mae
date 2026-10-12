@@ -29,5 +29,8 @@ cmr: ???
 # The modules left as they are, named as the model holds them: encoders.MOLA.
 frozen: []
 
+# The phase of the same run whose published model this one starts from, if any.
+init: null
+
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints
