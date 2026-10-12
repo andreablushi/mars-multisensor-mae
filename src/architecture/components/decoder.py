@@ -97,17 +97,17 @@ class Decoder(nn.Module):
     def forward(
         self, own: Context, others: Context, position: Tensor, hidden: Tensor
     ) -> tuple[Tensor, Tensor]:
-        """Return the instrument's hidden patches, from its own tokens and the others'.
+        """Return the instrument's hidden patches, from its own tokens and its sources'.
 
         Args:
             own: The instrument's own tokens.
-            others: Every other instrument's tokens.
+            others: The tokens of the instruments it is rebuilt from.
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
             hidden: Which of them to predict. (B, K)
 
         Returns:
             umr: The patches read from the instrument's own tokens. (B, K, *P)
-            cmr: The same patches read from every other instrument's. (B, K, *P)
+            cmr: The same patches read from its sources' tokens. (B, K, *P)
         """
         # Each pass is recomputed on the way back, so only one is held at once
         umr = checkpoint(

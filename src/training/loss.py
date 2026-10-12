@@ -52,10 +52,10 @@ def cmr(
     batch: Mapping[str, Tokens],
     hidden: Mapping[str, Tensor],
 ) -> dict[str, Tensor]:
-    """Return each instrument's CMR error, read from every other instrument's tokens.
+    """Return each instrument's CMR error, read from its sources' tokens.
 
     Args:
-        predictions: Each instrument's patches read from the others' tokens.
+        predictions: Each instrument's patches read from its sources' tokens.
             (B, K, *P)
         batch: Each instrument's patches over the batch.
         hidden: Which patches are predicted. (B, K)

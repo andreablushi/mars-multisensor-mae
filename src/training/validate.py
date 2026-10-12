@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 import torch
 from torch.utils.data import DataLoader
 
@@ -13,6 +15,7 @@ def validation_terms(
     model: CrossSensorMAE,
     loader: DataLoader,
     mask_ratio: float,
+    sources: Mapping[str, Sequence[str]],
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
@@ -22,6 +25,7 @@ def validation_terms(
         model: The model, which is switched to evaluation.
         loader: The split, in batches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        sources: The instruments each instrument is rebuilt from cross-modally.
         seed: What fixes the masks.
         device: Where the model runs.
 
@@ -32,7 +36,7 @@ def validation_terms(
     generator = torch.Generator(device=device).manual_seed(seed)
     with torch.no_grad():
         terms = [
-            step_terms(model, batch, mask_ratio, generator, device)
+            step_terms(model, batch, mask_ratio, sources, generator, device)
             for batch, _ in loader
         ]
     return {

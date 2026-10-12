@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 import torch
 from torch import Tensor
 
@@ -43,6 +45,7 @@ def step_terms(
     model: CrossSensorMAE,
     batch: dict[str, Tokens],
     mask_ratio: float,
+    sources: Mapping[str, Sequence[str]],
     generator: torch.Generator,
     device: torch.device,
 ) -> dict[str, Tensor]:
@@ -52,6 +55,7 @@ def step_terms(
         model: The model, on the device.
         batch: Each instrument's patches over the batch, as the loader hands it.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        sources: The instruments each instrument is rebuilt from cross-modally.
         generator: What fixes the masks, on the device.
         device: Where the model runs.
 
@@ -64,7 +68,7 @@ def step_terms(
     }
     visible, hidden = drawn_masks(batch, mask_ratio, generator)
     with torch.autocast(device.type, dtype=torch.bfloat16):
-        predictions = model(batch, visible, hidden)
+        predictions = model(batch, visible, hidden, sources)
     return total(
         umr(predictions["umr"], batch, hidden), cmr(predictions["cmr"], batch, hidden)
     )

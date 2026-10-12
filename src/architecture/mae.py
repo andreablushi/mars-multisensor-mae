@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 import torch
 from torch import Tensor, nn
 
@@ -115,6 +117,7 @@ class CrossSensorMAE(nn.Module):
         batch: dict[str, Tokens],
         visible: dict[str, Tensor],
         hidden: dict[str, Tensor],
+        sources: Mapping[str, Sequence[str]],
     ) -> dict[str, dict[str, Tensor]]:
         """Return every instrument's hidden patches, from its own tokens and others'.
 
@@ -122,18 +125,18 @@ class CrossSensorMAE(nn.Module):
             batch: Each instrument's patches over the batch.
             visible: Which patches each encoder may read. (B, K)
             hidden: Which patches are predicted, none of them padding. (B, K)
+            sources: The instruments each instrument is rebuilt from cross-modally.
 
         Returns:
             predictions: Under "umr" each instrument's patches read from its own
-                tokens, under "cmr" from every other instrument's. (B, K, *P)
+                tokens, under "cmr" from its sources' tokens. (B, K, *P)
         """
         tokens = self.shared_tokens(batch, visible)
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
-            others = [other for other in batch if other != name]
             predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
                 self.context(tokens, batch, visible, [name]),
-                self.context(tokens, batch, visible, others),
+                self.context(tokens, batch, visible, sources[name]),
                 one.position,
                 hidden[name],
             )  # (B, K, *P) each

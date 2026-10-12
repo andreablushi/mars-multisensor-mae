@@ -71,6 +71,7 @@ class TrainingConfig:
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        cmr: The instruments each instrument is rebuilt from cross-modally.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -81,6 +82,7 @@ class TrainingConfig:
     warmup_epochs: int
     validate_every: int
     mask_ratio: float
+    cmr: dict[str, list[str]]
     checkpoints: str
 
 

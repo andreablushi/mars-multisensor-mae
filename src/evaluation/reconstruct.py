@@ -28,6 +28,7 @@ def reconstruct(
     shapes: Mapping[str, tuple[int, ...]],
     budget: Mapping[str, int],
     mask_ratio: float,
+    sources: Mapping[str, Sequence[str]],
     seed: int,
     device: torch.device,
 ) -> dict[str, dict[str, np.ndarray]]:
@@ -43,6 +44,7 @@ def reconstruct(
         shapes: The shape of one patch of each instrument as the model reads it.
         budget: How many patches of each instrument are kept.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        sources: The instruments each instrument is rebuilt from cross-modally.
         seed: What fixes the cut and the masks.
         device: Where the model runs.
 
@@ -79,7 +81,7 @@ def reconstruct(
     visible, hidden = drawn_masks(batch, mask_ratio, generator)
     model.eval()
     with torch.no_grad():
-        predictions = model(batch, visible, hidden)
+        predictions = model(batch, visible, hidden, sources)
     # How each instrument was normalised, named by the constants the build applies
     normalization = {
         name: "/".join(STANDARDISED_BY)

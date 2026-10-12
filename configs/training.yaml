@@ -17,5 +17,12 @@ validate_every: 10
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
+# The instruments each instrument is rebuilt from cross-modally.
+cmr:
+  CTX: [CRISM, MOLA]
+  CRISM: [CTX, MOLA]
+  MOLA: [SHARAD, CTX, CRISM]
+  SHARAD: [MOLA]
+
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

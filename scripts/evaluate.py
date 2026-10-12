@@ -122,6 +122,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
             shapes,
             config.dataset.budget,
             config.training.mask_ratio,
+            config.training.cmr,
             config.dataset.seed,
             device,
         ),
