@@ -31,6 +31,7 @@ def train(
     model: CrossSensorMAE,
     training: DataLoader,
     validation: DataLoader,
+    first_step: int,
     epochs: int,
     learning_rate: float,
     crossencoder_rate: float,
@@ -51,6 +52,8 @@ def train(
         model: The model, already on the device.
         training: The training split, in batches.
         validation: The validation split, in batches.
+        first_step: How many steps the model had taken before, which this run counts on
+            from.
         epochs: How many passes over the training split the run takes.
         learning_rate: The peak learning rate, reached after the warmup.
         crossencoder_rate: What the crossencoder's learning rate is scaled by.
@@ -104,7 +107,7 @@ def train(
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
     model.train()
-    for step in range(1, max_steps + 1):
+    for step in range(first_step + 1, first_step + max_steps + 1):
         began = time.perf_counter()
         batch, identities = next(batches)
         waited = time.perf_counter() - began
@@ -127,7 +130,9 @@ def train(
             time.perf_counter() - began - waited,
         )
         # The last step is validated too, so every run ends on a measured loss
-        if step % (validate_every * len(training)) and step < max_steps:
+        if (step - first_step) % (validate_every * len(training)) and step < (
+            first_step + max_steps
+        ):
             continue
         metrics = validation_terms(model, validation, mask_ratio, sources, seed, device)
         model.train()  # Validating switched it to evaluation
@@ -139,7 +144,7 @@ def train(
         {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
-            "step": max_steps,
+            "step": step,
         },
         last,
     )
@@ -147,7 +152,7 @@ def train(
         run,
         {
             "validation_loss": metrics["loss"],
-            "steps": max_steps,
+            "steps": step,
             "run_seconds": time.perf_counter() - started,
         },
     )

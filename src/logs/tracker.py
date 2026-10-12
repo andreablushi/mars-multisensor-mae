@@ -15,7 +15,8 @@ from configs.paths import ENV_PATH
 
 def start_logging(
     config: Mapping[str, object],
-    run_name: str,
+    name: str,
+    group: str,
     stage: str,
     facts: Mapping[str, object],
 ) -> Run:
@@ -23,22 +24,22 @@ def start_logging(
 
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
-        run_name: What the run is called, which names and groups the tracked run.
-        stage: What the stage is called, which tells a training from an evaluation.
+        name: What the tracked run is called.
+        group: What it is grouped under, so every phase of one run sits together.
+        stage: What the stage is called, which tells one phase from another.
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named and grouped by the run name so the training and
-            the evaluation of one model sit together, its place read from the .env.
+        run: The run, named and grouped, its place read from the .env.
     """
     load_dotenv(ENV_PATH)
     for tracked in wandb.Api().runs(
         f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
-        filters={"display_name": run_name},
+        filters={"display_name": name},
     ):
         if tracked.job_type == stage:
             tracked.delete()
-    run = wandb.init(config=dict(config), name=run_name, group=run_name, job_type=stage)
+    run = wandb.init(config=dict(config), name=name, group=group, job_type=stage)
     run.config.update(dict(facts))
     return run
 

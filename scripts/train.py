@@ -39,15 +39,16 @@ def run_training(
     config = load_config(overrides or [])
     build = published_build(config.dataset.build, config.dataset.root)
     model, device, sizes, shapes = built_model(config, build)
+    first_step = 0
     if config.training.init is not None:
         # A later phase holds instruments an earlier one never trained
         held = published_checkpoint(
             config.phase_model_name(config.training.init), config.training.checkpoints
         )
         log.info("starting from %s", held)
-        model.load_state_dict(
-            torch.load(held, map_location="cpu")["model"], strict=False
-        )
+        loaded = torch.load(held, map_location="cpu")
+        model.load_state_dict(loaded["model"], strict=False)
+        first_step = loaded["step"]
     loaders = loaders_by_split(
         build,
         sizes,
@@ -64,8 +65,9 @@ def run_training(
     log.info("training on %s", device)
     run = start_logging(
         asdict(config),
+        config.model_name,
         config.run_name,
-        TRAINING_STAGE,
+        f"{TRAINING_STAGE}.{config.training.phase}",
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
@@ -80,6 +82,7 @@ def run_training(
         model,
         training,
         validation,
+        first_step,
         config.training.epochs,
         config.training.learning_rate,
         config.training.crossencoder_rate,
