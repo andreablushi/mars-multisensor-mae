@@ -31,7 +31,6 @@ from dataset.models.observation import Observation
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
-STD_FLOOR = 1e-6
 CLIP = 2.0
 
 
@@ -141,7 +140,7 @@ class DatasetBuild:
             np.asarray(constants[name], np.float32).reshape(shape)
             for name in ("mean", "std")
         )
-        return (values - mean) / np.maximum(std, STD_FLOOR)
+        return (values - mean) / std
 
     def read_label_by_tile(self) -> dict[str, str]:
         """Return the class the feature catalogue gave every tile the draw took.
