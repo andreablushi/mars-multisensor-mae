@@ -5,12 +5,14 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
+import plotly.graph_objects as go
 import wandb
 from dotenv import load_dotenv
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
 from configs.paths import ENV_PATH
+from figures.style import TEMPLATE
 
 
 def start_logging(
@@ -67,6 +69,34 @@ def log_validation(run: Run, step: int, metrics: Mapping[str, float]) -> None:
         metrics: Every loss term over the validation split, keyed as they name them.
     """
     run.log({f"validation_{name}": value for name, value in metrics.items()}, step=step)
+
+
+def log_phases(
+    run: Run,
+    curves: Mapping[str, list[tuple[int, float]]],
+    starts: Mapping[str, int],
+    step: int,
+) -> None:
+    """Log every loss curve in one figure, a dashed line where each phase starts.
+
+    Args:
+        run: The tracked run.
+        curves: Each curve so far, keyed as it is logged, as (step, value).
+        starts: The step each phase starts after, keyed by phase.
+        step: Which step of the whole run it is logged at.
+    """
+    figure = go.Figure(
+        [
+            go.Scatter(
+                x=[at for at, _ in points], y=[one for _, one in points], name=name
+            )
+            for name, points in curves.items()
+        ],
+        layout={"template": TEMPLATE, "xaxis_title": "step", "yaxis_title": "loss"},
+    )
+    for phase, start in starts.items():
+        figure.add_vline(x=start, line_dash="dash", annotation_text=phase)
+    run.log({"phases": figure}, step=step)
 
 
 def log_summary(run: Run, summary: Mapping[str, object]) -> None:

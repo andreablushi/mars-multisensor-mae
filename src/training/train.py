@@ -45,8 +45,8 @@ def train(
     seed: int,
     device: torch.device,
     run: Run,
-) -> Path:
-    """Return where the last checkpoint was written, after training the model.
+) -> tuple[Path, dict[str, list[tuple[int, float]]]]:
+    """Return the last checkpoint and every loss curve, after training the model.
 
     Args:
         model: The model, already on the device.
@@ -70,6 +70,7 @@ def train(
 
     Returns:
         last: The checkpoint the run ended on.
+        curves: The training loss and every validation term, as (step, value).
     """
     for name in frozen:
         model.get_submodule(name).requires_grad_(False)
@@ -106,6 +107,7 @@ def train(
     generator = torch.Generator(device=device).manual_seed(seed)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
+    curves = defaultdict(list)
     model.train()
     for step in range(first_step + 1, first_step + max_steps + 1):
         began = time.perf_counter()
@@ -123,6 +125,7 @@ def train(
         optimizer.step()
         scheduler.step()
         log_step(run, step, terms | {"grad_norm": norm})
+        curves["train_loss"].append((step, terms["loss"].item()))
         log.info(
             "step %d waited %.1f s for data, computed in %.1f s",
             step,
@@ -137,6 +140,8 @@ def train(
         metrics = validation_terms(model, validation, mask_ratio, sources, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
+        for name, value in metrics.items():
+            curves[f"validation_{name}"].append((step, value))
         log.info("step %d validation loss %.4f", step, metrics["loss"])
     last = checkpoint_path(checkpoints, "last")
     last.parent.mkdir(parents=True, exist_ok=True)
@@ -156,4 +161,4 @@ def train(
             "run_seconds": time.perf_counter() - started,
         },
     )
-    return last
+    return last, curves

@@ -8,7 +8,7 @@ defaults:
   - phase: dem_delay
   - _self_
 
-# What this run is called, which groups its phases: the model each phase saves is
-# published as <run_name>-<phase>, its tracked run named the same, and the evaluation
-# reads the model of the phase it is composed with.
+# What this run is called, which names its tracked run: the model each phase saves is
+# published as <run_name>-<phase>, and the evaluation reads the model of the phase it
+# is composed with. A phase trained alone is tracked as <run_name>-<phase>.
 run_name: mae

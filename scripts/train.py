@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import asdict
 
 import torch
@@ -13,7 +14,7 @@ from evaluate import built_model, evaluate_checkpoint
 from configs.load import load_config
 from dataset.loader import TRAINING_SPLIT, VALIDATION_SPLIT, loaders_by_split
 from logs.console import console_logger
-from logs.tracker import start_logging
+from logs.tracker import log_phases, start_logging
 from training.train import train
 
 TRAINING_STAGE = "training"
@@ -27,7 +28,7 @@ log = console_logger(__name__)
 def run_training(
     project=None, overrides: list[str] | None = None, evaluate: bool = False
 ):
-    """Train every phase in order, or the one named, publishing and evaluating each.
+    """Train every phase in order in one tracked run, or the one named in its own.
 
     Args:
         project: The DigitalHub project the models are logged into, or None here.
@@ -39,7 +40,7 @@ def run_training(
     """
     overrides = overrides or []
     named = any(one.startswith("phase=") for one in overrides)
-    last = None
+    last, run, curves, starts = None, None, defaultdict(list), {}
     for phase in [[]] if named else [[f"phase={one}"] for one in PHASES]:
         config = load_config([*overrides, *phase])
         build = published_build(config.dataset.build, config.dataset.root)
@@ -55,6 +56,9 @@ def run_training(
             loaded = torch.load(held, map_location="cpu")
             model.load_state_dict(loaded["model"], strict=False)
             first_step = loaded["step"]
+        # One tracked run counts on from where its last phase stopped
+        first_step = curves["train_loss"][-1][0] if curves else first_step
+        starts[config.training.phase] = first_step
         loaders = loaders_by_split(
             build,
             sizes,
@@ -69,22 +73,27 @@ def run_training(
         )
         training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
         log.info("training %s on %s", config.training.phase, device)
-        run = start_logging(
-            asdict(config),
-            config.model_name,
-            config.run_name,
-            f"{TRAINING_STAGE}.{config.training.phase}",
-            {
-                "device": str(device),
-                "parameters": sum(one.numel() for one in model.parameters()),
-                "shapes": shapes,
-                "tiles": {
-                    "training": len(training.dataset),
-                    "validation": len(validation.dataset),
-                },
+        facts = {
+            "device": str(device),
+            "parameters": sum(one.numel() for one in model.parameters()),
+            "shapes": shapes,
+            "tiles": {
+                "training": len(training.dataset),
+                "validation": len(validation.dataset),
             },
-        )
-        last = train(
+        }
+        if run is None:
+            run = start_logging(
+                asdict(config),
+                config.model_name if named else config.run_name,
+                config.run_name,
+                f"{TRAINING_STAGE}.{config.training.phase}"
+                if named
+                else TRAINING_STAGE,
+                facts,
+            )
+        run.config.update({config.training.phase: asdict(config) | facts})
+        last, trained = train(
             model,
             training,
             validation,
@@ -103,12 +112,15 @@ def run_training(
             device,
             run,
         )
-        run.finish()
+        for name, points in trained.items():
+            curves[name].extend(points)
+        log_phases(run, curves, starts, curves["train_loss"][-1][0])
         published = last
         if project is not None:
             published = publish_checkpoint(project, last, config.model_name)
         if evaluate:
             evaluate_checkpoint(config, last, project)
+    run.finish()
     return published
 
 
