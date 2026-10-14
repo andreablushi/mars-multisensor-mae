@@ -1,18 +1,15 @@
-# How a run trains, validates and stops, each phase in configs/phase changing
-# what it needs.
+# How a run trains, validates and stops.
 
-# Each phase is a fixed number of passes over the training split, the three together
-# as long as one CSMAE run, and the last phase's last checkpoint is the one kept.
-epochs: 50
+# A run is a fixed number of passes over the training split, as CSMAE trains, and
+# its last checkpoint is the one kept.
+epochs: 150
 # How many tiles one step's gradient is averaged over, each cut to the dataset's
 # budget.
 batch_size: 128
 learning_rate: 0.0003
-# What the crossencoder's learning rate is scaled by.
-crossencoder_rate: 1.0
 weight_decay: 0.05
 # How many epochs the rate climbs before the cosine decay.
-warmup_epochs: 5
+warmup_epochs: 10
 
 # How many epochs between two validations, a check that the loss still falls.
 validate_every: 10
@@ -20,13 +17,12 @@ validate_every: 10
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
-# Which phase of the training the run is, and the instruments each instrument is
-# rebuilt from cross-modally: both set by the phase.
-phase: ???
-cmr: ???
-
-# The modules left as they are, named as the model holds them: encoders.MOLA.
-frozen: []
+# The instruments each instrument is rebuilt from cross-modally.
+cmr:
+  CTX: [CRISM, MOLA]
+  CRISM: [CTX, MOLA]
+  MOLA: [SHARAD, CTX, CRISM]
+  SHARAD: [MOLA]
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

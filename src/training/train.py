@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from itertools import chain, repeat
 from pathlib import Path
@@ -24,45 +23,36 @@ from training.validate import validation_terms
 
 log = console_logger(__name__)
 
-CROSSENCODER = "crossencoder."
-
 
 def train(
     model: CrossSensorMAE,
     training: DataLoader,
     validation: DataLoader,
-    first_step: int,
     epochs: int,
     learning_rate: float,
-    crossencoder_rate: float,
     weight_decay: float,
     warmup_epochs: int,
     validate_every: int,
     mask_ratio: float,
     sources: Mapping[str, Sequence[str]],
-    frozen: Sequence[str],
     checkpoints: str,
     seed: int,
     device: torch.device,
     run: Run,
-) -> tuple[Path, dict[str, list[tuple[int, float]]]]:
-    """Return the last checkpoint and every loss curve, after training the model.
+) -> Path:
+    """Return where the last checkpoint was written, after training the model.
 
     Args:
         model: The model, already on the device.
         training: The training split, in batches.
         validation: The validation split, in batches.
-        first_step: How many steps the model had taken before, which this run counts on
-            from.
         epochs: How many passes over the training split the run takes.
         learning_rate: The peak learning rate, reached after the warmup.
-        crossencoder_rate: What the crossencoder's learning rate is scaled by.
         weight_decay: The AdamW weight decay.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         sources: The instruments each instrument is rebuilt from cross-modally.
-        frozen: The modules left as they are, named as the model holds them.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -70,24 +60,12 @@ def train(
 
     Returns:
         last: The checkpoint the run ended on.
-        curves: The training loss and every validation term, as (step, value).
     """
-    for name in frozen:
-        model.get_submodule(name).requires_grad_(False)
-    groups = defaultdict(list)
-    for name, one in model.named_parameters():
-        if one.requires_grad:
-            groups[name.startswith(CROSSENCODER), one.ndim > 1].append(one)
     # Biases, norms and learned vectors are not decayed, as MAE leaves them
+    decayed = [one for one in model.parameters() if one.ndim > 1]
+    kept = [one for one in model.parameters() if one.ndim <= 1]
     optimizer = torch.optim.AdamW(
-        [
-            {
-                "params": held,
-                "lr": learning_rate * (crossencoder_rate if shared else 1.0),
-                "weight_decay": weight_decay if decayed else 0.0,
-            }
-            for (shared, decayed), held in groups.items()
-        ],
+        [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
         lr=learning_rate,
         weight_decay=weight_decay,
         betas=(0.9, 0.95),
@@ -107,9 +85,8 @@ def train(
     generator = torch.Generator(device=device).manual_seed(seed)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
-    curves = defaultdict(list)
     model.train()
-    for step in range(first_step + 1, first_step + max_steps + 1):
+    for step in range(1, max_steps + 1):
         began = time.perf_counter()
         batch, identities = next(batches)
         waited = time.perf_counter() - began
@@ -125,7 +102,6 @@ def train(
         optimizer.step()
         scheduler.step()
         log_step(run, step, terms | {"grad_norm": norm})
-        curves["train_loss"].append((step, terms["loss"].item()))
         log.info(
             "step %d waited %.1f s for data, computed in %.1f s",
             step,
@@ -133,15 +109,11 @@ def train(
             time.perf_counter() - began - waited,
         )
         # The last step is validated too, so every run ends on a measured loss
-        if (step - first_step) % (validate_every * len(training)) and step < (
-            first_step + max_steps
-        ):
+        if step % (validate_every * len(training)) and step < max_steps:
             continue
         metrics = validation_terms(model, validation, mask_ratio, sources, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
-        for name, value in metrics.items():
-            curves[f"validation_{name}"].append((step, value))
         log.info("step %d validation loss %.4f", step, metrics["loss"])
     last = checkpoint_path(checkpoints, "last")
     last.parent.mkdir(parents=True, exist_ok=True)
@@ -149,7 +121,7 @@ def train(
         {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
-            "step": step,
+            "step": max_steps,
         },
         last,
     )
@@ -157,8 +129,8 @@ def train(
         run,
         {
             "validation_loss": metrics["loss"],
-            "steps": step,
+            "steps": max_steps,
             "run_seconds": time.perf_counter() - started,
         },
     )
-    return last, curves
+    return last

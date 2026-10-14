@@ -5,9 +5,7 @@ defaults:
   - model@model
   - training@training
   - evaluation@evaluation
-  - phase: shared
   - _self_
 
-# What this run is called, which names its tracked run, the model its last phase
-# leaves, and that model's results. The evaluation builds the last phase's model.
+# What this run is called, which names its tracked run, its model and its results.
 run_name: mae
