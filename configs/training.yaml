@@ -20,17 +20,13 @@ validate_every: 10
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5
 
-# Which phase of the training the run is, which names the model and its tracked run,
-# and the instruments each instrument is rebuilt from cross-modally: both set by the
-# phase.
+# Which phase of the training the run is, and the instruments each instrument is
+# rebuilt from cross-modally: both set by the phase.
 phase: ???
 cmr: ???
 
 # The modules left as they are, named as the model holds them: encoders.MOLA.
 frozen: []
-
-# The phase of the same run whose published model this one starts from, if any.
-init: null
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints

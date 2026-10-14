@@ -5,10 +5,9 @@ defaults:
   - model@model
   - training@training
   - evaluation@evaluation
-  - phase: dem_delay
+  - phase: shared
   - _self_
 
-# What this run is called, which names its tracked run: the model each phase saves is
-# published as <run_name>-<phase>, and the evaluation reads the model of the phase it
-# is composed with. A phase trained alone is tracked as <run_name>-<phase>.
+# What this run is called, which names its tracked run, the model its last phase
+# leaves, and that model's results. The evaluation builds the last phase's model.
 run_name: mae

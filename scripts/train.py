@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import asdict
 
 import torch
-from dhub.store import publish_checkpoint, published_build, published_checkpoint
+from dhub.store import publish_checkpoint, published_build
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
 from evaluate import built_model, evaluate_checkpoint
@@ -28,37 +28,30 @@ log = console_logger(__name__)
 def run_training(
     project=None, overrides: list[str] | None = None, evaluate: bool = False
 ):
-    """Train every phase in order in one tracked run, or the one named in its own.
+    """Train every phase in order in one tracked run.
 
     Args:
-        project: The DigitalHub project the models are logged into, or None here.
+        project: The DigitalHub project the model is logged into, or None here.
         overrides: What to compose the config with, as hydra spells them.
-        evaluate: Whether to evaluate each phase's last checkpoint once it ends.
+        evaluate: Whether to evaluate the last phase's last checkpoint once it ends.
 
     Returns:
         model: The last phase's published checkpoint, or where it was written here.
     """
-    overrides = overrides or []
-    named = any(one.startswith("phase=") for one in overrides)
     last, run, curves, starts = None, None, defaultdict(list), {}
-    for phase in [[]] if named else [[f"phase={one}"] for one in PHASES]:
-        config = load_config([*overrides, *phase])
+    for phase in PHASES:
+        config = load_config([*(overrides or []), f"phase={phase}"])
         build = published_build(config.dataset.build, config.dataset.root)
         model, device, sizes, shapes = built_model(config, build)
-        first_step = 0
-        if config.training.init is not None:
+        if last is not None:
             # A later phase holds instruments an earlier one never trained
-            held = last or published_checkpoint(
-                config.phase_model_name(config.training.init),
-                config.training.checkpoints,
+            log.info("starting from %s", last)
+            model.load_state_dict(
+                torch.load(last, map_location="cpu")["model"], strict=False
             )
-            log.info("starting from %s", held)
-            loaded = torch.load(held, map_location="cpu")
-            model.load_state_dict(loaded["model"], strict=False)
-            first_step = loaded["step"]
         # One tracked run counts on from where its last phase stopped
-        first_step = curves["train_loss"][-1][0] if curves else first_step
-        starts[config.training.phase] = first_step
+        first_step = curves["train_loss"][-1][0] if curves else 0
+        starts[phase] = first_step
         loaders = loaders_by_split(
             build,
             sizes,
@@ -72,7 +65,7 @@ def run_training(
             stage_workers(TRAINING_STAGE),
         )
         training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
-        log.info("training %s on %s", config.training.phase, device)
+        log.info("training %s on %s", phase, device)
         facts = {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
@@ -83,16 +76,8 @@ def run_training(
             },
         }
         if run is None:
-            run = start_logging(
-                asdict(config),
-                config.model_name if named else config.run_name,
-                config.run_name,
-                f"{TRAINING_STAGE}.{config.training.phase}"
-                if named
-                else TRAINING_STAGE,
-                facts,
-            )
-        run.config.update({config.training.phase: asdict(config) | facts})
+            run = start_logging(asdict(config), config.run_name, TRAINING_STAGE, facts)
+        run.config.update({phase: asdict(config) | facts})
         last, trained = train(
             model,
             training,
@@ -115,11 +100,11 @@ def run_training(
         for name, points in trained.items():
             curves[name].extend(points)
         log_phases(run, curves, starts, curves["train_loss"][-1][0])
-        published = last
-        if project is not None:
-            published = publish_checkpoint(project, last, config.model_name)
-        if evaluate:
-            evaluate_checkpoint(config, last, project)
+    published = last
+    if project is not None:
+        published = publish_checkpoint(project, last, config.run_name)
+    if evaluate:
+        evaluate_checkpoint(config, last, project)
     run.finish()
     return published
 

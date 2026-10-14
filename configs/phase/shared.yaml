@@ -8,7 +8,6 @@ defaults:
 
 training:
   phase: shared
-  init: surface
   crossencoder_rate: 0.1
   frozen:
     - encoders.MOLA

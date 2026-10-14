@@ -18,7 +18,6 @@ from figures.style import TEMPLATE
 def start_logging(
     config: Mapping[str, object],
     name: str,
-    group: str,
     stage: str,
     facts: Mapping[str, object],
 ) -> Run:
@@ -27,12 +26,11 @@ def start_logging(
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
         name: What the tracked run is called.
-        group: What it is grouped under, so every phase of one run sits together.
-        stage: What the stage is called, which tells one phase from another.
+        stage: What the stage is called.
         facts: What only the assembled run knows, recorded beside the config.
 
     Returns:
-        run: The run, named and grouped, its place read from the .env.
+        run: The run, named, its place read from the .env.
     """
     load_dotenv(ENV_PATH)
     for tracked in wandb.Api().runs(
@@ -41,7 +39,7 @@ def start_logging(
     ):
         if tracked.job_type == stage:
             tracked.delete()
-    run = wandb.init(config=dict(config), name=name, group=group, job_type=stage)
+    run = wandb.init(config=dict(config), name=name, job_type=stage)
     run.config.update(dict(facts))
     return run
 

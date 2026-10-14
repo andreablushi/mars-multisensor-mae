@@ -75,7 +75,6 @@ class TrainingConfig:
         phase: Which phase of the training the run is.
         cmr: The instruments each instrument is rebuilt from cross-modally.
         frozen: The modules left as they are, named as the model holds them.
-        init: The phase of the same run whose model this one starts from, or None.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -90,7 +89,6 @@ class TrainingConfig:
     phase: str
     cmr: dict[str, list[str]]
     frozen: list[str]
-    init: str | None
     checkpoints: str
 
 
@@ -112,7 +110,7 @@ class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
-        run_name: What the run is called, which groups its phases.
+        run_name: What the run is called, which names its tracked run and its model.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
@@ -124,23 +122,3 @@ class Config:
     model: ModelConfig
     training: TrainingConfig
     evaluation: EvaluationConfig
-
-    def phase_model_name(self, phase: str) -> str:
-        """Return what the model one phase of the run trains is called.
-
-        Args:
-            phase: The phase.
-
-        Returns:
-            name: The run's name and the phase.
-        """
-        return f"{self.run_name}-{phase}"
-
-    @property
-    def model_name(self) -> str:
-        """Return what the model this phase trains is called, and its tracked run.
-
-        Returns:
-            name: The run's name and its phase.
-        """
-        return self.phase_model_name(self.training.phase)

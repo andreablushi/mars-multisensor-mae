@@ -105,12 +105,12 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
         held = torch.load(checkpoint, map_location="cpu")
         model.load_state_dict(held["model"])
         log.info("%s trained for %d steps", checkpoint, held["step"])
-    log.info("evaluating %s on %s", config.model_name, device)
-    results = results_path(config.model_name)
+    log.info("evaluating %s on %s", config.run_name, device)
+    results = results_path(config.run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
     # One tile of the class shows what each instrument's hidden patches come back as
     tile = min(one for one, label in classes.items() if label == RECONSTRUCTED_CLASS)
-    reconstruction = results_path(config.model_name, RECONSTRUCTION_FILE)
+    reconstruction = results_path(config.run_name, RECONSTRUCTION_FILE)
     write_reconstruction(
         reconstruction,
         tile,
@@ -132,7 +132,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
     log.info("results written to %s", results.parent)
     if project is not None:
         for path in (results, reconstruction):
-            publish_results(project, path, config.model_name)
+            publish_results(project, path, config.run_name)
 
 
 @handler()
@@ -146,9 +146,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     config = load_config(overrides or [])
     checkpoint = None
     if config.run_name != RANDOM:
-        checkpoint = published_checkpoint(
-            config.model_name, config.training.checkpoints
-        )
+        checkpoint = published_checkpoint(config.run_name, config.training.checkpoints)
     evaluate_checkpoint(config, checkpoint, project)
 
 
