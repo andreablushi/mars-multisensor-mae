@@ -33,23 +33,17 @@ def distance_figure(scores: Mapping[str, Metrics]) -> go.Figure:
             row=1,
             col=column,
         )
-        figure.add_trace(
-            go.Scatter(
-                x=[one.classes[at] for at in one.distances.argmin(axis=1)],
-                y=one.classes,
-                mode="markers",
-                showlegend=False,
-                hoverinfo="skip",
-                marker={
-                    "symbol": "square-open",
-                    "size": 26,
-                    "color": OUTLINE_COLOR,
-                    "line": {"width": 3},
-                },
-            ),
-            row=1,
-            col=column,
-        )
+        for row, at in enumerate(one.distances.argmin(axis=1)):
+            figure.add_shape(
+                type="rect",
+                x0=at - 0.5,
+                x1=at + 0.5,
+                y0=row - 0.5,
+                y1=row + 0.5,
+                line={"color": OUTLINE_COLOR, "width": 3},
+                row=1,
+                col=column,
+            )
     figure.update_yaxes(autorange="reversed")
     figure.update_layout(
         template=TEMPLATE,
