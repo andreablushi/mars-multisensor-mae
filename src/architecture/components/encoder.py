@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from architecture.components.transformer import Transformer
 from architecture.tokens import Tokens
@@ -54,4 +55,6 @@ class Encoder(nn.Module):
         # One token per patch, from its measured samples alone, each a key and a query
         keys = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
-        return self.blocks(keys, visible, patches.position)  # (B, K, D)
+        return checkpoint(
+            self.blocks, keys, visible, patches.position, use_reentrant=False
+        )  # (B, K, D)
