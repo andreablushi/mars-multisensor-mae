@@ -35,6 +35,22 @@ class Tokens(NamedTuple):
         """
         return self.measured.flatten(2).any(dim=-1)
 
+    def led_by_cls(self, readable: Tensor) -> tuple[Tensor, Tensor]:
+        """Return which slots count and where they sit, a CLS slot leading them.
+
+        Args:
+            readable: Which patches count. (B, K)
+
+        Returns:
+            readable: The same, the CLS slot always counted. (B, 1 + K)
+            position: The patch centres, the CLS slot at the tile centre, which the
+                rotary encoding leaves unturned. (B, 1 + K, 3)
+        """
+        return (
+            torch.cat([readable.new_ones(len(readable), 1), readable], 1),
+            torch.cat([self.position.new_zeros(len(readable), 1, 3), self.position], 1),
+        )
+
 
 class Context(NamedTuple):
     """Some instruments' tokens side by side, as a decoder reads them.

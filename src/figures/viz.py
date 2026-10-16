@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from IPython.display import display
 
 from configs.paths import RECONSTRUCTION_FILE, RESULTS_FILE, RESULTS_ROOT
-from evaluation.evaluate import EVERY_INSTRUMENT
+from evaluation.evaluate import EVERY_INSTRUMENT, GAP
 from evaluation.metrics import TOP_K, compute_metrics
 from evaluation.results import Metrics, read_reconstruction, read_tile_vectors
 from evaluation.similarity import cosine_similarity
@@ -21,6 +21,7 @@ from figures.table import compared_table, comparison_table
 
 BASELINE = "random"
 VIEW = "view"
+POOLING = "pooling"
 NEIGHBOURS = 5
 LAYOUT_SEED = 0
 RETRIEVAL_ROWS = [
@@ -30,14 +31,14 @@ RANKING_ROWS = ["mAP", *(f"mAP@{k}" for k in TOP_K), "MRR", "R-precision"]
 KNN_ROWS = ["accuracy", "balanced accuracy"]
 REDRAWS: dict[str, Callable[[], None]] = {}
 
-Scores = Mapping[str, Mapping[str, Metrics]]
+Scores = Mapping[str, Mapping[tuple[str, str], Metrics]]
 
 
-def read_scores() -> dict[str, dict[str, Metrics]]:
+def read_scores() -> dict[str, dict[tuple[str, str], Metrics]]:
     """Return every view's metrics of every run fetched into the results directory.
 
     Returns:
-        scores: Each view's metrics, keyed by run, then view.
+        scores: Each view's metrics, keyed by run, then pooling and view.
     """
     scores = {}
     for path in sorted(RESULTS_ROOT.glob(f"*/{RESULTS_FILE}")):
@@ -52,25 +53,35 @@ def read_scores() -> dict[str, dict[str, Metrics]]:
 
 
 def selector_controls(scores: Scores) -> dict[str, widgets.ValueWidget]:
-    """Show a table of runs to tick, a view menu and the button applying both.
+    """Show a table of runs to tick, a view and a pooling menu, and Apply.
 
     Args:
-        scores: Each view's metrics, keyed by run, then view.
+        scores: Each view's metrics, keyed by run, then pooling and view.
 
     Returns:
-        controls: Each run's tick box, keyed by run, and the view menu under VIEW.
+        controls: Each run's tick box, keyed by run, the view menu under VIEW and
+            the pooling menu under POOLING.
     """
     boxes = {
         run: widgets.Checkbox(value=True, indent=False, layout={"width": "auto"})
         for run in sorted(scores)
         if run != BASELINE
     }
-    views = list(dict.fromkeys(view for by_view in scores.values() for view in by_view))
-    menu = widgets.Dropdown(
-        options=views,
-        value=EVERY_INSTRUMENT if EVERY_INSTRUMENT in views else views[0],
-        description="view",
-    )
+    keys = [key for by_key in scores.values() for key in by_key]
+    views = list(dict.fromkeys(view for _, view in keys))
+    poolings = sorted({pooling for pooling, _ in keys})
+    menus = {
+        VIEW: widgets.Dropdown(
+            options=views,
+            value=EVERY_INSTRUMENT if EVERY_INSTRUMENT in views else views[0],
+            description="view",
+        ),
+        POOLING: widgets.Dropdown(
+            options=poolings,
+            value=GAP if GAP in poolings else poolings[0],
+            description="pooling",
+        ),
+    }
     apply = widgets.Button(description="Apply", button_style="primary")
     apply.on_click(lambda _: [redraw() for redraw in REDRAWS.values()])
     table = widgets.GridBox(
@@ -82,8 +93,8 @@ def selector_controls(scores: Scores) -> dict[str, widgets.ValueWidget]:
             "width": "max-content",
         },
     )
-    display(widgets.VBox([table, menu, apply]))
-    return boxes | {VIEW: menu}
+    display(widgets.VBox([table, *menus.values(), apply]))
+    return boxes | menus
 
 
 def shown(
@@ -97,16 +108,18 @@ def shown(
 
     def redraw() -> None:
         """Swap the section's widget for one of the chosen runs holding the view."""
-        view = controls[VIEW].value
+        key = controls[POOLING].value, controls[VIEW].value
         runs = [BASELINE] + [
-            run for run, box in controls.items() if run != VIEW and box.value
+            run
+            for run, box in controls.items()
+            if run not in (VIEW, POOLING) and box.value
         ]
         chosen = {
-            run: scores[run][view]
+            run: scores[run][key]
             for run in runs
-            if run in scores and view in scores[run]
+            if run in scores and key in scores[run]
         }
-        shown_box.children = (draw(chosen, view),) if chosen else ()
+        shown_box.children = (draw(chosen, " ".join(key)),) if chosen else ()
 
     # A rerun of the section replaces its earlier redraw, so only one draws
     REDRAWS[section] = redraw

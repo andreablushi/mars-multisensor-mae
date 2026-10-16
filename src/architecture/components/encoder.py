@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import torch
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
@@ -18,6 +19,7 @@ class Encoder(nn.Module):
 
     Attributes:
         embed: From every sample of a patch to a token.
+        cls: The token that leads every sequence and gathers it. (D)
         blocks: The transformer.
     """
 
@@ -39,6 +41,9 @@ class Encoder(nn.Module):
         super().__init__()
         # Map every sample of a patch into the token width
         self.embed = nn.Linear(math.prod(shape), dim)
+        # One learned CLS token, started small as transformer embeddings are
+        self.cls = nn.Parameter(torch.zeros(dim))  # (D)
+        nn.init.normal_(self.cls, std=0.02)
         # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth)
 
@@ -50,11 +55,13 @@ class Encoder(nn.Module):
             visible: Which patches the encoder may read. (B, K)
 
         Returns:
-            tokens: One per slot, meaningful where visible. (B, K, D)
+            tokens: The CLS token, then one per slot, meaningful where visible.
+                (B, 1 + K, D)
         """
         # One token per patch, from its measured samples alone, each a key and a query
         keys = self.embed((patches.values * patches.measured).flatten(2))  # (B, K, D)
+        keys = torch.cat([self.cls.expand(len(keys), 1, -1), keys], 1)  # (B, 1 + K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
         return checkpoint(
-            self.blocks, keys, visible, patches.position, use_reentrant=False
-        )  # (B, K, D)
+            self.blocks, keys, *patches.led_by_cls(visible), use_reentrant=False
+        )  # (B, 1 + K, D)

@@ -13,17 +13,19 @@ from common.disk import parquet
 
 @dataclass(frozen=True, slots=True)
 class TileVector:
-    """One labelled tile, its class and its vector over one view.
+    """One labelled tile, its class and its vector over one pooling and view.
 
     Attributes:
         tile: The tile.
         label: The class it earned.
+        pooling: How the tokens were pooled, CLS or GAP.
         instrument: The instrument the vector stands for, or all of them.
         vector: Its tokens pooled, of unit length.
     """
 
     tile: str
     label: str
+    pooling: str
     instrument: str
     vector: tuple[float, ...]
 
@@ -59,19 +61,20 @@ class Metrics:
 def write_tile_vectors(
     path: Path,
     classes: Mapping[str, str],
-    vectors: Mapping[str, Mapping[str, np.ndarray]],
+    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
 ) -> None:
-    """Write one row per view and tile: its class and its vector.
+    """Write one row per pooling, view and tile: its class and its vector.
 
     Args:
         path: The parquet file to write, whose directory is made if missing.
         classes: The class each tile earned, keyed by the tile.
-        vectors: Each tile's vector, keyed by view, then tile.
+        vectors: Each tile's vector, keyed by pooling, then view, then tile.
     """
     parquet.write_rows(
         [
-            TileVector(tile, classes[tile], view, tuple(vector.tolist()))
-            for view, by_tile in vectors.items()
+            TileVector(tile, classes[tile], pooling, view, tuple(vector.tolist()))
+            for pooling, by_view in vectors.items()
+            for view, by_tile in by_view.items()
             for tile, vector in sorted(by_tile.items())
         ],
         RESULTS_SCHEMA,
@@ -79,8 +82,10 @@ def write_tile_vectors(
     )
 
 
-def read_tile_vectors(path: Path) -> tuple[list[str], list[str], dict[str, np.ndarray]]:
-    """Return one evaluation's vectors, every view on one tile order.
+def read_tile_vectors(
+    path: Path,
+) -> tuple[list[str], list[str], dict[tuple[str, str], np.ndarray]]:
+    """Return one evaluation's vectors, every pooling and view on one tile order.
 
     Args:
         path: The parquet file written by write_tile_vectors.
@@ -88,14 +93,14 @@ def read_tile_vectors(path: Path) -> tuple[list[str], list[str], dict[str, np.nd
     Returns:
         tiles: Every tile, sorted.
         labels: The class of each, in the same order.
-        vectors: Each tile's vector, keyed by view. (T, D)
+        vectors: Each tile's vector, keyed by pooling and view. (T, D)
     """
     rows = parquet.read_rows(TileVector, RESULTS_SCHEMA, path)
     classes = {row.tile: row.label for row in rows}
     tiles = sorted(classes)
     by_view = defaultdict(dict)
     for row in rows:
-        by_view[row.instrument][row.tile] = row.vector
+        by_view[row.pooling, row.instrument][row.tile] = row.vector
     vectors = {
         view: np.array([held[tile] for tile in tiles]) for view, held in by_view.items()
     }

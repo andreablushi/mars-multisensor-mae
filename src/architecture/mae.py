@@ -72,12 +72,14 @@ class CrossSensorMAE(nn.Module):
             readable: Which patches each encoder may read. (B, K)
 
         Returns:
-            tokens: Each instrument's tokens, meaningful where readable. (B, K, D)
+            tokens: Each instrument's CLS token, then its tokens, meaningful where
+                readable. (B, 1 + K, D)
         """
         # The shared weights see one instrument at a time, so none reads another
         return {
             name: self.crossencoder(
-                self.encoders[name](one, readable[name]), readable[name], one.position
+                self.encoders[name](one, readable[name]),
+                *one.led_by_cls(readable[name]),
             )
             for name, one in batch.items()
         }
@@ -92,18 +94,20 @@ class CrossSensorMAE(nn.Module):
         """Return some instruments' tokens side by side, as a decoder reads them.
 
         Args:
-            tokens: Each instrument's tokens in the shared space. (B, K, D)
+            tokens: Each instrument's CLS token and tokens in the shared space.
+                (B, 1 + K, D)
             batch: Each instrument's patches over the batch, which place the tokens.
-            readable: Which of each instrument's tokens count. (B, K)
+            readable: Which of each instrument's patch tokens count. (B, K)
             read: Which instruments are put side by side.
 
         Returns:
-            context: Their tokens, centres and which of them count.
+            context: Their tokens, centres and which of them count, CLS tokens too.
         """
+        led = [batch[name].led_by_cls(readable[name]) for name in read]
         return Context(
             torch.cat([tokens[name] for name in read], 1),  # (B, S, D)
-            torch.cat([batch[name].position for name in read], 1),  # (B, S, 3)
-            torch.cat([readable[name] for name in read], 1),  # (B, S)
+            torch.cat([position for _, position in led], 1),  # (B, S, 3)
+            torch.cat([counted for counted, _ in led], 1),  # (B, S)
         )
 
     def forward(
