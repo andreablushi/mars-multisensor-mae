@@ -17,7 +17,6 @@ from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
 from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
-from training.checkpoint import save_checkpoint
 from training.step import step_terms
 from training.validate import validation_terms
 
@@ -114,7 +113,15 @@ def train(
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
     last = checkpoint_path(checkpoints, "last")
-    save_checkpoint(last, model, optimizer, max_steps)
+    last.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "step": max_steps,
+        },
+        last,
+    )
     log_summary(
         run,
         {

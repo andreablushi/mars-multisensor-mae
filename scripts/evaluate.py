@@ -20,7 +20,6 @@ from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate
 from evaluation.results import write_tile_vectors
 from logs.console import console_logger
-from training.checkpoint import load_checkpoint
 
 EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
@@ -100,8 +99,9 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
         seed=None,
     )
     if checkpoint is not None:
-        steps = load_checkpoint(checkpoint, model)
-        log.info("%s trained for %d steps", checkpoint, steps)
+        held = torch.load(checkpoint, map_location="cpu")
+        model.load_state_dict(held["model"])
+        log.info("%s trained for %d steps", checkpoint, held["step"])
     log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
