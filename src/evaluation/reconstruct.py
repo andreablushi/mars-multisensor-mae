@@ -15,7 +15,7 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
-from dataset.store import CLIP, DatasetBuild
+from dataset.store import CLIP, STANDARDISED_BY, DatasetBuild
 from training.step import drawn_masks
 
 
@@ -85,10 +85,14 @@ def reconstruct(
     model.eval()
     with torch.no_grad():
         predictions = model(batch, visible, hidden)
-    # How the build normalised each instrument, read off the constants it applied
+    # How each instrument was normalised, named by the constants the build applies
     normalization = {
-        name: "/".join(constants)
-        + (" per band" if any(np.ndim(one) for one in constants.values()) else "")
+        name: "/".join(STANDARDISED_BY)
+        + (
+            " per band"
+            if any(np.ndim(constants[key]) for key in STANDARDISED_BY)
+            else ""
+        )
         + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
         for name, constants in build.read_stats().items()
     }

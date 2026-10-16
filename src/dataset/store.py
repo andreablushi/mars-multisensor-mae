@@ -33,6 +33,8 @@ from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patche
 
 CLIP = 2.0
 
+STANDARDISED_BY = ("mean", "std")
+
 
 @dataclass(slots=True)
 class DatasetBuild:
@@ -138,7 +140,7 @@ class DatasetBuild:
         shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
         mean, std = (
             np.asarray(constants[name], np.float32).reshape(shape)
-            for name in ("mean", "std")
+            for name in STANDARDISED_BY
         )
         return (values - mean) / std
 
