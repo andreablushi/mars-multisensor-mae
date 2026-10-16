@@ -30,7 +30,8 @@ def evaluate(
 
     Returns:
         vectors: Each tile's unit vector, keyed by CLS or GAP, then by instrument or
-            EVERY_INSTRUMENT, then by tile. (D,)
+            EVERY_INSTRUMENT, then by tile, CLS of every instrument being the
+            model's own and GAP's the mean of the instruments'. (D,)
     """
     model.eval()
     vectors = defaultdict(lambda: defaultdict(dict))
@@ -41,7 +42,7 @@ def evaluate(
                 for name, tokens in batch.items()
             }
             present = {name: tokens.present for name, tokens in batch.items()}
-            tokens = model.shared_tokens(batch, present)  # (B, 1 + K, D) each
+            cls, tokens = model.shared_tokens(batch, present)  # (B, 1 + K, D) each
             pooled = {
                 CLS: {
                     name: functional.normalize(held[:, 0], dim=-1)
@@ -52,12 +53,12 @@ def evaluate(
                     for name, held in tokens.items()
                 },
             }
+            pooled[CLS][EVERY_INSTRUMENT] = functional.normalize(cls, dim=-1)
+            stacked = torch.stack(list(pooled[GAP].values()), dim=1)  # (B, M, D)
+            pooled[GAP][EVERY_INSTRUMENT] = global_average_pooling(
+                stacked, torch.ones(stacked.shape[:2], dtype=torch.bool, device=device)
+            )
             for pooling, by_view in pooled.items():
-                stacked = torch.stack(list(by_view.values()), dim=1)  # (B, M, D)
-                by_view[EVERY_INSTRUMENT] = global_average_pooling(
-                    stacked,
-                    torch.ones(stacked.shape[:2], dtype=torch.bool, device=device),
-                )
                 for view, held in by_view.items():
                     vectors[pooling][view].update(
                         zip(identities, held.cpu().numpy(), strict=True)
