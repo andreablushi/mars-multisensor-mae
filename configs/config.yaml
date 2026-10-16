@@ -10,4 +10,5 @@ defaults:
 
 # What this run is called, which names its tracked run, the model its last phase
 # leaves, and that model's results. The evaluation builds the last phase's model.
+# The part before a slash groups it: default/mae-small.
 run_name: mae

@@ -41,9 +41,9 @@ def read_scores() -> dict[str, dict[tuple[str, str], Metrics]]:
         scores: Each view's metrics, keyed by run, then pooling and view.
     """
     scores = {}
-    for path in sorted(RESULTS_ROOT.glob(f"*/{RESULTS_FILE}")):
+    for path in sorted(RESULTS_ROOT.glob(f"**/{RESULTS_FILE}")):
         tiles, labels, vectors = read_tile_vectors(path)
-        scores[path.parent.name] = {
+        scores[path.parent.relative_to(RESULTS_ROOT).as_posix()] = {
             view: compute_metrics(
                 cosine_similarity(held), tiles, labels, NEIGHBOURS, LAYOUT_SEED
             )
@@ -241,8 +241,8 @@ def show_confusion(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) 
 def show_reconstruction() -> None:
     """Show one run's rebuilt observations, the run picked from a menu."""
     paths = {
-        path.parent.name: path
-        for path in sorted(RESULTS_ROOT.glob(f"*/{RECONSTRUCTION_FILE}"))
+        path.parent.relative_to(RESULTS_ROOT).as_posix(): path
+        for path in sorted(RESULTS_ROOT.glob(f"**/{RECONSTRUCTION_FILE}"))
     }
     menu = widgets.Dropdown(options=list(paths), description="model")
     shown_box = widgets.VBox()

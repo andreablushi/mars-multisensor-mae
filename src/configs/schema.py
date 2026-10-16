@@ -108,7 +108,8 @@ class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
     Attributes:
-        run_name: What the run is called, which names its tracked run and its model.
+        run_name: What the run is called, which names its tracked run and its model,
+            the part before a slash grouping it.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.
