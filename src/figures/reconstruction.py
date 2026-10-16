@@ -99,6 +99,7 @@ def reconstruction_figures(
     figures = []
     for name, arrays in reconstruction.items():
         values = arrays["values"]
+        normalization = f"normalised by {arrays['normalization']}"
         hidden = arrays["hidden"].reshape(-1, *[1] * (values.ndim - 1))
         images = np.stack(
             [
@@ -112,12 +113,20 @@ def reconstruction_figures(
             ]
         )  # (4, *image)
         if images.ndim == 3:
-            figures.append(image_figure(images[..., None], name, name == SOUNDER))
+            figures.append(
+                image_figure(
+                    images[..., None], f"{name}, {normalization}", name == SOUNDER
+                )
+            )
             continue
         for label, wanted in COMPOSITES_NM.items():
             bands = np.abs(centres[:, None] - np.asarray(wanted)).argmin(axis=0)
             nm = ", ".join(f"{centres[at]:.0f}" for at in bands)
             figures.append(
-                image_figure(images[..., bands], f"{name} {label} ({nm} nm)", False)
+                image_figure(
+                    images[..., bands],
+                    f"{name} {label} ({nm} nm), {normalization}",
+                    False,
+                )
             )
     return figures

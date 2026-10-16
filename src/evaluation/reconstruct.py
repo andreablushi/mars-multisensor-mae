@@ -9,12 +9,13 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import torch
 from building.metadata.observation import ObservationMetadata
+from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
-from dataset.store import DatasetBuild
+from dataset.store import CLIP, DatasetBuild
 from training.step import drawn_masks
 
 
@@ -51,9 +52,10 @@ def reconstruct(
     Returns:
         reconstruction: Each instrument holding any patch: its patches as the model
             read them under "values" and "measured", their place on the
-            observation's grid under "cell", which were hidden under "hidden", and
-            the hidden ones rebuilt from its own tokens under "umr" and from the
-            others' under "cmr".
+            observation's grid under "cell", how they were normalised under
+            "normalization", which were hidden under "hidden", and the hidden ones
+            rebuilt from its own tokens under "umr" and from the others' under
+            "cmr".
     """
     # The largest observation of each the tile holds, so one image of each is drawn
     shown = {
@@ -83,8 +85,16 @@ def reconstruct(
     model.eval()
     with torch.no_grad():
         predictions = model(batch, visible, hidden)
+    # How the build normalised each instrument, read off the constants it applied
+    normalization = {
+        name: "/".join(constants)
+        + (" per band" if any(np.ndim(one) for one in constants.values()) else "")
+        + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
+        for name, constants in build.read_stats().items()
+    }
     return {
         name: arrays
+        | {"normalization": np.array(normalization[name])}
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
         for name, arrays in sample.items()
