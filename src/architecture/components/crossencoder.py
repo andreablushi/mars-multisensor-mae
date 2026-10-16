@@ -1,18 +1,22 @@
-"""Bringing the sensors' tokens into one space, attended over together."""
+"""Bringing the sensors' tokens into one space, and one token that reads them all."""
 
 from __future__ import annotations
 
+import torch
 from torch import Tensor, nn
 
 from architecture.components.transformer import Transformer
 
-# B = batch, K = patches, D = token channels.
+# B = batch, K = patches, S = tokens of every instrument, D = token channels.
 
 
 class CrossSensorEncoder(nn.Module):
-    """Attend over one sensor's tokens at a time, on weights every sensor shares.
+    """Attend over each sensor's tokens on its own, on weights every sensor shares.
+
+    One CLS token reads every sensor's tokens, and none of them reads it back.
 
     Attributes:
+        cls: The token that reads every instrument together. (D)
         blocks: The transformer.
     """
 
@@ -25,19 +29,40 @@ class CrossSensorEncoder(nn.Module):
             depth: How many blocks are stacked.
         """
         super().__init__()
-        # The stack the instruments' tokens pass through together
+        self.cls = nn.Parameter(torch.zeros(dim))  # (D)
+        nn.init.normal_(self.cls, std=0.02)
         self.blocks = Transformer(dim, heads, depth)
 
-    def forward(self, keys: Tensor, visible: Tensor, position: Tensor) -> Tensor:
-        """Return the tokens mapped into the space every instrument shares.
+    def forward(
+        self, keys: list[Tensor], visible: list[Tensor], position: list[Tensor]
+    ) -> tuple[Tensor, list[Tensor]]:
+        """Return the CLS of every instrument, and each one's tokens in shared space.
 
         Args:
-            keys: One instrument's encoded tokens, each a key and a query. (B, K, D)
+            keys: Each instrument's encoded tokens, each a key and a query. (B, K, D)
             visible: Which of them carry a patch the encoder read. (B, K)
             position: Each token's patch centre, in metres or rows. (B, K, 3)
 
         Returns:
-            tokens: The mapped tokens, meaningful where visible. (B, K, D)
+            cls: The token read over every instrument together. (B, D)
+            tokens: Each instrument's mapped tokens, meaningful where visible.
+                (B, K, D)
         """
-        # Project instrument tokens into the shared space, masking unread patches
-        return self.blocks(keys, visible, position)  # (B, K, D)
+        sizes = [one.shape[1] for one in keys]
+        counted = torch.cat(visible, 1)  # (B, S)
+        owner = torch.cat(
+            [
+                counted.new_full((size,), at, dtype=torch.long)
+                for at, size in enumerate(sizes)
+            ]
+        )  # (S)
+        reads = torch.cat(
+            [counted.unsqueeze(1), (owner[:, None] == owner) & counted.unsqueeze(1)], 1
+        )  # (B, 1 + S, S)
+        reads = torch.cat([reads.new_zeros(*reads.shape[:2], 1), reads], 2)
+        mapped = self.blocks(
+            torch.cat([self.cls.expand(len(counted), 1, -1), *keys], 1),
+            reads,  # (B, 1 + S, 1 + S)
+            torch.cat([position[0].new_zeros(len(counted), 1, 3), *position], 1),
+        )  # (B, 1 + S, D)
+        return mapped[:, 0], list(mapped[:, 1:].split(sizes, 1))

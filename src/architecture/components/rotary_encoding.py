@@ -11,7 +11,7 @@ from torch import Tensor, nn
 
 # B = batch, H = heads, N = tokens, E = head channels, F = frequencies.
 
-SHORTEST_M = 250.0
+SHORTEST_M = 1280.0
 
 LONGEST_M = 64_000.0
 

@@ -11,6 +11,7 @@ from digitalhub.stores.client.base.factory import get_client
 from urllib3.exceptions import SSLError
 
 from configs.paths import (
+    CONFIG_FILE,
     RECONSTRUCTION_FILE,
     RESULTS_FILE,
     build_root,
@@ -23,7 +24,7 @@ from dhub.submit import load_platform
 BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
 
 EVALUATION_FILES = {
-    Path(name).stem: name for name in (RESULTS_FILE, RECONSTRUCTION_FILE)
+    Path(name).stem: name for name in (RESULTS_FILE, RECONSTRUCTION_FILE, CONFIG_FILE)
 }
 
 

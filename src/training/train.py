@@ -45,6 +45,7 @@ def train(
     seed: int,
     device: torch.device,
     run: Run,
+    config: Mapping[str, object],
 ) -> tuple[Path, dict[str, list[tuple[int, float]]]]:
     """Return the last checkpoint and every loss curve, after training the model.
 
@@ -67,6 +68,7 @@ def train(
         seed: What fixes the masks.
         device: Where the model runs.
         run: The tracked run every metric is logged to.
+        config: The run's whole config, saved beside the weights.
 
     Returns:
         last: The checkpoint the run ended on.
@@ -150,6 +152,7 @@ def train(
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "step": step,
+            "config": dict(config),
         },
         last,
     )

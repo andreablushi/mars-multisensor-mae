@@ -95,7 +95,7 @@ def run_stage(
         action="job",
         profile=asked["profile"],
         resources=asked["resources"],
-        volumes=[platform["volume"]],
+        volumes=[platform["volume"] | {"spec": {"size": asked["volume"]}}],
         secrets=SECRETS,
         envs=[
             {"name": "PYTHONPATH", "value": PYTHONPATH},

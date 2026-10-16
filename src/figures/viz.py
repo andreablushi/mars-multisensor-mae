@@ -181,11 +181,7 @@ def show_projection(
     scores: Scores, controls: Mapping[str, widgets.ValueWidget]
 ) -> None:
     """Show every chosen run's tiles on the UMAP plane."""
-    first = next(iter(next(iter(scores.values())).values()))
-    classes = sorted(set(first.labels))
-    shown_figure(
-        "projection", lambda one: projection_figure(one, classes), scores, controls
-    )
+    shown_figure("projection", projection_figure, scores, controls)
 
 
 def show_retrieval(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
@@ -243,7 +239,7 @@ def show_confusion(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) 
 
 
 def show_reconstruction() -> None:
-    """Show one run's rebuilt tile, the run picked from a menu."""
+    """Show one run's rebuilt observations, the run picked from a menu."""
     paths = {
         path.parent.name: path
         for path in sorted(RESULTS_ROOT.glob(f"*/{RECONSTRUCTION_FILE}"))

@@ -17,7 +17,11 @@ from architecture.tokens import Context, Tokens
 
 
 class CrossSensorMAE(nn.Module):
-    """An encoder and a decoder per sensor, one shared encoder aligning them between."""
+    """An encoder and a decoder per sensor, one shared encoder aligning them between.
+
+    The shared encoder also hands back one CLS of every sensor, which every decoder
+    reads, so the whole loss trains it.
+    """
 
     def __init__(
         self,
@@ -75,28 +79,29 @@ class CrossSensorMAE(nn.Module):
 
     def shared_tokens(
         self, batch: dict[str, Tokens], readable: dict[str, Tensor]
-    ) -> dict[str, Tensor]:
-        """Return each instrument's tokens in the shared space, each read on its own.
+    ) -> tuple[Tensor, dict[str, Tensor]]:
+        """Return the CLS of every instrument, and each one's tokens in shared space.
 
         Args:
             batch: Each instrument's patches over the batch.
             readable: Which patches each encoder may read. (B, K)
 
         Returns:
+            cls: The token read over every instrument together. (B, D)
             tokens: Each instrument's CLS token, then its tokens, meaningful where
                 readable. (B, 1 + K, D)
         """
-        # The shared weights see one instrument at a time, so none reads another
-        return {
-            name: self.crossencoder(
-                self.encoders[name](one, readable[name]),
-                *one.led_by_cls(readable[name]),
-            )
-            for name, one in batch.items()
-        }
+        led = [one.led_by_cls(readable[name]) for name, one in batch.items()]
+        cls, tokens = self.crossencoder(
+            [self.encoders[name](one, readable[name]) for name, one in batch.items()],
+            [counted for counted, _ in led],
+            [position for _, position in led],
+        )
+        return cls, dict(zip(batch, tokens, strict=True))
 
     @staticmethod
     def context(
+        cls: Tensor,
         tokens: dict[str, Tensor],
         batch: dict[str, Tokens],
         readable: dict[str, Tensor],
@@ -105,6 +110,7 @@ class CrossSensorMAE(nn.Module):
         """Return some instruments' tokens side by side, as a decoder reads them.
 
         Args:
+            cls: The token read over every instrument together. (B, D)
             tokens: Each instrument's CLS token and tokens in the shared space.
                 (B, 1 + K, D)
             batch: Each instrument's patches over the batch, which place the tokens.
@@ -112,13 +118,16 @@ class CrossSensorMAE(nn.Module):
             read: Which instruments are put side by side.
 
         Returns:
-            context: Their tokens, centres and which of them count, CLS tokens too.
+            context: Their tokens, centres and which of them count, led by the CLS
+                of every instrument at the tile centre, their own CLS tokens too.
         """
         led = [batch[name].led_by_cls(readable[name]) for name in read]
         return Context(
-            torch.cat([tokens[name] for name in read], 1),  # (B, S, D)
-            torch.cat([position for _, position in led], 1),  # (B, S, 3)
-            torch.cat([counted for counted, _ in led], 1),  # (B, S)
+            torch.cat([cls.unsqueeze(1), *(tokens[name] for name in read)], 1),
+            torch.cat([cls.new_zeros(len(cls), 1, 3), *(at for _, at in led)], 1),
+            torch.cat(
+                [cls.new_ones(len(cls), 1, dtype=torch.bool), *(on for on, _ in led)], 1
+            ),  # (B, S)
         )
 
     def forward(
@@ -138,14 +147,18 @@ class CrossSensorMAE(nn.Module):
 
         Returns:
             predictions: Under "umr" each instrument's patches read from its own
-                tokens, under "cmr" from its sources' tokens. (B, K, *P)
+                tokens, under "cmr" from its sources' tokens, both with the CLS of
+                every instrument. (B, K, *P)
         """
-        tokens = self.shared_tokens(batch, visible)
+        read = {name: one.kept(visible[name]) for name, one in batch.items()}
+        seen = {name: kept for name, (kept, _) in read.items()}
+        readable = {name: counted for name, (_, counted) in read.items()}
+        cls, tokens = self.shared_tokens(seen, readable)
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
             predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
-                self.context(tokens, batch, visible, [name]),
-                self.context(tokens, batch, visible, sources[name]),
+                self.context(cls, tokens, seen, readable, [name]),
+                self.context(cls, tokens, seen, readable, sources[name]),
                 one.position,
                 hidden[name],
                 one.condition,

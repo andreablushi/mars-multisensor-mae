@@ -103,7 +103,8 @@ class Transformer(nn.Module):
         Args:
             keys: Every token, each read as a key and a value, those past the fixed
                 also asking as queries. (B, N, D)
-            readable: Which keys carry something. (B, N)
+            readable: Which keys each query may read, one row for every query or
+                one for all. (B, N - fixed or 1, N)
             position: Each token's patch centre, in metres or rows. (B, N, 3)
             fixed: How many leading tokens are keys alone, never queries.
 
@@ -114,7 +115,7 @@ class Transformer(nn.Module):
         itself = torch.eye(keys.shape[1], dtype=torch.bool, device=keys.device)[
             fixed:
         ]  # (N', N)
-        mask = (readable.unsqueeze(1) | itself).unsqueeze(1)  # (B, 1, N', N)
+        mask = (readable | itself).unsqueeze(1)  # (B, 1, N', N)
         for block in self.blocks:
             keys = block(keys, mask, position, fixed)
         return self.norm(keys)  # (B, N, D)

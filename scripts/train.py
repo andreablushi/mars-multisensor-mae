@@ -96,6 +96,7 @@ def run_training(
             config.dataset.seed,
             device,
             run,
+            asdict(config),
         )
         for name, points in trained.items():
             curves[name].extend(points)

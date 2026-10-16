@@ -94,7 +94,7 @@ class Decoder(nn.Module):
         # The readable context and the hidden patches are read, nothing else
         readable = torch.cat([context_readable, hidden], dim=1)  # (B, S + K)
         # The context is only keys, only the patch slots ask as queries and are updated
-        keys = self.blocks(keys, readable, placed, context.shape[1])
+        keys = self.blocks(keys, readable.unsqueeze(1), placed, context.shape[1])
         queries = keys[:, context.shape[1] :]  # (B, K, D')
         # Write every sample of each patch slot from its query
         written = self.predict(queries)  # (B, K, prod P)
