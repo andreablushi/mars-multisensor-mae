@@ -7,12 +7,21 @@ from collections.abc import Mapping
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from building.configs.crism import Detector
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 from visualization.training_qualitative.config import VIEWS
 
 from figures.style import TEMPLATE
 
 PANELS = ("original", "input", "UMR", "CMR")
+COMPOSITES_NM = {
+    "VNIR albedo 770 nm": (770.0, 770.0, 770.0),
+    **{
+        label: bands
+        for label, (detector, bands) in VIEWS.items()
+        if detector == Detector.INFRARED
+    },
+}
 SOUNDER = "SHARAD"
 EMPTY_RGB = (255, 255, 255)
 HIDDEN_RGB = (150, 175, 215)
@@ -121,8 +130,8 @@ def reconstruction_figures(
         if images.ndim == 3:
             figures.append(image_figure(images[..., None], name, note, name == SOUNDER))
             continue
-        # The composites the dataset draws, each band the nearest to its wavelength
-        for label, (_, wanted) in VIEWS.items():
+        # Each band the nearest to its wavelength, the infrared as the dataset draws it
+        for label, wanted in COMPOSITES_NM.items():
             bands = np.abs(centres[:, None] - np.asarray(wanted)).argmin(axis=0)
             figures.append(
                 image_figure(images[..., bands], f"{name} {label}", note, False)
