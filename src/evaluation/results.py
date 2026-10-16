@@ -38,7 +38,7 @@ class Metrics:
     Attributes:
         tiles: The tiles.
         labels: The class of each, in the same order.
-        retrieval: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
+        retrieval: Every tile's retrieval and ranking scores. (T,)
         knn: Accuracy and balanced accuracy of the kNN vote.
         classes: The classes, in the order both matrices hold them.
         confusion: Tiles of the row's class voted into the column's. (C, C)

@@ -65,19 +65,28 @@ def ranked_neighbours(similarities: np.ndarray) -> np.ndarray:
 def retrieval_metrics(
     similarities: np.ndarray, labels: Sequence[str]
 ) -> dict[str, np.ndarray]:
-    """Return how far each tile's nearest tiles share its class.
+    """Return how far each tile's nearest tiles share its class, and how early.
 
     Args:
         similarities: The cosine of every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
 
     Returns:
-        scores: Every tile's precision, recall and F1 at every k of TOP_K. (T,)
+        scores: Every tile's precision, recall and F1 at every k of TOP_K, its
+            average precision over the whole ranking and at every k, the
+            reciprocal rank of its first classmate and its R-precision. (T,)
     """
     held = np.asarray(labels)
     relevant = held[ranked_neighbours(similarities)] == held[:, None]  # (T, T-1)
     total = relevant.sum(axis=1)  # (T,)
-    scores = {}
+    found = np.cumsum(relevant, axis=1)  # (T, T-1)
+    # The precision at the rank of every classmate, zero at every other rank
+    gained = found / np.arange(1, relevant.shape[1] + 1) * relevant  # (T, T-1)
+    scores = {
+        "mAP": gained.sum(axis=1) / total,
+        "MRR": 1 / (relevant.argmax(axis=1) + 1),
+        "R-precision": found[np.arange(len(total)), total - 1] / total,
+    }
     for k in TOP_K:
         taken = relevant[:, :k]  # (T, k)
         precision = taken.mean(axis=1)  # (T,)
@@ -87,6 +96,7 @@ def retrieval_metrics(
             f"precision@{k}": precision,
             f"recall@{k}": recall,
             f"f1@{k}": 2 * precision * recall / together,
+            f"mAP@{k}": gained[:, :k].sum(axis=1) / np.minimum(total, k),
         }
     return scores
 
