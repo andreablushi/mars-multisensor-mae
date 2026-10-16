@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import asdict
 from pathlib import Path
 
 import torch
+import yaml
 from building.common.layout import Axis
 from dhub.store import publish_results, published_build, published_checkpoint
 from dhub.submit import run_stage, stage_workers
@@ -13,7 +15,7 @@ from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config
-from configs.paths import RECONSTRUCTION_FILE, results_path
+from configs.paths import CONFIG_FILE, RECONSTRUCTION_FILE, results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_shapes
@@ -135,9 +137,11 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
             device,
         ),
     )
+    written = results_path(config.run_name, CONFIG_FILE)
+    written.write_text(yaml.safe_dump(asdict(config), sort_keys=False))
     log.info("results written to %s", results.parent)
     if project is not None:
-        for path in (results, reconstruction):
+        for path in (results, reconstruction, written):
             publish_results(project, path, config.run_name)
 
 
