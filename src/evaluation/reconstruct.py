@@ -1,4 +1,4 @@
-"""Rebuilding one tile's hidden patches, from its own tokens and the others'."""
+"""Rebuilding one tile's hidden patches, from every instrument's visible tokens."""
 
 from __future__ import annotations
 
@@ -55,9 +55,8 @@ def reconstruct(
             observation's grid under "cell", how they were normalised under
             "normalization", what brings them back to raw values as
             value * scale + offset under "offset" and "scale", which were hidden
-            under "hidden", and the hidden ones
-            rebuilt from its own tokens under "umr" and from the others' under
-            "cmr".
+            under "hidden", and the hidden ones rebuilt from every instrument's
+            visible tokens under "prediction".
     """
     # The largest observation of each the tile holds, so one image of each is drawn
     shown = {
@@ -86,7 +85,15 @@ def reconstruct(
     visible, hidden = drawn_masks(batch, mask_ratio, generator)
     model.eval()
     with torch.no_grad():
-        predictions = model(batch, visible, hidden)
+        tokens = model.shared_tokens(batch, visible)
+        # Every instrument's visible tokens read together, as the trained model is used
+        context = model.context(tokens, batch, visible, list(batch))
+        predictions = {
+            name: model.decoders[name].reconstructed_patches(
+                *context, one.position, hidden[name]
+            )
+            for name, one in batch.items()
+        }
     stats = build.read_stats()
     # How each instrument was normalised, named by the constants the build applies
     normalization = {
@@ -110,7 +117,7 @@ def reconstruct(
             )
         )
         | {"hidden": hidden[name][0].cpu().numpy()}
-        | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
+        | {"prediction": predictions[name][0].cpu().numpy()}
         for name, arrays in sample.items()
         if len(arrays["values"])
     }
