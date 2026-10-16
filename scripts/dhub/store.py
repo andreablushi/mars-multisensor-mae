@@ -10,11 +10,21 @@ from botocore.exceptions import ClientError, ResponseStreamingError
 from digitalhub.stores.client.base.factory import get_client
 from urllib3.exceptions import SSLError
 
-from configs.paths import RESULTS_FILE, build_root, checkpoint_path, results_path
+from configs.paths import (
+    RECONSTRUCTION_FILE,
+    RESULTS_FILE,
+    build_root,
+    checkpoint_path,
+    results_path,
+)
 from dataset.store import DatasetBuild
 from dhub.submit import load_platform
 
 BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
+
+EVALUATION_FILES = {
+    Path(name).stem: name for name in (RESULTS_FILE, RECONSTRUCTION_FILE)
+}
 
 
 def refresh_credentials() -> None:
@@ -95,9 +105,9 @@ def fetched_results() -> list[Path]:
     paths = []
     for artifact in project.list_artifacts():
         kind, _, run = artifact.name.partition("-")
-        if kind != Path(RESULTS_FILE).stem:
+        if kind not in EVALUATION_FILES:
             continue
-        held = results_path(run)
+        held = results_path(run, EVALUATION_FILES[kind])
         held.parent.mkdir(parents=True, exist_ok=True)
         paths.append(Path(artifact.download(str(held), overwrite=True)))
     return paths

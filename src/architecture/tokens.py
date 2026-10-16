@@ -67,12 +67,12 @@ def token_batch_padding(
     for name in samples[0][0]:
         # This instrument's arrays in every tile
         held = [sample[name] for sample, _ in samples]
-        # Every array padded with zeros to the most patches any tile has
+        # Every array a model reads padded with zeros to the most patches any tile has
         padded = {
             key: pad_sequence(
                 [torch.as_tensor(one[key]) for one in held], batch_first=True
             )
-            for key in held[0]
+            for key in Tokens._fields
         }
         # Values in float32, whatever the stored type
         padded["values"] = padded["values"].float()

@@ -9,13 +9,14 @@ import numpy as np
 import plotly.graph_objects as go
 from IPython.display import display
 
-from configs.paths import RESULTS_FILE, RESULTS_ROOT
+from configs.paths import RECONSTRUCTION_FILE, RESULTS_FILE, RESULTS_ROOT
 from evaluation.evaluate import EVERY_INSTRUMENT
 from evaluation.metrics import TOP_K, compute_metrics
-from evaluation.results import Metrics, read_tile_vectors
+from evaluation.results import Metrics, read_reconstruction, read_tile_vectors
 from evaluation.similarity import cosine_similarity
 from figures.heatmap import confusion_figure, distance_figure
 from figures.projection import projection_figure
+from figures.reconstruction import reconstruction_figures
 from figures.table import compared_table, comparison_table
 
 BASELINE = "random"
@@ -226,3 +227,25 @@ def show_knn(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> Non
 def show_confusion(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
     """Show where the kNN vote put each class."""
     shown_figure("confusion", confusion_figure, scores, controls)
+
+
+def show_reconstruction() -> None:
+    """Show one run's rebuilt tile, the run picked from a menu."""
+    paths = {
+        path.parent.name: path
+        for path in sorted(RESULTS_ROOT.glob(f"*/{RECONSTRUCTION_FILE}"))
+    }
+    menu = widgets.Dropdown(options=list(paths), description="model")
+    shown_box = widgets.VBox()
+
+    def redraw(_: object = None) -> None:
+        """Swap the figures for the picked run's."""
+        tile, reconstruction = read_reconstruction(paths[menu.value])
+        shown_box.children = [widgets.HTML(f"<b>tile {tile}</b>")] + [
+            go.FigureWidget(figure) for figure in reconstruction_figures(reconstruction)
+        ]
+
+    menu.observe(redraw, names="value")
+    if paths:
+        redraw()
+    display(widgets.VBox([menu, shown_box]))

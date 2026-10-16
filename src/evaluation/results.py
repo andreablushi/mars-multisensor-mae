@@ -100,3 +100,44 @@ def read_tile_vectors(path: Path) -> tuple[list[str], list[str], dict[str, np.nd
         view: np.array([held[tile] for tile in tiles]) for view, held in by_view.items()
     }
     return tiles, [classes[tile] for tile in tiles], vectors
+
+
+def write_reconstruction(
+    path: Path, tile: str, reconstruction: Mapping[str, Mapping[str, np.ndarray]]
+) -> None:
+    """Write one tile's reconstruction, every array under <instrument>/<key>.
+
+    Args:
+        path: The npz file to write, whose directory is made if missing.
+        tile: The tile rebuilt.
+        reconstruction: Each instrument's arrays, keyed as reconstruct names them.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        path,
+        tile=np.array(tile),
+        **{
+            f"{name}/{key}": array
+            for name, arrays in reconstruction.items()
+            for key, array in arrays.items()
+        },
+    )
+
+
+def read_reconstruction(path: Path) -> tuple[str, dict[str, dict[str, np.ndarray]]]:
+    """Return one tile's reconstruction, as write_reconstruction wrote it.
+
+    Args:
+        path: The npz file.
+
+    Returns:
+        tile: The tile rebuilt.
+        reconstruction: Each instrument's arrays, keyed as reconstruct names them.
+    """
+    reconstruction = defaultdict(dict)
+    with np.load(path) as arrays:
+        for packed in arrays.files:
+            if packed != "tile":
+                name, key = packed.split("/")
+                reconstruction[name][key] = arrays[packed]
+        return str(arrays["tile"]), dict(reconstruction)

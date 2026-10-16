@@ -12,18 +12,20 @@ from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config
-from configs.paths import results_path
+from configs.paths import RECONSTRUCTION_FILE, results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
 from evaluation.evaluate import evaluate
-from evaluation.results import write_tile_vectors
+from evaluation.reconstruct import reconstruct
+from evaluation.results import write_reconstruction, write_tile_vectors
 from logs.console import console_logger
 
 EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 RANDOM = "random"
+RECONSTRUCTED_CLASS = "crater"
 EVALUATION_BATCH_SIZE = 1
 
 log = console_logger(__name__)
@@ -66,7 +68,7 @@ def built_model(
 
 
 def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -> None:
-    """Measure one checkpoint's latent space over the labelled tiles, and keep it.
+    """Measure one checkpoint's latent space over the labelled tiles, rebuild one.
 
     Args:
         config: What the run reads, the model it builds, and how it is measured.
@@ -105,9 +107,31 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
     log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
+    # One tile of the class shows what each instrument's hidden patches come back as
+    tile = min(one for one, label in classes.items() if label == RECONSTRUCTED_CLASS)
+    reconstruction = results_path(config.run_name, RECONSTRUCTION_FILE)
+    write_reconstruction(
+        reconstruction,
+        tile,
+        reconstruct(
+            model,
+            build,
+            by_tile[tile],
+            axes,
+            sizes,
+            config.dataset.pool,
+            shapes,
+            config.model.delay,
+            config.dataset.budget,
+            config.training.mask_ratio,
+            config.dataset.seed,
+            device,
+        ),
+    )
     log.info("results written to %s", results.parent)
     if project is not None:
-        publish_results(project, results, config.run_name)
+        for path in (results, reconstruction):
+            publish_results(project, path, config.run_name)
 
 
 @handler()

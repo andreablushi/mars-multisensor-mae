@@ -79,10 +79,8 @@ def cut_patch(
         patch: The patch, copied, with what it measured and where it sits.
     """
     axes = observation.axes
-    origin = tuple(
-        int(at) * length
-        for at, length in zip(np.unravel_index(index, counts), lengths, strict=True)
-    )
+    cell = tuple(int(at) for at in np.unravel_index(index, counts))
+    origin = tuple(at * length for at, length in zip(cell, lengths, strict=True))
     window = tuple(
         slice(start, start + length)
         for start, length in zip(origin, lengths, strict=True)
@@ -118,6 +116,7 @@ def cut_patch(
         north_m=north_m,
         east_m=east_m,
         delay=delay,
+        cell=cell,
     )
 
 

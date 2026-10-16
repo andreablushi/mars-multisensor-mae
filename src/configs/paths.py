@@ -16,6 +16,8 @@ RESULTS_ROOT = REPO_ROOT / "results"
 
 RESULTS_FILE = "results.parquet"
 
+RECONSTRUCTION_FILE = "reconstruction.npz"
+
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.
@@ -55,13 +57,14 @@ def checkpoint_path(checkpoints: str, name: str) -> Path:
     return REPO_ROOT / checkpoints / f"{name}.pt"
 
 
-def results_path(run_name: str) -> Path:
-    """Return where one run's evaluation results are written on this machine.
+def results_path(run_name: str, name: str = RESULTS_FILE) -> Path:
+    """Return where one of a run's evaluation files is written on this machine.
 
     Args:
         run_name: What the run is called.
+        name: Which file, its results by default.
 
     Returns:
-        path: That run's results file.
+        path: That run's file.
     """
-    return RESULTS_ROOT / run_name / RESULTS_FILE
+    return RESULTS_ROOT / run_name / name
