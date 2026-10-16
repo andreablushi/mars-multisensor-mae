@@ -49,10 +49,11 @@ def reconstruct(
         device: Where the model runs.
 
     Returns:
-        reconstruction: Each instrument's patches as the model read them under
-            "values" and "measured", their place on the observation's grid under
-            "cell", which were hidden under "hidden", and the hidden ones rebuilt
-            from its own tokens under "umr" and from the others' under "cmr".
+        reconstruction: Each instrument holding any patch: its patches as the model
+            read them under "values" and "measured", their place on the
+            observation's grid under "cell", which were hidden under "hidden", and
+            the hidden ones rebuilt from its own tokens under "umr" and from the
+            others' under "cmr".
     """
     # The largest observation of each the tile holds, so one image of each is drawn
     shown = {
@@ -68,7 +69,6 @@ def reconstruct(
             name: patch_arrays(held, shapes[name], axes[name])
             | {"cell": np.array([one.cell for one in held])}
             for name, held in read.items()
-            if held
         },
         budget,
         random.Random(seed),
@@ -88,4 +88,5 @@ def reconstruct(
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
         for name, arrays in sample.items()
+        if len(arrays["values"])
     }
