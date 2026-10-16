@@ -1,9 +1,9 @@
 # How a run trains, validates and stops, each phase in configs/phase changing
 # what it needs.
 
-# A run is a fixed number of passes over the training split, as CSMAE trains, and
-# its last checkpoint is the one kept.
-epochs: 150
+# Each phase is a fixed number of passes over the training split, the three together
+# as long as one CSMAE run, and the last phase's last checkpoint is the one kept.
+epochs: 50
 # How many tiles one step's gradient is averaged over, each cut to the dataset's
 # budget.
 batch_size: 128
@@ -12,7 +12,7 @@ learning_rate: 0.0003
 crossencoder_rate: 1.0
 weight_decay: 0.05
 # How many epochs the rate climbs before the cosine decay.
-warmup_epochs: 10
+warmup_epochs: 5
 
 # How many epochs between two validations, a check that the loss still falls.
 validate_every: 10

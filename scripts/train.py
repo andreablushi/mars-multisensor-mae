@@ -33,7 +33,7 @@ def run_training(
     Args:
         project: The DigitalHub project the model is logged into, or None here.
         overrides: What to compose the config with, as hydra spells them.
-        evaluate: Whether to evaluate the last phase's last checkpoint once it ends.
+        evaluate: Whether to evaluate the model once the last phase ends.
 
     Returns:
         model: The last phase's published checkpoint, or where it was written here.
