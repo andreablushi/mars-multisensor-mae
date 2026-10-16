@@ -68,21 +68,30 @@ def reconstruct(
             read_tile_patches({name: [record]}, build, sizes, pool, delays)[name]
             for record in held
         ]
+        read = [observation for observation in read if observation]
         patches = [patch for observation in read for patch in observation]
         cells = np.array([one.cell for one in patches]).reshape(len(patches), -1)
-        placed = np.array([[-one.north_m, one.east_m] for one in patches])
-        if not sounder and len(patches):
-            steps = []
-            for observation in read:
-                if len(observation) < 2:
-                    continue
-                at = np.array([[-one.north_m, one.east_m] for one in observation])
-                apart = np.linalg.norm(at[:, None] - at[None], axis=-1)
-                np.fill_diagonal(apart, np.inf)
-                steps.append(np.median(apart.min(axis=1)))
-            # Every observation snapped to one grid of patches, south and east growing
+        if not sounder and patches:
             ground = [at for at, holds in enumerate(axes[name]) if holds == Axis.GROUND]
-            cells[:, ground] = np.round(placed / np.median(steps)).astype(int)
+            own = [np.array([one.cell for one in held])[:, ground] for held in read]
+            placed = [
+                np.array([[-one.north_m, one.east_m] for one in held]) for held in read
+            ]
+            # The metres a patch steps along each axis, on the largest observation
+            largest = max(range(len(read)), key=lambda at: len(read[at]))
+            fit = np.linalg.lstsq(
+                np.c_[own[largest], np.ones(len(own[largest]))],
+                placed[largest],
+                rcond=None,
+            )[0]
+            step = np.diag(fit[:2])
+            # Each observation kept on its own grid, shifted to its place on the tile
+            cells[:, ground] = np.concatenate(
+                [
+                    cell + np.round(np.mean(at / step - cell, axis=0)).astype(int)
+                    for cell, at in zip(own, placed, strict=True)
+                ]
+            )
         sample[name] = patch_arrays(patches, shapes[name], axes[name]) | {"cell": cells}
     batch, _ = token_batch_padding([(sample, "")])
     batch = {
