@@ -84,8 +84,10 @@ def image_figure(
     )
     for annotation, panel in zip(figure.layout.annotations, PANELS, strict=True):
         annotation.text = panel
-    figure.update_xaxes(showticklabels=False)
-    figure.update_yaxes(showticklabels=False)
+    # A black frame around each panel's whole grid, blank cells included
+    frame = {"showticklabels": False, "showline": True, "linecolor": "black"}
+    figure.update_xaxes(frame, mirror=True)
+    figure.update_yaxes(frame, mirror=True)
     height, width = images.shape[1:3]
     figure.update_traces(
         hoverinfo="skip",
