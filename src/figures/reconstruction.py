@@ -9,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
+from dataset.store import CLIP
 from figures.style import TEMPLATE
 
 PANELS = ("original", "input", "UMR", "CMR")
@@ -47,7 +48,7 @@ def patch_mosaic(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
 
 
 def image_figure(images: np.ndarray, title: str, stretched: bool) -> go.Figure:
-    """Draw the four panels of one image, each channel stretched as the original's.
+    """Draw the four panels of one image, -CLIP to CLIP as black to white.
 
     Args:
         images: The original, the input, the UMR and the CMR image, NaN where
@@ -59,8 +60,8 @@ def image_figure(images: np.ndarray, title: str, stretched: bool) -> go.Figure:
     Returns:
         figure: The four panels side by side.
     """
-    low, high = np.nanpercentile(images[0], (2, 98), axis=(0, 1))  # (C,)
-    scaled = np.clip((images - low) / np.maximum(high - low, 1e-6), 0, 1) * 255
+    # One fixed range for every tile and panel, as the dataset draws model input
+    scaled = np.clip((images + CLIP) / (2 * CLIP), 0, 1) * 255
     rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (4, H, W, 3)
     empty = np.isnan(images[..., 0])  # (4, H, W)
     rgb[empty] = EMPTY_RGB
