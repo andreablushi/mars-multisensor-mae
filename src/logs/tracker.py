@@ -23,7 +23,7 @@ def start_logging(
 
     Args:
         config: What the run reads, trains and how, which the run is recorded with.
-        name: What the tracked run is called.
+        name: What the tracked run is called, the part before a slash grouping it.
         stage: What the stage is called.
         facts: What only the assembled run knows, recorded beside the config.
 
@@ -37,7 +37,8 @@ def start_logging(
     ):
         if tracked.job_type == stage:
             tracked.delete()
-    run = wandb.init(config=dict(config), name=name, job_type=stage)
+    group = name.split("/")[0]
+    run = wandb.init(config=dict(config), name=name, group=group, job_type=stage)
     run.config.update(dict(facts))
     return run
 

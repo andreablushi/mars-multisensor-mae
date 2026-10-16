@@ -89,7 +89,7 @@ def published_checkpoint(run_name: str, checkpoints: str) -> Path:
     """
     refresh_credentials()
     project = dh.get_or_create_project(load_platform()["project"])
-    name = f"model-{run_name}"
+    name = f"model-{run_name.replace('/', '.')}"
     destination = checkpoint_path(checkpoints, name)
     destination.parent.mkdir(parents=True, exist_ok=True)
     return Path(project.get_model(name).download(str(destination), overwrite=True))
@@ -108,7 +108,7 @@ def fetched_results() -> list[Path]:
         kind, _, run = artifact.name.partition("-")
         if kind not in EVALUATION_FILES:
             continue
-        held = results_path(run, EVALUATION_FILES[kind])
+        held = results_path(run.replace(".", "/"), EVALUATION_FILES[kind])
         held.parent.mkdir(parents=True, exist_ok=True)
         paths.append(Path(artifact.download(str(held), overwrite=True)))
     return paths
@@ -126,7 +126,8 @@ def publish_checkpoint(project, path: Path, run_name: str):
         model: The logged model.
     """
     refresh_credentials()
-    return project.log_model(name=f"model-{run_name}", kind="model", source=str(path))
+    name = f"model-{run_name.replace('/', '.')}"
+    return project.log_model(name=name, kind="model", source=str(path))
 
 
 def publish_results(project, path: Path, run_name: str):
@@ -142,5 +143,7 @@ def publish_results(project, path: Path, run_name: str):
     """
     refresh_credentials()
     return project.log_artifact(
-        name=f"{path.stem}-{run_name}", kind="artifact", source=str(path)
+        name=f"{path.stem}-{run_name.replace('/', '.')}",
+        kind="artifact",
+        source=str(path),
     )
