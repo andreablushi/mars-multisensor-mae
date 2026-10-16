@@ -10,6 +10,8 @@ import torch
 from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
+from common.maths.geodesy import SPHEROID
+from common.models.tile import Tile
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
@@ -50,13 +52,27 @@ def reconstruct(
     Returns:
         reconstruction: Each instrument holding any patch: its patches as the model
             read them under "values" and "measured", their place on a grid over
-            the tile, a sounder's on its observation's, under "cell", how they
-            were normalised under "normalization", what brings them back to raw
-            values as value * scale + offset under "offset" and "scale", which
-            were hidden under "hidden", and the hidden ones rebuilt from its own
-            tokens under "umr" and from the others' under "cmr".
+            the tile, a sounder's on its observation's, under "cell", the tile's
+            north-west and south-east corners on that grid, none for a sounder,
+            under "corners", how they were normalised under "normalization",
+            what brings them back to raw values as value * scale + offset under
+            "offset" and "scale", which were hidden under "hidden", and the
+            hidden ones rebuilt from its own tokens under "umr" and from the
+            others' under "cmr".
     """
     delays = read_surface_delays(build, rows[delay])
+    # The tile's box, as every observation of it stores it
+    described = build.read_observation(rows[delay][0].path).described
+    tile = Tile(described["band"], described["column"], **described["box"])
+    half = np.array(
+        [
+            SPHEROID.inv(tile.centre_lon, tile.centre_lat, lon, lat)[2]
+            for lon, lat in (
+                (tile.centre_lon, tile.max_lat),
+                (tile.east_lon, tile.centre_lat),
+            )
+        ]
+    )
     sample = {}
     for name in sizes:
         held = list(rows.get(name, ()))
@@ -71,6 +87,7 @@ def reconstruct(
         read = [observation for observation in read if observation]
         patches = [patch for observation in read for patch in observation]
         cells = np.array([one.cell for one in patches]).reshape(len(patches), -1)
+        corners = np.zeros((0, cells.shape[1]), int)
         if not sounder and patches:
             ground = [at for at, holds in enumerate(axes[name]) if holds == Axis.GROUND]
             own = [np.array([one.cell for one in held])[:, ground] for held in read]
@@ -92,7 +109,12 @@ def reconstruct(
                     for cell, at in zip(own, placed, strict=True)
                 ]
             )
-        sample[name] = patch_arrays(patches, shapes[name], axes[name]) | {"cell": cells}
+            corners = np.zeros((2, cells.shape[1]), int)
+            corners[:, ground] = np.round(np.array([-half, half]) / step).astype(int)
+        sample[name] = patch_arrays(patches, shapes[name], axes[name]) | {
+            "cell": cells,
+            "corners": corners,
+        }
     batch, _ = token_batch_padding([(sample, "")])
     batch = {
         name: Tokens(*(one.to(device) for one in tokens))
