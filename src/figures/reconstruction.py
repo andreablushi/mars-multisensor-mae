@@ -9,7 +9,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
-from dataset.store import CLIP
 from figures.style import TEMPLATE
 
 PANELS = ("original", "input", "UMR", "CMR")
@@ -19,7 +18,7 @@ COMPOSITES_NM = {
 }
 SOUNDER = "SHARAD"
 EMPTY_RGB = (255, 255, 255)
-HIDDEN_RGB = (246, 196, 160)
+HIDDEN_RGB = (150, 175, 215)
 PANEL = 300
 SOUNDER_HEIGHT = 700
 
@@ -47,21 +46,25 @@ def patch_mosaic(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
     return mosaic
 
 
-def image_figure(images: np.ndarray, title: str, stretched: bool) -> go.Figure:
-    """Draw the four panels of one image, -CLIP to CLIP as black to white.
+def image_figure(
+    images: np.ndarray, title: str, note: str, stretched: bool
+) -> go.Figure:
+    """Draw the four panels of one image on one range, the original's 2-98%.
 
     Args:
         images: The original, the input, the UMR and the CMR image, NaN where
             nothing is shown, of one channel or three. (4, H, W, C)
         title: What the image shows.
+        note: How its values were read, written under the title with the range.
         stretched: Whether its pixels are widened so the panels stand twice as
             high as wide.
 
     Returns:
         figure: The four panels side by side.
     """
-    # One fixed range for every tile and panel, as the dataset draws model input
-    scaled = np.clip((images + CLIP) / (2 * CLIP), 0, 1) * 255
+    # One range for every channel and panel, so the bands keep their balance
+    low, high = np.nanpercentile(images[0], (2, 98))
+    scaled = np.clip((images - low) / max(high - low, 1e-12), 0, 1) * 255
     rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (4, H, W, 3)
     empty = np.isnan(images[..., 0])  # (4, H, W)
     rgb[empty] = EMPTY_RGB
@@ -71,7 +74,7 @@ def image_figure(images: np.ndarray, title: str, stretched: bool) -> go.Figure:
         rgb.astype(np.uint8),
         facet_col=0,
         facet_col_spacing=0.01,
-        title=title,
+        title=f"{title}<br><sup>{note}, drawn from {low:.4g} to {high:.4g}</sup>",
     )
     for annotation, panel in zip(figure.layout.annotations, PANELS, strict=True):
         annotation.text = panel
@@ -86,8 +89,8 @@ def image_figure(images: np.ndarray, title: str, stretched: bool) -> go.Figure:
     figure.update_layout(
         template=TEMPLATE,
         width=4 * PANEL,
-        height=SOUNDER_HEIGHT if stretched else PANEL + 80,
-        margin={"l": 10, "r": 10, "t": 70, "b": 10},
+        height=SOUNDER_HEIGHT if stretched else PANEL + 110,
+        margin={"l": 10, "r": 10, "t": 100, "b": 10},
     )
     return figure
 
@@ -99,8 +102,13 @@ def reconstruction_figures(
     centres = np.asarray(LAYOUT.band_centres_nm)
     figures = []
     for name, arrays in reconstruction.items():
-        values = arrays["values"]
-        normalization = f"normalised by {arrays['normalization']}"
+        # Raw values, from what the model read and rebuilt normalised
+        raw = {
+            key: arrays[key] * arrays["scale"] + arrays["offset"]
+            for key in ("values", "umr", "cmr")
+        }
+        values = raw["values"]
+        note = f"raw values, read normalised by {arrays['normalization']}"
         hidden = arrays["hidden"].reshape(-1, *[1] * (values.ndim - 1))
         images = np.stack(
             [
@@ -108,17 +116,13 @@ def reconstruction_figures(
                 for one in (
                     values,
                     np.where(hidden, np.nan, values),
-                    np.where(hidden, arrays["umr"], values),
-                    np.where(hidden, arrays["cmr"], values),
+                    np.where(hidden, raw["umr"], values),
+                    np.where(hidden, raw["cmr"], values),
                 )
             ]
         )  # (4, *image)
         if images.ndim == 3:
-            figures.append(
-                image_figure(
-                    images[..., None], f"{name}, {normalization}", name == SOUNDER
-                )
-            )
+            figures.append(image_figure(images[..., None], name, note, name == SOUNDER))
             continue
         for label, wanted in COMPOSITES_NM.items():
             bands = np.abs(centres[:, None] - np.asarray(wanted)).argmin(axis=0)
@@ -126,7 +130,8 @@ def reconstruction_figures(
             figures.append(
                 image_figure(
                     images[..., bands],
-                    f"{name} {label} ({nm} nm), {normalization}",
+                    f"{name} {label} ({nm} nm)",
+                    note,
                     False,
                 )
             )

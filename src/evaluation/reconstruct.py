@@ -53,7 +53,9 @@ def reconstruct(
         reconstruction: Each instrument holding any patch: its patches as the model
             read them under "values" and "measured", their place on the
             observation's grid under "cell", how they were normalised under
-            "normalization", which were hidden under "hidden", and the hidden ones
+            "normalization", what brings them back to raw values as
+            value * scale + offset under "offset" and "scale", which were hidden
+            under "hidden", and the hidden ones
             rebuilt from its own tokens under "umr" and from the others' under
             "cmr".
     """
@@ -85,6 +87,7 @@ def reconstruct(
     model.eval()
     with torch.no_grad():
         predictions = model(batch, visible, hidden)
+    stats = build.read_stats()
     # How each instrument was normalised, named by the constants the build applies
     normalization = {
         name: "/".join(STANDARDISED_BY)
@@ -94,11 +97,18 @@ def reconstruct(
             else ""
         )
         + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
-        for name, constants in build.read_stats().items()
+        for name, constants in stats.items()
     }
     return {
         name: arrays
         | {"normalization": np.array(normalization[name])}
+        | dict(
+            zip(
+                ("offset", "scale"),
+                (np.asarray(stats[name][key], np.float32) for key in STANDARDISED_BY),
+                strict=True,
+            )
+        )
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
         for name, arrays in sample.items()
