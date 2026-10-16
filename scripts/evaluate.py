@@ -108,7 +108,7 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
     log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
-    # The tile of the class with the most ground observations, to draw the fullest
+    # The tile of the class seen by the most ground observations
     tile = max(
         sorted(one for one, label in classes.items() if label == RECONSTRUCTED_CLASS),
         key=lambda one: sum(

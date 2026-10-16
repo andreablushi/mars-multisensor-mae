@@ -1,4 +1,4 @@
-"""One tile's patches beside what UMR and CMR rebuilt of the hidden ones."""
+"""One observation's patches beside what UMR and CMR rebuilt of the hidden ones."""
 
 from __future__ import annotations
 
@@ -29,24 +29,19 @@ PANEL = 300
 SOUNDER_HEIGHT = 700
 
 
-def patch_mosaic(
-    patches: np.ndarray, cells: np.ndarray, corners: np.ndarray
-) -> np.ndarray:
-    """Return patches laid side by side where they sit on their grid.
+def patch_mosaic(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
+    """Return patches laid side by side where they sit on their observation.
 
     Args:
         patches: The patches. (K, *P)
-        cells: Where each sits on the grid of patches. (K, A)
-        corners: Cells the mosaic stretches to, beside the patches. (C, A)
+        cells: Where each sits on the observation's grid of patches. (K, A)
 
     Returns:
         mosaic: Every patch at its place, NaN where none is. (*A * P)
     """
     shape = np.array(patches.shape[1:])
-    extent = np.concatenate([cells, corners])
-    origin = cells - extent.min(axis=0)  # (K, A)
-    size = extent.max(axis=0) - extent.min(axis=0) + 1
-    mosaic = np.full(tuple(size * shape), np.nan, np.float32)
+    origin = cells - cells.min(axis=0)  # (K, A)
+    mosaic = np.full(tuple((origin.max(axis=0) + 1) * shape), np.nan, np.float32)
     for patch, at in zip(patches, origin, strict=True):
         mosaic[
             tuple(
@@ -67,8 +62,8 @@ def image_figure(
             nothing is shown, of one channel or three. (4, H, W, C)
         title: What the image shows.
         note: How its values were read, written under the title with the range.
-        stretched: Whether the panels stand twice as high as wide, else square
-            as the tile is.
+        stretched: Whether its pixels are widened so the panels stand twice as
+            high as wide.
 
     Returns:
         figure: The four panels side by side.
@@ -89,7 +84,7 @@ def image_figure(
     )
     for annotation, panel in zip(figure.layout.annotations, PANELS, strict=True):
         annotation.text = panel
-    # A black frame around each panel's whole grid, the tile's for a ground image
+    # A black frame around each panel's whole grid, blank cells included
     frame = {"showticklabels": False, "showline": True, "linecolor": "black"}
     figure.update_xaxes(frame, mirror=True)
     figure.update_yaxes(frame, mirror=True)
@@ -97,7 +92,7 @@ def image_figure(
     figure.update_traces(
         hoverinfo="skip",
         hovertemplate=None,
-        dx=height / ((2 if stretched else 1) * width),
+        dx=height / (2 * width) if stretched else 1,
     )
     figure.update_layout(
         template=TEMPLATE,
@@ -125,11 +120,7 @@ def reconstruction_figures(
         hidden = arrays["hidden"].reshape(-1, *[1] * (values.ndim - 1))
         images = np.stack(
             [
-                patch_mosaic(
-                    np.where(arrays["measured"], one, np.nan),
-                    arrays["cell"],
-                    arrays["corners"],
-                )
+                patch_mosaic(np.where(arrays["measured"], one, np.nan), arrays["cell"])
                 for one in (
                     values,
                     np.where(hidden, np.nan, values),
@@ -138,9 +129,6 @@ def reconstruction_figures(
                 )
             ]
         )  # (4, *image)
-        # North up and east right, whichever way the grid runs
-        corners = arrays["corners"]
-        images = np.flip(images, tuple(1 + np.flatnonzero(corners[:1] > corners[1:])))
         if images.ndim == 3:
             figures.append(image_figure(images[..., None], name, note, name == SOUNDER))
             continue

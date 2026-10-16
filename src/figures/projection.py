@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 import numpy as np
 import plotly.graph_objects as go
@@ -14,11 +14,11 @@ from figures.style import CLASS_COLORS, CLASS_SYMBOLS, TEMPLATE
 PANEL = 400
 
 
-def projection_figure(
-    scores: Mapping[str, Metrics], classes: Sequence[str]
-) -> go.Figure:
+def projection_figure(scores: Mapping[str, Metrics]) -> go.Figure:
     """Lay every model's tiles on the UMAP plane, one panel each, coloured by class."""
     figure = panel_grid(list(scores), PANEL)
+    # One class order for every panel, so a class keeps its colour
+    classes = next(iter(scores.values())).classes
     for at, one in enumerate(scores.values()):
         labels = np.asarray(one.labels)
         tiles = np.asarray(one.tiles)

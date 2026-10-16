@@ -1,17 +1,13 @@
-"""Rebuilding one whole tile's hidden patches, from its own tokens and the others'."""
+"""Rebuilding one observation's hidden patches, from its own tokens and the others'."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
 
 import numpy as np
 import torch
-from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
-from common.maths.geodesy import SPHEROID
-from common.models.tile import Tile
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
@@ -34,7 +30,7 @@ def reconstruct(
     seed: int,
     device: torch.device,
 ) -> dict[str, dict[str, np.ndarray]]:
-    """Return every patch of a tile, a sounder's of one observation, rebuilt.
+    """Return one whole observation of each instrument the tile holds, rebuilt.
 
     Args:
         model: The model, on the device.
@@ -50,71 +46,25 @@ def reconstruct(
         device: Where the model runs.
 
     Returns:
-        reconstruction: Each instrument holding any patch: its patches as the model
-            read them under "values" and "measured", their place on a grid over
-            the tile, a sounder's on its observation's, under "cell", the tile's
-            north-west and south-east corners on that grid, none for a sounder,
-            under "corners", how they were normalised under "normalization",
-            what brings them back to raw values as value * scale + offset under
-            "offset" and "scale", which were hidden under "hidden", and the
-            hidden ones rebuilt from its own tokens under "umr" and from the
-            others' under "cmr".
+        reconstruction: Each instrument's patches under "values", "measured" and
+            "cell", raw as value * scale + offset under "offset" and "scale",
+            their "normalization", the "hidden" ones, and those rebuilt under
+            "umr" and "cmr".
     """
-    delays = read_surface_delays(build, rows[delay])
-    # The tile's box, as every observation of it stores it
-    described = build.read_observation(rows[delay][0].path).described
-    tile = Tile(described["band"], described["column"], **described["box"])
-    half = np.array(
-        [
-            SPHEROID.inv(tile.centre_lon, tile.centre_lat, lon, lat)[2]
-            for lon, lat in (
-                (tile.centre_lon, tile.max_lat),
-                (tile.east_lon, tile.centre_lat),
-            )
-        ]
+    # The most measured observation of each the tile holds, read whole
+    shown = {
+        name: [max(rows[name], key=lambda one: one.valid_count)]
+        for name in sizes
+        if name in rows
+    }
+    read = read_tile_patches(
+        shown, build, sizes, pool, read_surface_delays(build, rows[delay])
     )
-    sample = {}
-    for name in sizes:
-        held = list(rows.get(name, ()))
-        sounder = Axis.DELAY in axes[name]
-        # A sounder's largest radargram alone, drawn on its own grid
-        if sounder and held:
-            held = [max(held, key=lambda one: math.prod(one.shape))]
-        read = [
-            read_tile_patches({name: [record]}, build, sizes, pool, delays)[name]
-            for record in held
-        ]
-        read = [observation for observation in read if observation]
-        patches = [patch for observation in read for patch in observation]
-        cells = np.array([one.cell for one in patches]).reshape(len(patches), -1)
-        corners = np.zeros((0, cells.shape[1]), int)
-        if not sounder and patches:
-            ground = [at for at, holds in enumerate(axes[name]) if holds == Axis.GROUND]
-            own = [np.array([one.cell for one in held])[:, ground] for held in read]
-            placed = [
-                np.array([[-one.north_m, one.east_m] for one in held]) for held in read
-            ]
-            # The metres a patch steps along each axis, on the largest observation
-            largest = max(range(len(read)), key=lambda at: len(read[at]))
-            fit = np.linalg.lstsq(
-                np.c_[own[largest], np.ones(len(own[largest]))],
-                placed[largest],
-                rcond=None,
-            )[0]
-            step = np.diag(fit[:2])
-            # Each observation kept on its own grid, shifted to its place on the tile
-            cells[:, ground] = np.concatenate(
-                [
-                    cell + np.round(np.mean(at / step - cell, axis=0)).astype(int)
-                    for cell, at in zip(own, placed, strict=True)
-                ]
-            )
-            corners = np.zeros((2, cells.shape[1]), int)
-            corners[:, ground] = np.round(np.array([-half, half]) / step).astype(int)
-        sample[name] = patch_arrays(patches, shapes[name], axes[name]) | {
-            "cell": cells,
-            "corners": corners,
-        }
+    sample = {
+        name: patch_arrays(held, shapes[name], axes[name])
+        | {"cell": np.array([one.cell for one in held])}
+        for name, held in read.items()
+    }
     batch, _ = token_batch_padding([(sample, "")])
     batch = {
         name: Tokens(*(one.to(device) for one in tokens))
