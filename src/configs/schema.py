@@ -103,7 +103,7 @@ class Config:
 
     Attributes:
         run_name: What the run is called, which names the model it saves and the
-            tracked run it logs to.
+            tracked run it logs to, the part before a slash grouping it.
         dataset: What it reads.
         model: What it trains.
         training: How it trains.

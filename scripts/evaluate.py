@@ -155,7 +155,7 @@ def run_evaluation(project=None, overrides: list[str] | None = None) -> None:
     """
     config = load_config(overrides or [])
     checkpoint = None
-    if config.run_name != RANDOM:
+    if config.run_name.split("/")[-1] != RANDOM:
         checkpoint = published_checkpoint(config.run_name, config.training.checkpoints)
     evaluate_checkpoint(config, checkpoint, project)
 
