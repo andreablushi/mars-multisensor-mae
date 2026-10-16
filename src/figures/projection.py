@@ -8,7 +8,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from evaluation.results import Metrics
-from figures.grid import grid_size, panel_grid, panel_place
+from figures.grid import panel_grid, panel_place
 from figures.style import CLASS_COLORS, CLASS_SYMBOLS, TEMPLATE
 
 PANEL = 400
@@ -18,7 +18,7 @@ def projection_figure(
     scores: Mapping[str, Metrics], classes: Sequence[str]
 ) -> go.Figure:
     """Lay every model's tiles on the UMAP plane, one panel each, coloured by class."""
-    figure = panel_grid(list(scores))
+    figure = panel_grid(list(scores), PANEL)
     for at, one in enumerate(scores.values()):
         labels = np.asarray(one.labels)
         tiles = np.asarray(one.tiles)
@@ -45,7 +45,5 @@ def projection_figure(
             )
     figure.update_xaxes(showticklabels=False)
     figure.update_yaxes(showticklabels=False)
-    figure.update_layout(
-        template=TEMPLATE, legend_title="class", **grid_size(len(scores), PANEL)
-    )
+    figure.update_layout(template=TEMPLATE, legend_title="class")
     return figure
