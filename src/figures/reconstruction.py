@@ -100,15 +100,14 @@ def reconstruction_figures(
     for name, arrays in reconstruction.items():
         values = arrays["values"]
         hidden = arrays["hidden"].reshape(-1, *[1] * (values.ndim - 1))
-        held = np.where(arrays["measured"], values, np.nan)
         images = np.stack(
             [
                 patch_mosaic(np.where(arrays["measured"], one, np.nan), arrays["cell"])
                 for one in (
-                    held,
-                    np.where(hidden, np.nan, held),
-                    np.where(hidden, arrays["umr"], held),
-                    np.where(hidden, arrays["cmr"], held),
+                    values,
+                    np.where(hidden, np.nan, values),
+                    np.where(hidden, arrays["umr"], values),
+                    np.where(hidden, arrays["cmr"], values),
                 )
             ]
         )  # (4, *image)
