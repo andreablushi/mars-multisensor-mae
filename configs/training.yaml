@@ -6,7 +6,7 @@ epochs: 150
 # How many tiles one step's gradient is averaged over, each cut to the dataset's
 # budget.
 batch_size: 128
-learning_rate: 0.0003
+learning_rate: 0.0001
 weight_decay: 0.05
 # How many epochs the rate climbs before the cosine decay.
 warmup_epochs: 10
@@ -15,7 +15,7 @@ warmup_epochs: 10
 validate_every: 10
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.
-mask_ratio: 0.5
+mask_ratio: 0.75
 
 # Where checkpoints land, relative to the repository.
 checkpoints: checkpoints
