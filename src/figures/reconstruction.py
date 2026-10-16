@@ -8,14 +8,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
+from visualization.training_qualitative.config import VIEWS
 
 from figures.style import TEMPLATE
 
 PANELS = ("original", "input", "UMR", "CMR")
-COMPOSITES_NM = {
-    "visible": (597.0, 532.0, 441.0),
-    "infrared false colour": (2532.0, 1503.0, 1083.0),
-}
 SOUNDER = "SHARAD"
 EMPTY_RGB = (255, 255, 255)
 HIDDEN_RGB = (150, 175, 215)
@@ -49,7 +46,7 @@ def patch_mosaic(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
 def image_figure(
     images: np.ndarray, title: str, note: str, stretched: bool
 ) -> go.Figure:
-    """Draw the four panels of one image, each band over the original's 2-98%.
+    """Draw the four panels of one image, each band of each over its own 2-98%.
 
     Args:
         images: The original, the input, the UMR and the CMR image, NaN where
@@ -62,10 +59,9 @@ def image_figure(
     Returns:
         figure: The four panels side by side.
     """
-    # Each band stretched on its own, as the dataset draws a preprocessed sample
-    low, high = np.nanpercentile(images[0], (2, 98), axis=(0, 1))  # (C,)
+    # Every band of every panel stretched on its own, as the dataset draws a sample
+    low, high = np.nanpercentile(images, (2, 98), axis=(1, 2), keepdims=True)
     scaled = np.clip((images - low) / np.maximum(high - low, 1e-12), 0, 1) * 255
-    ranges = " / ".join(f"{one:.4g} to {two:.4g}" for one, two in zip(low, high))
     rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (4, H, W, 3)
     empty = np.isnan(images[..., 0])  # (4, H, W)
     rgb[empty] = EMPTY_RGB
@@ -75,7 +71,7 @@ def image_figure(
         rgb.astype(np.uint8),
         facet_col=0,
         facet_col_spacing=0.01,
-        title=f"{title}<br><sup>{note}, each band drawn from {ranges}</sup>",
+        title=f"{title}<br><sup>{note}, each band of each panel over its 2-98%</sup>",
     )
     for annotation, panel in zip(figure.layout.annotations, PANELS, strict=True):
         annotation.text = panel
@@ -125,15 +121,10 @@ def reconstruction_figures(
         if images.ndim == 3:
             figures.append(image_figure(images[..., None], name, note, name == SOUNDER))
             continue
-        for label, wanted in COMPOSITES_NM.items():
+        # The composites the dataset draws, each band the nearest to its wavelength
+        for label, (_, wanted) in VIEWS.items():
             bands = np.abs(centres[:, None] - np.asarray(wanted)).argmin(axis=0)
-            nm = ", ".join(f"{centres[at]:.0f}" for at in bands)
             figures.append(
-                image_figure(
-                    images[..., bands],
-                    f"{name} {label} ({nm} nm)",
-                    note,
-                    False,
-                )
+                image_figure(images[..., bands], f"{name} {label}", note, False)
             )
     return figures
