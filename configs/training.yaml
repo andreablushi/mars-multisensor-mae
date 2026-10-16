@@ -1,18 +1,18 @@
 # How a run trains, validates and stops.
 
-# A run is counted in steps, so how long a split happens to be settles nothing.
-max_steps: 25000
+# A run is a fixed number of passes over the training split, as CSMAE trains, and
+# its last checkpoint is the one kept.
+epochs: 150
 # How many tiles one step's gradient is averaged over, each cut to the dataset's
 # budget.
 batch_size: 128
 learning_rate: 0.0003
 weight_decay: 0.05
-warmup_steps: 500
+# How many epochs the rate climbs before the cosine decay.
+warmup_epochs: 10
 
-# How often the validation split is read, and how many of those may fail to beat
-# the best before the run stops.
-validate_every: 125
-patience: 15
+# How many epochs between two validations, a check that the loss still falls.
+validate_every: 10
 
 # The share of each instrument's patches hidden from its encoder, drawn independently.
 mask_ratio: 0.5

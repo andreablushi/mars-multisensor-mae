@@ -25,12 +25,12 @@ log = console_logger(__name__)
 def run_training(
     project=None, overrides: list[str] | None = None, evaluate: bool = False
 ):
-    """Train one run, publish the best checkpoint it left, and evaluate it if asked.
+    """Train one run, publish the checkpoint it ended on, and evaluate it if asked.
 
     Args:
         project: The DigitalHub project the model is logged into, or None here.
         overrides: What to compose the config with, as hydra spells them.
-        evaluate: Whether to evaluate the best checkpoint once the training ends.
+        evaluate: Whether to evaluate the checkpoint once the training ends.
 
     Returns:
         model: The published checkpoint, or where it was written on a run here.
@@ -67,16 +67,15 @@ def run_training(
             },
         },
     )
-    best = train(
+    last = train(
         model,
         training,
         validation,
-        config.training.max_steps,
+        config.training.epochs,
         config.training.learning_rate,
         config.training.weight_decay,
-        config.training.warmup_steps,
+        config.training.warmup_epochs,
         config.training.validate_every,
-        config.training.patience,
         config.training.mask_ratio,
         config.training.checkpoints,
         config.dataset.seed,
@@ -84,11 +83,11 @@ def run_training(
         run,
     )
     run.finish()
-    published = best
+    published = last
     if project is not None:
-        published = publish_checkpoint(project, best, config.run_name)
+        published = publish_checkpoint(project, last, config.run_name)
     if evaluate:
-        evaluate_checkpoint(config, best, project)
+        evaluate_checkpoint(config, last, project)
     return published
 
 

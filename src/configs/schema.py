@@ -66,24 +66,22 @@ class TrainingConfig:
     """How a run trains, validates and stops.
 
     Attributes:
-        max_steps: How many steps the run takes, at most.
+        epochs: How many passes over the training split the run takes.
         batch_size: How many tiles one step's gradient is averaged over.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
-        warmup_steps: How many steps the rate climbs before the cosine decay.
-        validate_every: How many steps between two validations.
-        patience: How many validations without a lower loss before the run stops.
+        warmup_epochs: How many epochs the rate climbs before the cosine decay.
+        validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
-    max_steps: int
+    epochs: int
     batch_size: int
     learning_rate: float
     weight_decay: float
-    warmup_steps: int
+    warmup_epochs: int
     validate_every: int
-    patience: int
     mask_ratio: float
     checkpoints: str
 

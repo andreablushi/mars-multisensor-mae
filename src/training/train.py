@@ -1,4 +1,4 @@
-"""Training the model over one split, validating over another, and keeping the best."""
+"""Training the model over one split for a fixed schedule, checking it on another."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
 from logs.console import console_logger
 from logs.tracker import log_step, log_summary, log_validation
-from training.checkpoint import EarlyStopping, save_checkpoint
+from training.checkpoint import save_checkpoint
 from training.step import step_terms
 from training.validate import validation_terms
 
@@ -28,30 +28,28 @@ def train(
     model: CrossSensorMAE,
     training: DataLoader,
     validation: DataLoader,
-    max_steps: int,
+    epochs: int,
     learning_rate: float,
     weight_decay: float,
-    warmup_steps: int,
+    warmup_epochs: int,
     validate_every: int,
-    patience: int,
     mask_ratio: float,
     checkpoints: str,
     seed: int,
     device: torch.device,
     run: Run,
 ) -> Path:
-    """Return where the best checkpoint was written, after training the model.
+    """Return where the last checkpoint was written, after training the model.
 
     Args:
         model: The model, already on the device.
         training: The training split, in batches.
         validation: The validation split, in batches.
-        max_steps: How many steps the run takes, at most.
+        epochs: How many passes over the training split the run takes.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
-        warmup_steps: How many steps the rate climbs before the cosine decay.
-        validate_every: How many steps between two validations.
-        patience: How many validations without a lower loss before the run stops.
+        warmup_epochs: How many epochs the rate climbs before the cosine decay.
+        validate_every: How many epochs between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
@@ -59,7 +57,7 @@ def train(
         run: The tracked run every metric is logged to.
 
     Returns:
-        best: The checkpoint with the lowest validation loss.
+        last: The checkpoint the run ended on.
     """
     # Biases, norms and learned vectors are not decayed, as MAE leaves them
     decayed = [one for one in model.parameters() if one.ndim > 1]
@@ -72,6 +70,8 @@ def train(
         fused=True,
     )
     torch.set_float32_matmul_precision("high")
+    max_steps = epochs * len(training)
+    warmup_steps = warmup_epochs * len(training)
 
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:
@@ -80,12 +80,9 @@ def train(
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
-    stopping = EarlyStopping(patience)
     generator = torch.Generator(device=device).manual_seed(seed)
-    best = checkpoint_path(checkpoints, "best")
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
-    best_step = -1
     model.train()
     for step in range(1, max_steps + 1):
         began = time.perf_counter()
@@ -109,26 +106,21 @@ def train(
             waited,
             time.perf_counter() - began - waited,
         )
-        # The last step is validated too, so a short run still leaves a checkpoint
-        if step % validate_every and step < max_steps:
+        # The last step is validated too, so every run ends on a measured loss
+        if step % (validate_every * len(training)) and step < max_steps:
             continue
         metrics = validation_terms(model, validation, mask_ratio, seed, device)
         model.train()  # Validating switched it to evaluation
         log_validation(run, step, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
-        if stopping.improved(metrics["loss"]):
-            save_checkpoint(best, model, optimizer, step)
-            best_step = step
-        if stopping.stopped:
-            log.info("no lower validation loss for %d validations, stopping", patience)
-            break
+    last = checkpoint_path(checkpoints, "last")
+    save_checkpoint(last, model, optimizer, max_steps)
     log_summary(
         run,
         {
-            "best_validation_loss": stopping.best,
-            "best_step": best_step,
-            "steps": step,
+            "validation_loss": metrics["loss"],
+            "steps": max_steps,
             "run_seconds": time.perf_counter() - started,
         },
     )
-    return best
+    return last

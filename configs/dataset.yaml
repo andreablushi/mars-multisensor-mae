@@ -43,6 +43,6 @@ budget:
 budget_scale: 4
 
 # The shares the tiles are split into, in the code's order: train, validation.
-split: [0.95, 0.05]
+split: [0.98, 0.02]
 
 seed: 42
