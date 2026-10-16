@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import torch
+from building.common.layout import Axis
 from dhub.store import publish_results, published_build, published_checkpoint
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
@@ -107,8 +108,15 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
     log.info("evaluating %s on %s", config.run_name, device)
     results = results_path(config.run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
-    # One tile of the class shows what each instrument's hidden patches come back as
-    tile = min(one for one, label in classes.items() if label == RECONSTRUCTED_CLASS)
+    # The tile of the class with the most ground observations, to draw the fullest
+    tile = max(
+        sorted(one for one, label in classes.items() if label == RECONSTRUCTED_CLASS),
+        key=lambda one: sum(
+            len(by_tile[one].get(name, ()))
+            for name in sizes
+            if Axis.DELAY not in axes[name]
+        ),
+    )
     reconstruction = results_path(config.run_name, RECONSTRUCTION_FILE)
     write_reconstruction(
         reconstruction,
