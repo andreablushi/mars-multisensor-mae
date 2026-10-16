@@ -127,13 +127,16 @@ class CrossSensorMAE(nn.Module):
             predictions: Under "umr" each instrument's patches read from its own
                 tokens, under "cmr" from every other instrument's. (B, K, *P)
         """
-        tokens = self.shared_tokens(batch, visible)
+        read = {name: one.kept(visible[name]) for name, one in batch.items()}
+        seen = {name: kept for name, (kept, _) in read.items()}
+        readable = {name: counted for name, (_, counted) in read.items()}
+        tokens = self.shared_tokens(seen, readable)
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
             others = [other for other in batch if other != name]
             predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
-                self.context(tokens, batch, visible, [name]),
-                self.context(tokens, batch, visible, others),
+                self.context(tokens, seen, readable, [name]),
+                self.context(tokens, seen, readable, others),
                 one.position,
                 hidden[name],
             )  # (B, K, *P) each

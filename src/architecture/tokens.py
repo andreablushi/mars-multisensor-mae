@@ -51,6 +51,25 @@ class Tokens(NamedTuple):
             torch.cat([self.position.new_zeros(len(readable), 1, 3), self.position], 1),
         )
 
+    def kept(self, keep: Tensor) -> tuple[Tokens, Tensor]:
+        """Return the kept slots alone, packed to the front and padded to one count.
+
+        Args:
+            keep: Which slots are kept. (B, K)
+
+        Returns:
+            tokens: The kept patches, in their order. (B, K', *P)
+            kept: Which of the packed slots hold a kept patch. (B, K')
+        """
+        order = keep.int().argsort(dim=1, descending=True, stable=True)
+        order = order[:, : int(keep.sum(1).max())]  # (B, K')
+
+        def taken(one: Tensor) -> Tensor:
+            shape = (*order.shape, *[1] * (one.dim() - 2))
+            return one.gather(1, order.view(shape).expand(-1, -1, *one.shape[2:]))
+
+        return Tokens(*(taken(one) for one in self)), keep.gather(1, order)
+
 
 class Context(NamedTuple):
     """Some instruments' tokens side by side, as a decoder reads them.
