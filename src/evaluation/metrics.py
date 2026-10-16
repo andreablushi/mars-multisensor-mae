@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from collections.abc import Sequence
 
@@ -169,4 +170,10 @@ def umap_projection(similarities: np.ndarray, seed: int) -> np.ndarray:
     """
     distances = np.clip(1 - similarities, 0, 2)
     np.fill_diagonal(distances, 0.0)
-    return UMAP(metric="precomputed", random_state=seed).fit_transform(distances)
+    with warnings.catch_warnings():
+        # No inverse transform is ever asked of the layout
+        warnings.filterwarnings("ignore", "using precomputed metric")
+        # A seeded layout runs on one job either way
+        return UMAP(metric="precomputed", random_state=seed, n_jobs=1).fit_transform(
+            distances
+        )

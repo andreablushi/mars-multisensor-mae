@@ -1,9 +1,7 @@
-"""Rebuilding one tile's hidden patches, from its own tokens and the others'."""
+"""Rebuilding one observation's hidden patches, from its own tokens and the others'."""
 
 from __future__ import annotations
 
-import math
-import random
 from collections.abc import Mapping, Sequence
 
 import numpy as np
@@ -13,12 +11,7 @@ from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
-from dataset.patches import (
-    condition_width,
-    cropped_patch_arrays,
-    patch_arrays,
-    read_tile_patches,
-)
+from dataset.patches import condition_width, patch_arrays, read_tile_patches
 from dataset.store import CLIP, STANDARDISED_BY, DatasetBuild
 from training.step import drawn_masks
 
@@ -31,13 +24,12 @@ def reconstruct(
     sizes: Mapping[str, Mapping[str, int]],
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
-    budget: Mapping[str, int],
     mask_ratio: float,
     sources: Mapping[str, Sequence[str]],
     seed: int,
     device: torch.device,
 ) -> dict[str, dict[str, np.ndarray]]:
-    """Return one observation of each instrument held, cut as validation cuts, rebuilt.
+    """Return one whole observation of each instrument the tile holds, rebuilt.
 
     Args:
         model: The model, on the device.
@@ -47,38 +39,31 @@ def reconstruct(
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
-        budget: How many patches of each instrument are kept.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         sources: The instruments each instrument is rebuilt from cross-modally.
-        seed: What fixes the cut and the masks.
+        seed: What fixes the masks.
         device: Where the model runs.
 
     Returns:
-        reconstruction: Each instrument holding any patch: its patches as the model
-            read them under "values" and "measured", their place on the
-            observation's grid under "cell", how they were normalised under
-            "normalization", which were hidden under "hidden", and the hidden ones
-            rebuilt from its own tokens under "umr" and from the others' under
-            "cmr".
+        reconstruction: Each instrument's patches under "values", "measured" and
+            "cell", raw as value * scale + offset under "offset" and "scale",
+            their "normalization", the "hidden" ones, and those rebuilt under
+            "umr" and "cmr".
     """
-    # The largest observation of each the tile holds, so one image of each is drawn
+    # The most measured observation of each the tile holds, read whole
     shown = {
-        name: [max(rows[name], key=lambda one: math.prod(one.shape))]
+        name: [max(rows[name], key=lambda one: one.valid_count)]
         for name in sizes
         if name in rows
     }
     read = read_tile_patches(shown, build, sizes, pool)
-    sample = cropped_patch_arrays(
-        {
-            name: patch_arrays(
-                held, shapes[name], axes[name], condition_width(name, shapes[name])
-            )
-            | {"cell": np.array([one.cell for one in held])}
-            for name, held in read.items()
-        },
-        budget,
-        random.Random(seed),
-    )
+    sample = {
+        name: patch_arrays(
+            held, shapes[name], axes[name], condition_width(name, shapes[name])
+        )
+        | {"cell": np.array([one.cell for one in held])}
+        for name, held in read.items()
+    }
     batch, _ = token_batch_padding([(sample, "")])
     batch = {
         name: Tokens(*(one.to(device) for one in tokens))
@@ -89,6 +74,7 @@ def reconstruct(
     model.eval()
     with torch.no_grad():
         predictions = model(batch, visible, hidden, sources)
+    stats = build.read_stats()
     # How each instrument was normalised, named by the constants the build applies
     normalization = {
         name: "/".join(STANDARDISED_BY)
@@ -98,11 +84,18 @@ def reconstruct(
             else ""
         )
         + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
-        for name, constants in build.read_stats().items()
+        for name, constants in stats.items()
     }
     return {
         name: arrays
         | {"normalization": np.array(normalization[name])}
+        | dict(
+            zip(
+                ("offset", "scale"),
+                (np.asarray(stats[name][key], np.float32) for key in STANDARDISED_BY),
+                strict=True,
+            )
+        )
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
         for name, arrays in sample.items()

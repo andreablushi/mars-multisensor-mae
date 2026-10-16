@@ -81,6 +81,7 @@ def run_training(
         config.dataset.seed,
         device,
         run,
+        asdict(config),
     )
     run.finish()
     published = last

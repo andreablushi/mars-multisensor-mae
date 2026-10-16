@@ -65,6 +65,7 @@ class Encoder(nn.Module):
         keys = self.embed(torch.cat([read, patches.condition], -1))  # (B, K, D)
         keys = torch.cat([self.cls.expand(len(keys), 1, -1), keys], 1)  # (B, 1 + K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
+        readable, position = patches.led_by_cls(visible)
         return checkpoint(
-            self.blocks, keys, *patches.led_by_cls(visible), use_reentrant=False
+            self.blocks, keys, readable.unsqueeze(1), position, use_reentrant=False
         )  # (B, 1 + K, D)

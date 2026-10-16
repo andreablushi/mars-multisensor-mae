@@ -8,7 +8,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from evaluation.results import Metrics
-from figures.grid import grid_size, panel_grid, panel_place
+from figures.grid import panel_grid, panel_place
 from figures.style import BLUES, OUTLINE_COLOR, TEMPLATE
 
 PANEL = 420
@@ -16,7 +16,7 @@ PANEL = 420
 
 def distance_figure(scores: Mapping[str, Metrics]) -> go.Figure:
     """Draw the mean distance between classes, each row's nearest class outlined."""
-    figure = panel_grid(list(scores))
+    figure = panel_grid(list(scores), PANEL)
     for at, one in enumerate(scores.values()):
         figure.add_trace(
             go.Heatmap(
@@ -48,14 +48,13 @@ def distance_figure(scores: Mapping[str, Metrics]) -> go.Figure:
             "reversescale": True,
             "colorbar": {"title": "mean distance"},
         },
-        **grid_size(len(scores), PANEL),
     )
     return figure
 
 
 def confusion_figure(scores: Mapping[str, Metrics]) -> go.Figure:
     """Draw how many tiles of each class the kNN vote put into each."""
-    figure = panel_grid(list(scores))
+    figure = panel_grid(list(scores), PANEL)
     for at, one in enumerate(scores.values()):
         figure.add_trace(
             go.Heatmap(
@@ -74,6 +73,5 @@ def confusion_figure(scores: Mapping[str, Metrics]) -> go.Figure:
     figure.update_layout(
         template=TEMPLATE,
         coloraxis={"colorscale": BLUES, "colorbar": {"title": "tiles"}},
-        **grid_size(len(scores), PANEL),
     )
     return figure

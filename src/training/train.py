@@ -39,6 +39,7 @@ def train(
     seed: int,
     device: torch.device,
     run: Run,
+    config: Mapping[str, object],
 ) -> Path:
     """Return where the last checkpoint was written, after training the model.
 
@@ -57,6 +58,7 @@ def train(
         seed: What fixes the masks.
         device: Where the model runs.
         run: The tracked run every metric is logged to.
+        config: The run's whole config, saved beside the weights.
 
     Returns:
         last: The checkpoint the run ended on.
@@ -122,6 +124,7 @@ def train(
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "step": max_steps,
+            "config": dict(config),
         },
         last,
     )

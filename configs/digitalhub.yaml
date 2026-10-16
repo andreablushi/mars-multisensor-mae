@@ -18,15 +18,18 @@ stages:
     function: train-mae
     profile: 1xa40-shared
     resources: {cpu: "8", gpu: "1", mem: 48Gi, disk: 64Gi}
+    volume: 400Gi
   evaluation:
     function: evaluate-mae
     profile: 1xa40-shared
     resources: {cpu: "8", gpu: "1", mem: 16Gi, disk: 64Gi}
+    # The evaluation build holds 102 tiles.
+    volume: 50Gi
 
 # The volume a run keeps its ready tiles on, mounted as the dataset root: a new one per
-# run, so it starts empty and keeps each tile the first time it is read.
+# run, so it starts empty and keeps each tile the first time it is read. Its size is
+# the stage's own.
 volume:
   volume_type: persistent_volume_claim
   name: mae-tiles
   mount_path: /volume
-  spec: {size: 400Gi}
