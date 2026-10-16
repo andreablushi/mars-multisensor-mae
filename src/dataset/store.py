@@ -31,7 +31,7 @@ from dataset.models.observation import Observation
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
-CLIP = 2.0
+CLIP = 6.0
 
 STANDARDISED_BY = ("mean", "std")
 
