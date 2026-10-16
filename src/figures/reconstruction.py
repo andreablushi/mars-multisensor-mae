@@ -49,7 +49,7 @@ def patch_mosaic(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
 def image_figure(
     images: np.ndarray, title: str, note: str, stretched: bool
 ) -> go.Figure:
-    """Draw the four panels of one image on one range, the original's 2-98%.
+    """Draw the four panels of one image, each band over the original's 2-98%.
 
     Args:
         images: The original, the input, the UMR and the CMR image, NaN where
@@ -62,9 +62,10 @@ def image_figure(
     Returns:
         figure: The four panels side by side.
     """
-    # One range for every channel and panel, so the bands keep their balance
-    low, high = np.nanpercentile(images[0], (2, 98))
-    scaled = np.clip((images - low) / max(high - low, 1e-12), 0, 1) * 255
+    # Each band stretched on its own, as the dataset draws a preprocessed sample
+    low, high = np.nanpercentile(images[0], (2, 98), axis=(0, 1))  # (C,)
+    scaled = np.clip((images - low) / np.maximum(high - low, 1e-12), 0, 1) * 255
+    ranges = " / ".join(f"{one:.4g} to {two:.4g}" for one, two in zip(low, high))
     rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (4, H, W, 3)
     empty = np.isnan(images[..., 0])  # (4, H, W)
     rgb[empty] = EMPTY_RGB
@@ -74,7 +75,7 @@ def image_figure(
         rgb.astype(np.uint8),
         facet_col=0,
         facet_col_spacing=0.01,
-        title=f"{title}<br><sup>{note}, drawn from {low:.4g} to {high:.4g}</sup>",
+        title=f"{title}<br><sup>{note}, each band drawn from {ranges}</sup>",
     )
     for annotation, panel in zip(figure.layout.annotations, PANELS, strict=True):
         annotation.text = panel
