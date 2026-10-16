@@ -1,4 +1,4 @@
-"""One tile's patches beside what the model rebuilt of the hidden ones."""
+"""One tile's patches beside what UMR and CMR rebuilt of the hidden ones."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from visualization.training_qualitative.config import VIEWS
 
 from figures.style import TEMPLATE
 
-PANELS = ("original", "input", "reconstruction")
+PANELS = ("original", "input", "UMR", "CMR")
 COMPOSITES_NM = {
     "VNIR albedo 770 nm": (770.0, 770.0, 770.0),
     **{
@@ -55,24 +55,24 @@ def patch_mosaic(patches: np.ndarray, cells: np.ndarray) -> np.ndarray:
 def image_figure(
     images: np.ndarray, title: str, note: str, stretched: bool
 ) -> go.Figure:
-    """Draw the three panels of one image, each band over the original's 2-98%.
+    """Draw the four panels of one image, each band over the original's 2-98%.
 
     Args:
-        images: The original, the input and the reconstruction, NaN where
-            nothing is shown, of one channel or three. (3, H, W, C)
+        images: The original, the input, the UMR and the CMR image, NaN where
+            nothing is shown, of one channel or three. (4, H, W, C)
         title: What the image shows.
         note: How its values were read, written under the title with the range.
         stretched: Whether its pixels are widened so the panels stand twice as
             high as wide.
 
     Returns:
-        figure: The three panels side by side.
+        figure: The four panels side by side.
     """
     # Each band stretched once, on the original, so a patch reads the same everywhere
     low, high = np.nanpercentile(images[0], (2, 98), axis=(0, 1))  # (C,)
     scaled = np.clip((images - low) / np.maximum(high - low, 1e-12), 0, 1) * 255
-    rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (3, H, W, 3)
-    empty = np.isnan(images[..., 0])  # (3, H, W)
+    rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (4, H, W, 3)
+    empty = np.isnan(images[..., 0])  # (4, H, W)
     rgb[empty] = EMPTY_RGB
     # The input's hidden patches are the empty ones the original holds
     rgb[1][empty[1] & ~empty[0]] = HIDDEN_RGB
@@ -94,7 +94,7 @@ def image_figure(
     )
     figure.update_layout(
         template=TEMPLATE,
-        width=len(PANELS) * PANEL,
+        width=4 * PANEL,
         height=SOUNDER_HEIGHT if stretched else PANEL + 110,
         margin={"l": 10, "r": 10, "t": 100, "b": 10},
     )
@@ -111,7 +111,7 @@ def reconstruction_figures(
         # Raw values, from what the model read and rebuilt normalised
         raw = {
             key: arrays[key] * arrays["scale"] + arrays["offset"]
-            for key in ("values", "prediction")
+            for key in ("values", "umr", "cmr")
         }
         values = raw["values"]
         note = f"raw values, read normalised by {arrays['normalization']}"
@@ -122,10 +122,11 @@ def reconstruction_figures(
                 for one in (
                     values,
                     np.where(hidden, np.nan, values),
-                    np.where(hidden, raw["prediction"], values),
+                    np.where(hidden, raw["umr"], values),
+                    np.where(hidden, raw["cmr"], values),
                 )
             ]
-        )  # (3, *image)
+        )  # (4, *image)
         if images.ndim == 3:
             figures.append(image_figure(images[..., None], name, note, name == SOUNDER))
             continue
