@@ -98,11 +98,9 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        views: The instruments read as views, each on its own and all together.
     """
 
     build: str
-    views: list[str]
 
 
 @dataclass
