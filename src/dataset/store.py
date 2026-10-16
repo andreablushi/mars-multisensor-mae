@@ -229,8 +229,9 @@ class DatasetBuild:
 
         Returns:
             observation: The observation, its values standardised by the build's own
-                constants, CRISM's also clipped and zeroed where unmeasured or not
-                finite, and the rest as the build wrote them.
+                constants, CRISM's also clipped, a pixel missing any band left
+                unmeasured, and zeroed where unmeasured, the rest as the build wrote
+                them.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
@@ -246,13 +247,15 @@ class DatasetBuild:
         values = self.standardised_values(
             arrays[described["measurement"]], axes, described["instrument"]
         )
+        measured = arrays[MEASURED]
         if described["instrument"] == LAYOUT.instrument:
-            measured = arrays[MEASURED][..., None] & np.isfinite(values)
-            values = np.where(measured, np.clip(values, -CLIP, CLIP), 0.0)
+            # A pixel missing any band is unmeasured, so no band is read as a zero
+            measured = measured & np.isfinite(values).all(axis=-1)
+            values = np.where(measured[..., None], np.clip(values, -CLIP, CLIP), 0.0)
         return Observation(
             values=values,
             axes=axes,
-            measured=arrays[MEASURED],
+            measured=measured,
             north=arrays[NORTH],
             east=arrays[EAST],
             beside={name: arrays[name] for name in beside},
