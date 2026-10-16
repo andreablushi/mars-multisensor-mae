@@ -24,8 +24,6 @@ CLASS_SYMBOLS = [
     "star",
     "hexagon",
 ]
-F1_COLOR = "#2a78d6"
-BAND_COLOR = "#f0efec"
 BLUES = [
     [0.0, "#cde2fb"],
     [0.25, "#86b6ef"],

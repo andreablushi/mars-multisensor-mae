@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 import ipywidgets as widgets
+import numpy as np
 import plotly.graph_objects as go
 from IPython.display import display
 
@@ -15,19 +16,18 @@ from evaluation.results import Metrics, read_tile_vectors
 from evaluation.similarity import cosine_similarity
 from figures.heatmap import confusion_figure, distance_figure
 from figures.projection import projection_figure
-from figures.retrieval import f1_figure
 from figures.table import compared_table, comparison_table
 
 BASELINE = "random"
 VIEW = "view"
 NEIGHBOURS = 5
 LAYOUT_SEED = 0
-K = 10
 RETRIEVAL_ROWS = [
     f"{measure}@{k}" for measure in ("precision", "recall", "f1") for k in TOP_K
 ]
+RANKING_ROWS = ["mAP", *(f"mAP@{k}" for k in TOP_K), "MRR", "R-precision"]
 KNN_ROWS = ["accuracy", "balanced accuracy"]
-REDRAWS: dict[str, tuple[list[widgets.ValueWidget], Callable[[object], None]]] = {}
+REDRAWS: dict[str, Callable[[], None]] = {}
 
 Scores = Mapping[str, Mapping[str, Metrics]]
 
@@ -51,7 +51,7 @@ def read_scores() -> dict[str, dict[str, Metrics]]:
 
 
 def selector_controls(scores: Scores) -> dict[str, widgets.ValueWidget]:
-    """Show one tick box per run, every one ticked, and a view menu, and hand them back.
+    """Show a table of runs to tick, a view menu and the button applying both.
 
     Args:
         scores: Each view's metrics, keyed by run, then view.
@@ -59,10 +59,10 @@ def selector_controls(scores: Scores) -> dict[str, widgets.ValueWidget]:
     Returns:
         controls: Each run's tick box, keyed by run, and the view menu under VIEW.
     """
-    order = sorted(scores, key=lambda run: (run != BASELINE, run))
-    controls = {
-        run: widgets.Checkbox(value=True, description=run, indent=False)
-        for run in order
+    boxes = {
+        run: widgets.Checkbox(value=True, indent=False, layout={"width": "auto"})
+        for run in sorted(scores)
+        if run != BASELINE
     }
     views = list(dict.fromkeys(view for by_view in scores.values() for view in by_view))
     menu = widgets.Dropdown(
@@ -70,8 +70,19 @@ def selector_controls(scores: Scores) -> dict[str, widgets.ValueWidget]:
         value=EVERY_INSTRUMENT if EVERY_INSTRUMENT in views else views[0],
         description="view",
     )
-    display(widgets.VBox([menu, widgets.HBox(list(controls.values()))]))
-    return controls | {VIEW: menu}
+    apply = widgets.Button(description="Apply", button_style="primary")
+    apply.on_click(lambda _: [redraw() for redraw in REDRAWS.values()])
+    table = widgets.GridBox(
+        [widgets.HTML("<b>show</b>"), widgets.HTML("<b>model</b>")]
+        + [cell for run, box in boxes.items() for cell in (box, widgets.Label(run))],
+        layout={
+            "grid_template_columns": "50px auto",
+            "grid_gap": "0 12px",
+            "width": "max-content",
+        },
+    )
+    display(widgets.VBox([table, menu, apply]))
+    return boxes | {VIEW: menu}
 
 
 def shown(
@@ -80,26 +91,24 @@ def shown(
     scores: Scores,
     controls: Mapping[str, widgets.ValueWidget],
 ) -> None:
-    """Show what draw makes of the ticked runs' chosen view, redrawn on every change."""
+    """Show what draw makes of the baseline and the ticked runs, redrawn on Apply."""
     shown_box = widgets.Box()
 
-    def redraw(_: object = None) -> None:
-        """Swap the section's widget for one of the ticked runs holding the view."""
+    def redraw() -> None:
+        """Swap the section's widget for one of the chosen runs holding the view."""
         view = controls[VIEW].value
+        runs = [BASELINE] + [
+            run for run, box in controls.items() if run != VIEW and box.value
+        ]
         chosen = {
             run: scores[run][view]
-            for run, box in controls.items()
-            if run != VIEW and box.value and view in scores[run]
+            for run in runs
+            if run in scores and view in scores[run]
         }
         shown_box.children = (draw(chosen, view),) if chosen else ()
 
     # A rerun of the section replaces its earlier redraw, so only one draws
-    boxes, earlier = REDRAWS.get(section, ([], None))
-    for box in boxes:
-        box.unobserve(earlier, names="value")
-    for box in controls.values():
-        box.observe(redraw, names="value")
-    REDRAWS[section] = (list(controls.values()), redraw)
+    REDRAWS[section] = redraw
     redraw()
     display(shown_box)
 
@@ -110,7 +119,7 @@ def shown_figure(
     scores: Scores,
     controls: Mapping[str, widgets.ValueWidget],
 ) -> None:
-    """Show one figure of the ticked runs' chosen view, redrawn on every change."""
+    """Show one figure of the chosen runs' view."""
     shown(
         section,
         lambda chosen, view: go.FigureWidget(figure(chosen).update_layout(title=view)),
@@ -121,18 +130,18 @@ def shown_figure(
 
 def shown_table(
     section: str,
-    rows: Sequence[str],
+    columns: Sequence[str],
     score: Callable[[Metrics], Mapping[str, float]],
     scores: Scores,
     controls: Mapping[str, widgets.ValueWidget],
 ) -> None:
-    """Show the ticked runs' scores of the view, coloured by gain on the baseline."""
+    """Show the chosen runs' scores of the view, coloured by gain on the baseline."""
     shown(
         section,
         lambda chosen, view: widgets.HTML(
             compared_table(
                 comparison_table(
-                    {run: {view: score(one)} for run, one in chosen.items()}, rows
+                    {run: score(one) for run, one in chosen.items()}, columns
                 ),
                 BASELINE,
             ).to_html()
@@ -142,10 +151,22 @@ def shown_table(
     )
 
 
+def mean_scores(scores: Mapping[str, np.ndarray]) -> dict[str, float]:
+    """Return every per tile score averaged over the tiles.
+
+    Args:
+        scores: Each score of every tile. (T,)
+
+    Returns:
+        means: Each score's mean.
+    """
+    return {name: float(held.mean()) for name, held in scores.items()}
+
+
 def show_projection(
     scores: Scores, controls: Mapping[str, widgets.ValueWidget]
 ) -> None:
-    """Show every ticked run's tiles on the UMAP plane."""
+    """Show every chosen run's tiles on the UMAP plane."""
     first = next(iter(next(iter(scores.values())).values()))
     classes = sorted(set(first.labels))
     shown_figure(
@@ -154,19 +175,42 @@ def show_projection(
 
 
 def show_retrieval(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
-    """Show the mean retrieval scores, coloured by their gain on the baseline."""
+    """Show the mean retrieval scores."""
     shown_table(
         "retrieval",
         RETRIEVAL_ROWS,
-        lambda one: {name: score.mean() for name, score in one.retrieval.items()},
+        lambda one: mean_scores(one.retrieval),
         scores,
         controls,
     )
 
 
-def show_f1(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
-    """Show every query tile's F1 at K."""
-    shown_figure("f1", lambda one: f1_figure(one, K), scores, controls)
+def show_ranking(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
+    """Show the mean ranking scores."""
+    shown_table(
+        "ranking",
+        RANKING_ROWS,
+        lambda one: mean_scores(one.retrieval),
+        scores,
+        controls,
+    )
+
+
+def show_class_ranking(
+    scores: Scores, controls: Mapping[str, widgets.ValueWidget]
+) -> None:
+    """Show the mAP of each class's tiles."""
+    first = next(iter(next(iter(scores.values())).values()))
+    shown_table(
+        "class ranking",
+        first.classes,
+        lambda one: {
+            name: float(one.retrieval["mAP"][np.asarray(one.labels) == name].mean())
+            for name in one.classes
+        },
+        scores,
+        controls,
+    )
 
 
 def show_distances(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
@@ -175,7 +219,7 @@ def show_distances(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) 
 
 
 def show_knn(scores: Scores, controls: Mapping[str, widgets.ValueWidget]) -> None:
-    """Show the kNN scores, coloured by their gain on the baseline."""
+    """Show the kNN scores."""
     shown_table("knn", KNN_ROWS, lambda one: one.knn, scores, controls)
 
 

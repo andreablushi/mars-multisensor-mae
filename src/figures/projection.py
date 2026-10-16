@@ -6,21 +6,23 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from evaluation.results import Metrics
+from figures.grid import grid_size, panel_grid, panel_place
 from figures.style import CLASS_COLORS, CLASS_SYMBOLS, TEMPLATE
+
+PANEL = 400
 
 
 def projection_figure(
     scores: Mapping[str, Metrics], classes: Sequence[str]
 ) -> go.Figure:
     """Lay every model's tiles on the UMAP plane, one panel each, coloured by class."""
-    figure = make_subplots(rows=1, cols=len(scores), subplot_titles=list(scores))
-    for column, one in enumerate(scores.values(), start=1):
+    figure = panel_grid(list(scores))
+    for at, one in enumerate(scores.values()):
         labels = np.asarray(one.labels)
         tiles = np.asarray(one.tiles)
-        for at, name in enumerate(classes):
+        for order, name in enumerate(classes):
             taken = labels == name
             figure.add_trace(
                 go.Scatter(
@@ -29,25 +31,21 @@ def projection_figure(
                     mode="markers",
                     name=name,
                     legendgroup=name,
-                    showlegend=column == 1,
+                    showlegend=at == 0,
                     customdata=tiles[taken],
                     hovertemplate=f"%{{customdata}}<br>{name}<extra></extra>",
                     marker={
                         "size": 7,
-                        "color": CLASS_COLORS[at],
-                        "symbol": CLASS_SYMBOLS[at],
+                        "color": CLASS_COLORS[order],
+                        "symbol": CLASS_SYMBOLS[order],
                         "line": {"width": 1, "color": "white"},
                     },
                 ),
-                row=1,
-                col=column,
+                **panel_place(at),
             )
     figure.update_xaxes(showticklabels=False)
     figure.update_yaxes(showticklabels=False)
     figure.update_layout(
-        template=TEMPLATE,
-        height=420,
-        width=400 * len(scores) + 200,
-        legend_title="class",
+        template=TEMPLATE, legend_title="class", **grid_size(len(scores), PANEL)
     )
     return figure
