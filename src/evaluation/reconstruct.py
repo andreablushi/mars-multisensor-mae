@@ -1,20 +1,20 @@
-"""Rebuilding one tile's hidden patches, from its own tokens and the others'."""
+"""Rebuilding one whole tile's hidden patches, from its own tokens and the others'."""
 
 from __future__ import annotations
 
 import math
-import random
 from collections.abc import Mapping, Sequence
 
 import numpy as np
 import torch
+from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
 from dataset.models.positioning import read_surface_delays
-from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
+from dataset.patches import patch_arrays, read_tile_patches
 from dataset.store import CLIP, STANDARDISED_BY, DatasetBuild
 from training.step import drawn_masks
 
@@ -28,12 +28,11 @@ def reconstruct(
     pool: Mapping[str, int],
     shapes: Mapping[str, tuple[int, ...]],
     delay: str,
-    budget: Mapping[str, int],
     mask_ratio: float,
     seed: int,
     device: torch.device,
 ) -> dict[str, dict[str, np.ndarray]]:
-    """Return one observation of each instrument held, cut as validation cuts, rebuilt.
+    """Return every patch of a tile, a sounder's of one observation, rebuilt.
 
     Args:
         model: The model, on the device.
@@ -44,39 +43,47 @@ def reconstruct(
         pool: How many ground samples of a patch each instrument averages into one.
         shapes: The shape of one patch of each instrument as the model reads it.
         delay: The instrument whose rows give every surface patch its delay.
-        budget: How many patches of each instrument are kept.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        seed: What fixes the cut and the masks.
+        seed: What fixes the masks.
         device: Where the model runs.
 
     Returns:
         reconstruction: Each instrument holding any patch: its patches as the model
-            read them under "values" and "measured", their place on the
-            observation's grid under "cell", how they were normalised under
-            "normalization", what brings them back to raw values as
-            value * scale + offset under "offset" and "scale", which were hidden
-            under "hidden", and the hidden ones
-            rebuilt from its own tokens under "umr" and from the others' under
-            "cmr".
+            read them under "values" and "measured", their place on a grid over
+            the tile, a sounder's on its observation's, under "cell", how they
+            were normalised under "normalization", what brings them back to raw
+            values as value * scale + offset under "offset" and "scale", which
+            were hidden under "hidden", and the hidden ones rebuilt from its own
+            tokens under "umr" and from the others' under "cmr".
     """
-    # The largest observation of each the tile holds, so one image of each is drawn
-    shown = {
-        name: [max(rows[name], key=lambda one: math.prod(one.shape))]
-        for name in sizes
-        if name in rows
-    }
-    read = read_tile_patches(
-        shown, build, sizes, pool, read_surface_delays(build, rows[delay])
-    )
-    sample = cropped_patch_arrays(
-        {
-            name: patch_arrays(held, shapes[name], axes[name])
-            | {"cell": np.array([one.cell for one in held])}
-            for name, held in read.items()
-        },
-        budget,
-        random.Random(seed),
-    )
+    delays = read_surface_delays(build, rows[delay])
+    sample = {}
+    for name in sizes:
+        held = list(rows.get(name, ()))
+        sounder = Axis.DELAY in axes[name]
+        # A sounder's largest radargram alone, drawn on its own grid
+        if sounder and held:
+            held = [max(held, key=lambda one: math.prod(one.shape))]
+        read = [
+            read_tile_patches({name: [record]}, build, sizes, pool, delays)[name]
+            for record in held
+        ]
+        patches = [patch for observation in read for patch in observation]
+        cells = np.array([one.cell for one in patches]).reshape(len(patches), -1)
+        placed = np.array([[-one.north_m, one.east_m] for one in patches])
+        if not sounder and len(patches):
+            steps = []
+            for observation in read:
+                if len(observation) < 2:
+                    continue
+                at = np.array([[-one.north_m, one.east_m] for one in observation])
+                apart = np.linalg.norm(at[:, None] - at[None], axis=-1)
+                np.fill_diagonal(apart, np.inf)
+                steps.append(np.median(apart.min(axis=1)))
+            # Every observation snapped to one grid of patches, south and east growing
+            ground = [at for at, holds in enumerate(axes[name]) if holds == Axis.GROUND]
+            cells[:, ground] = np.round(placed / np.median(steps)).astype(int)
+        sample[name] = patch_arrays(patches, shapes[name], axes[name]) | {"cell": cells}
     batch, _ = token_batch_padding([(sample, "")])
     batch = {
         name: Tokens(*(one.to(device) for one in tokens))

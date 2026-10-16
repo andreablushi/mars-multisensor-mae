@@ -122,7 +122,6 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
             config.dataset.pool,
             shapes,
             config.model.delay,
-            config.dataset.budget,
             config.training.mask_ratio,
             config.dataset.seed,
             device,
