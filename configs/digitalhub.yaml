@@ -24,7 +24,7 @@ stages:
     profile: 1xa40-shared
     resources: {cpu: "8", gpu: "1", mem: 16Gi, disk: 64Gi}
     # The evaluation build holds 102 tiles.
-    volume: 10Gi
+    volume: 50Gi
 
 # The volume a run keeps its ready tiles on, mounted as the dataset root: a new one per
 # run, so it starts empty and keeps each tile the first time it is read. Its size is
