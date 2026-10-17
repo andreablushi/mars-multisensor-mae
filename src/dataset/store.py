@@ -32,8 +32,6 @@ from dataset.models.positioning import read_surface_delays
 from dataset.normalize import offset_and_spread
 from dataset.patches import cropped_patch_arrays, patch_arrays, read_tile_patches
 
-CLIP = 6.0
-
 
 @dataclass(slots=True)
 class DatasetBuild:
@@ -43,6 +41,8 @@ class DatasetBuild:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
         strategies: The strategy each instrument is normalised by.
+        clips: The low and high each instrument's normalised values are clipped to,
+            None leaving a side open, an instrument left out unclipped.
         records: The rows of each sensor of each tile, once the index is read, else
             None.
         stats: The constants of each instrument, once the manifest is read, else
@@ -52,6 +52,7 @@ class DatasetBuild:
     root: Path
     fetch: Callable[[str], bytes]
     strategies: Mapping[str, str]
+    clips: Mapping[str, Sequence[float | None]]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
     stats: dict[str, dict[str, Any]] | None = None
 
@@ -242,9 +243,8 @@ class DatasetBuild:
 
         Returns:
             observation: The observation, its values normalised by the build's own
-                constants, CRISM's also clipped, a pixel missing any band left
-                unmeasured, and zeroed where unmeasured, the rest as the build wrote
-                them.
+                constants and clipped, a CRISM pixel missing any band left unmeasured
+                and zeroed, the rest as the build wrote them.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
@@ -257,14 +257,17 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         axes = tuple(described["axes"])
+        instrument = described["instrument"]
         values = self.normalised_values(
-            arrays[described["measurement"]], axes, described["instrument"]
+            arrays[described["measurement"]], axes, instrument
         )
         measured = arrays[MEASURED]
-        if described["instrument"] == LAYOUT.instrument:
+        if instrument == LAYOUT.instrument:
             # A pixel missing any band is unmeasured, so no band is read as a zero
             measured = measured & np.isfinite(values).all(axis=-1)
-            values = np.where(measured[..., None], np.clip(values, -CLIP, CLIP), 0.0)
+            values = np.where(measured[..., None], values, 0.0)
+        if instrument in self.clips:
+            values = np.clip(values, *self.clips[instrument])
         return Observation(
             values=values,
             axes=axes,
