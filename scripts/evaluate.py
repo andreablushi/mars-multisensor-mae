@@ -81,11 +81,15 @@ def evaluate_checkpoint(config: Config, checkpoint: Path | None, project=None) -
     """
     # The model is built as the training build left it, whichever build the tiles
     # it never read come from.
-    trained = published_build(config.dataset.build, config.dataset.root)
+    trained = published_build(
+        config.dataset.build, config.dataset.root, config.dataset.normalization
+    )
     torch.manual_seed(config.dataset.seed)
     model, device, sizes, shapes = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
-    build = published_build(config.evaluation.build, config.dataset.root)
+    build = published_build(
+        config.evaluation.build, config.dataset.root, config.dataset.normalization
+    )
     classes = build.read_label_by_tile()
     by_tile = build.read_observation_metadata()
     loader = tile_loader(

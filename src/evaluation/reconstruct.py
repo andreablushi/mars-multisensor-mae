@@ -13,7 +13,7 @@ from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
 from dataset.models.positioning import read_surface_delays
 from dataset.patches import patch_arrays, read_tile_patches
-from dataset.store import CLIP, STANDARDISED_BY, DatasetBuild
+from dataset.store import CLIP, DatasetBuild
 from training.step import drawn_masks
 
 
@@ -75,27 +75,16 @@ def reconstruct(
     model.eval()
     with torch.no_grad():
         predictions = model(batch, visible, hidden)
-    stats = build.read_stats()
-    # How each instrument was normalised, named by the constants the build applies
-    normalization = {
-        name: "/".join(STANDARDISED_BY)
-        + (
-            " per band"
-            if any(np.ndim(constants[key]) for key in STANDARDISED_BY)
-            else ""
-        )
-        + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
-        for name, constants in stats.items()
-    }
     return {
         name: arrays
-        | {"normalization": np.array(normalization[name])}
-        | dict(
-            zip(
-                ("offset", "scale"),
-                (np.asarray(stats[name][key], np.float32) for key in STANDARDISED_BY),
-                strict=True,
+        | {
+            "normalization": np.array(
+                build.strategies[name]
+                + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
             )
+        }
+        | dict(
+            zip(("offset", "scale"), build.read_offset_and_spread(name), strict=True)
         )
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}

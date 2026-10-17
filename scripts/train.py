@@ -36,7 +36,9 @@ def run_training(
         model: The published checkpoint, or where it was written on a run here.
     """
     config = load_config(overrides or [])
-    build = published_build(config.dataset.build, config.dataset.root)
+    build = published_build(
+        config.dataset.build, config.dataset.root, config.dataset.normalization
+    )
     model, device, sizes, shapes = built_model(config, build)
     loaders = loaders_by_split(
         build,
