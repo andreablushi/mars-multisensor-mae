@@ -41,7 +41,9 @@ def run_training(
     last, run, curves, starts = None, None, defaultdict(list), {}
     for phase in PHASES:
         config = load_config([*(overrides or []), f"phase={phase}"])
-        build = published_build(config.dataset.build, config.dataset.root)
+        build = published_build(
+            config.dataset.build, config.dataset.root, config.dataset.normalization
+        )
         model, device, sizes, shapes = built_model(config, build)
         if last is not None:
             # A later phase holds instruments an earlier one never trained
