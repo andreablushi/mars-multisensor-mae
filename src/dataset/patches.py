@@ -98,13 +98,6 @@ def cut_patch(
         for length, holds in zip(lengths, axes, strict=True)
     )
     measured = observation.measured[taken].reshape(ground_shape).copy()
-    if Axis.DELAY in axes:
-        # A sounder is placed by the rows it sounded, which is the patch's own cut.
-        at = axes.index(Axis.DELAY)
-        delay = origin[at] + lengths[at] / 2
-    else:
-        # Every ground patch sits at the areoid row, so delay only places a sounder
-        delay = float(sharad.AREOID_ROW)
     # What the instrument is conditioned on, cut as its values and flattened
     condition = np.array(
         [observation.beside[one][window] * measured for one in observation.beside],
@@ -117,7 +110,6 @@ def cut_patch(
         axes=axes,
         north_m=north_m,
         east_m=east_m,
-        delay=delay,
         cell=cell,
     )
 
@@ -231,8 +223,8 @@ def patch_arrays(
             len(patches), width
         ),
         "position": np.array(
-            [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
-        ).reshape(-1, 3),
+            [[one.east_m, one.north_m] for one in patches], np.float32
+        ).reshape(-1, 2),
     }
 
 
@@ -264,7 +256,7 @@ def cropped_patch_arrays(
     Returns:
         sample: Each instrument's kept patch arrays, nearest the centre first.
     """
-    grounds = np.concatenate([arrays["position"][:, :2] for arrays in sample.values()])
+    grounds = np.concatenate([arrays["position"] for arrays in sample.values()])
     # A tile holding no patch has nothing to cut
     if not len(grounds):
         return sample
@@ -272,7 +264,7 @@ def cropped_patch_arrays(
     centre = grounds[draw.randrange(len(grounds))]
     cropped = {}
     for name, arrays in sample.items():
-        apart = np.linalg.norm(arrays["position"][:, :2] - centre, axis=1)
+        apart = np.linalg.norm(arrays["position"] - centre, axis=1)
         kept = np.argsort(apart, kind="stable")[: budget[name]]
         cropped[name] = {key: array[kept] for key, array in arrays.items()}
     return cropped

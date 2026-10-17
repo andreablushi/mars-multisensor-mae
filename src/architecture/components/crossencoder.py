@@ -41,7 +41,7 @@ class CrossSensorEncoder(nn.Module):
         Args:
             keys: Each instrument's encoded tokens, each a key and a query. (B, K, D)
             visible: Which of them carry a patch the encoder read. (B, K)
-            position: Each token's patch centre, in metres or rows. (B, K, 3)
+            position: Each token's patch centre, in metres. (B, K, 2)
 
         Returns:
             cls: The token read over every instrument together. (B, D)
@@ -63,6 +63,6 @@ class CrossSensorEncoder(nn.Module):
         mapped = self.blocks(
             torch.cat([self.cls.expand(len(counted), 1, -1), *keys], 1),
             reads,  # (B, 1 + S, 1 + S)
-            torch.cat([position[0].new_zeros(len(counted), 1, 3), *position], 1),
+            torch.cat([position[0].new_zeros(len(counted), 1, 2), *position], 1),
         )  # (B, 1 + S, D)
         return mapped[:, 0], list(mapped[:, 1:].split(sizes, 1))

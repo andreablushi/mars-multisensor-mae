@@ -124,7 +124,7 @@ class CrossSensorMAE(nn.Module):
         led = [batch[name].led_by_cls(readable[name]) for name in read]
         return Context(
             torch.cat([cls.unsqueeze(1), *(tokens[name] for name in read)], 1),
-            torch.cat([cls.new_zeros(len(cls), 1, 3), *(at for _, at in led)], 1),
+            torch.cat([cls.new_zeros(len(cls), 1, 2), *(at for _, at in led)], 1),
             torch.cat(
                 [cls.new_ones(len(cls), 1, dtype=torch.bool), *(on for on, _ in led)], 1
             ),  # (B, S)

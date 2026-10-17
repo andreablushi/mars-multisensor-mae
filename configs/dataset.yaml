@@ -41,9 +41,9 @@ patchsize:
   CRISM: {ground: 3}
   # A gridded elevation at about 463 m a pixel: about 930 m, as a SHARAD patch.
   MOLA: {ground: 2}
-  # A sounder walks one line, so its ground is traces about 465 m apart and its delay
-  # is depth: 1946 (5002).
-  SHARAD: {ground: 2, delay: 256}
+  # A sounder walks one line, so its ground is traces about 465 m apart, and its
+  # whole delay is read as the patch's channels: 209 (485).
+  SHARAD: {ground: 2}
 
 # How many ground samples of a patch are averaged into one along each ground axis,
 # an instrument left out read whole.
@@ -60,8 +60,8 @@ budget:
   CRISM: 192
   # The same ground as CTX.
   MOLA: 92
-  # About 7 km of one track, every delay.
-  SHARAD: 112
+  # About the ground of CTX, over the tracks crossing it.
+  SHARAD: 24
 
 # The most a training batch's budget is multiplied by, drawn from 1 for each batch, so
 # training sees crops up to twice as wide and evaluation's whole tiles stay closer to
