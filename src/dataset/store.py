@@ -28,6 +28,7 @@ from common.disk.files import atomic_path
 from architecture.tokens import Tokens, token_batch_padding
 from configs.paths import ready_tile_path
 from dataset.models.observation import Observation
+from dataset.normalize import offset_and_spread
 from dataset.patches import (
     condition_width,
     cropped_patch_arrays,
@@ -37,8 +38,6 @@ from dataset.patches import (
 
 CLIP = 6.0
 
-STANDARDISED_BY = ("mean", "std")
-
 
 @dataclass(slots=True)
 class DatasetBuild:
@@ -47,14 +46,16 @@ class DatasetBuild:
     Attributes:
         root: Where the build sits on this machine.
         fetch: How one object is brought down when the root holds none of it.
+        strategies: The strategy each instrument is normalised by.
         records: The rows of each sensor of each tile, once the index is read, else
             None.
-        stats: The mean and std of each instrument, once the manifest is read, else
+        stats: The constants of each instrument, once the manifest is read, else
             None.
     """
 
     root: Path
     fetch: Callable[[str], bytes]
+    strategies: Mapping[str, str]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
     stats: dict[str, dict[str, Any]] | None = None
 
@@ -111,7 +112,7 @@ class DatasetBuild:
         return {name: one.axes for name, one in self.read_row_by_instrument().items()}
 
     def read_stats(self) -> dict[str, dict[str, Any]]:
-        """Return the mean and std each instrument is standardised by, read once.
+        """Return the constants each instrument is normalised by, read once.
 
         Returns:
             stats: The constants of each instrument, per band where it has bands.
@@ -126,10 +127,24 @@ class DatasetBuild:
             self.stats = stats
         return self.stats
 
-    def standardised_values(
+    def read_offset_and_spread(self, instrument: str) -> tuple[np.ndarray, np.ndarray]:
+        """Return what an instrument's strategy subtracts and divides by.
+
+        Args:
+            instrument: The instrument.
+
+        Returns:
+            offset: What is subtracted, per band or one.
+            spread: What the difference is divided by, per band or one.
+        """
+        return offset_and_spread(
+            self.read_stats()[instrument], self.strategies[instrument]
+        )
+
+    def normalised_values(
         self, values: np.ndarray, axes: Sequence[str], instrument: str
     ) -> np.ndarray:
-        """Return one observation's values standardised by its instrument's constants.
+        """Return one observation's values normalised by its instrument's strategy.
 
         Args:
             values: The values, as the build stored them.
@@ -137,16 +152,14 @@ class DatasetBuild:
             instrument: The instrument that took them.
 
         Returns:
-            values: The standardised values.
+            values: The normalised values.
         """
-        constants = self.read_stats()[instrument]
         # Per band constants run along the wavelength axis, a scalar along none.
         shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
-        mean, std = (
-            np.asarray(constants[name], np.float32).reshape(shape)
-            for name in STANDARDISED_BY
+        offset, spread = (
+            one.reshape(shape) for one in self.read_offset_and_spread(instrument)
         )
-        return (values - mean) / std
+        return (values - offset) / spread
 
     def read_label_by_tile(self) -> dict[str, str]:
         """Return the class the feature catalogue gave every tile the draw took.
@@ -231,10 +244,10 @@ class DatasetBuild:
         Args:
             path: Where that object sits, as the index names it.
             beside: What else the instrument stores to read, none of it by default,
-                each standardised by the build's constants of its own name.
+                each normalised by the strategy of its own name.
 
         Returns:
-            observation: The observation, its values standardised by the build's own
+            observation: The observation, its values normalised by the build's own
                 constants, CRISM's also clipped, a pixel missing any band left
                 unmeasured, and zeroed where unmeasured, the rest as the build wrote
                 them.
@@ -250,7 +263,7 @@ class DatasetBuild:
                 for name in (described["measurement"], MEASURED, NORTH, EAST, *beside)
             }
         axes = tuple(described["axes"])
-        values = self.standardised_values(
+        values = self.normalised_values(
             arrays[described["measurement"]], axes, described["instrument"]
         )
         measured = arrays[MEASURED]
@@ -265,7 +278,7 @@ class DatasetBuild:
             north=arrays[NORTH],
             east=arrays[EAST],
             beside={
-                name: self.standardised_values(arrays[name], axes, name)
+                name: self.normalised_values(arrays[name], axes, name)
                 for name in beside
             },
             described=described,

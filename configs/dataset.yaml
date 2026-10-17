@@ -7,6 +7,17 @@ build: training
 # to the repository or absolute.
 root: data/dataset
 
+# What each instrument's values and the SHARAD clutter are normalised by, from the
+# build's constants:
+# zscore (mean and std) or minmax (min and max), per band where it has bands, and
+# zscore-global or minmax-global for one value pooled over every band.
+normalization:
+  CTX: zscore
+  CRISM: zscore
+  SHARAD: zscore
+  MOLA: zscore
+  clutter: zscore
+
 # How far a patch runs along an axis holding each thing, an axis left out taken
 # whole. A tile is 32 km: a CTX or CRISM patch spans about 640 m of its ground, and a
 # SHARAD one about 930 m along its track. Patches a tile are counted over the training build's index,
