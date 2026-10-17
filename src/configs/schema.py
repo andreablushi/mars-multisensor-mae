@@ -13,6 +13,8 @@ class DatasetConfig:
         build: The build to read, which is published as dataset-<build>.
         root: Where every build sits on this machine, under a directory of its own name.
         normalization: The strategy each instrument's values are normalised by.
+        clip: The low and high each instrument's normalised values are clipped to,
+            None leaving a side open.
         patchsize: How far a patch runs along an axis holding each thing, by
             instrument, an axis it omits taken whole.
         pool: How many ground samples of a patch are averaged into one, by
@@ -28,6 +30,7 @@ class DatasetConfig:
     build: str
     root: str
     normalization: dict[str, str]
+    clip: dict[str, list[float | None]]
     patchsize: dict[str, dict[str, int]]
     pool: dict[str, int]
     budget: dict[str, int]

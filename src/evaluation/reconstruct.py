@@ -7,12 +7,11 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import torch
 from building.metadata.observation import ObservationMetadata
-from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens, token_batch_padding
 from dataset.patches import condition_width, patch_arrays, read_tile_patches
-from dataset.store import CLIP, DatasetBuild
+from dataset.store import DatasetBuild
 from training.step import drawn_masks
 
 
@@ -79,7 +78,7 @@ def reconstruct(
         | {
             "normalization": np.array(
                 build.strategies[name]
-                + (f", clipped at ±{CLIP:g}" if name == LAYOUT.instrument else "")
+                + (f", clipped to {build.clips[name]}" if name in build.clips else "")
             )
         }
         | dict(

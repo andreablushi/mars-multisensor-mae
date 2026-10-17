@@ -42,7 +42,10 @@ def run_training(
     for phase in PHASES:
         config = load_config([*(overrides or []), f"phase={phase}"])
         build = published_build(
-            config.dataset.build, config.dataset.root, config.dataset.normalization
+            config.dataset.build,
+            config.dataset.root,
+            config.dataset.normalization,
+            config.dataset.clip,
         )
         model, device, sizes, shapes = built_model(config, build)
         if last is not None:
