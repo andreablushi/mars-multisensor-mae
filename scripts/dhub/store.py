@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -35,7 +35,10 @@ def refresh_credentials() -> None:
 
 
 def published_build(
-    build: str, root: str, strategies: Mapping[str, str]
+    build: str,
+    root: str,
+    strategies: Mapping[str, str],
+    clips: Mapping[str, Sequence[float | None]],
 ) -> DatasetBuild:
     """Return one published build of the dataset, read from the platform's store.
 
@@ -43,6 +46,7 @@ def published_build(
         build: The build to read, which is published as dataset-<build>.
         root: Where every build sits here, relative to the repository.
         strategies: The strategy each instrument is normalised by.
+        clips: The low and high each instrument's normalised values are clipped to.
 
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
@@ -79,7 +83,7 @@ def published_build(
                 raise RuntimeError(f"{key}: {refused}") from None
 
     return DatasetBuild(
-        root=build_root(build, root), fetch=fetch, strategies=strategies
+        root=build_root(build, root), fetch=fetch, strategies=strategies, clips=clips
     )
 
 

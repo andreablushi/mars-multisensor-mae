@@ -37,7 +37,10 @@ def run_training(
     """
     config = load_config(overrides or [])
     build = published_build(
-        config.dataset.build, config.dataset.root, config.dataset.normalization
+        config.dataset.build,
+        config.dataset.root,
+        config.dataset.normalization,
+        config.dataset.clip,
     )
     model, device, sizes, shapes = built_model(config, build)
     loaders = loaders_by_split(

@@ -18,6 +18,17 @@ normalization:
   MOLA: zscore
   clutter: zscore
 
+# The range each instrument's normalised values are clipped to, null leaving a side
+# open and an instrument left out unclipped. SHARAD's bound sits 7 std under the mean,
+# about -55 dB: below it lie only noise and dead traces, never an echo. CTX is clipped
+# per scan in the dataset already, and MOLA holds no noise tail.
+clip:
+  CTX: [null, null]
+  CRISM: [-6.0, 6.0]
+  SHARAD: [-7.0, null]
+  MOLA: [null, null]
+  clutter: [null, null]
+
 # How far a patch runs along an axis holding each thing, an axis left out taken
 # whole. A tile is 32 km: a CTX or CRISM patch spans about 640 m of its ground, and a
 # SHARAD one about 930 m along its track. Patches a tile are counted over the training build's index,
