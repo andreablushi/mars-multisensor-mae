@@ -42,7 +42,7 @@ class CrossSensorEncoder(nn.Module):
         Args:
             keys: Each instrument's encoded tokens, each a key and a query. (B, K, D)
             visible: Which of them carry a patch the encoder read. (B, K)
-            position: Each token's patch centre, in metres or rows. (B, K, 3)
+            position: Each token's patch centre, in metres. (B, K, 2)
 
         Returns:
             cls: The token read over every instrument together. (B, D)

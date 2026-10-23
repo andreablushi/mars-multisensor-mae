@@ -18,8 +18,6 @@ class Patch:
             unmeasured: the cluttergram for SHARAD when conditioned, else nothing.
         north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
-        delay: Which row of the radargram window the patch centre sounds at, its
-            own cut for a sounder and the areoid row for the rest.
         cell: Where the patch sits on its observation's grid of patches, per axis.
     """
 
@@ -28,5 +26,4 @@ class Patch:
     condition: np.ndarray
     north_m: float
     east_m: float
-    delay: float
     cell: tuple[int, ...]

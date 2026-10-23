@@ -21,7 +21,7 @@ class Tokens(NamedTuple):
         values: The normalised patches, zero where padded. (B, K, *P)
         measured: Whether each sample is a measurement, false over padding. (B, K, *P')
         condition: What each patch is conditioned on, flattened, or nothing. (B, K, C)
-        position: The patch centre, east and north in metres, delay in rows. (B, K, 3)
+        position: The patch centre, east and north in metres. (B, K, 2)
     """
 
     values: Tensor
@@ -47,7 +47,7 @@ class Tokens(NamedTuple):
         Returns:
             readable: The same, the CLS slot always counted. (B, 1 + K)
             position: The patch centres, the CLS slot at the tile centre, which the
-                rotary encoding leaves unturned. (B, 1 + K, 3)
+                rotary encoding leaves unturned. (B, 1 + K, 2)
         """
         return (
             functional.pad(readable, (1, 0), value=True),
@@ -80,7 +80,7 @@ class Context(NamedTuple):
 
     Attributes:
         tokens: The tokens, in the space every instrument shares. (B, S, D)
-        position: Each one's patch centre, in metres or rows. (B, S, 3)
+        position: Each one's patch centre, in metres. (B, S, 2)
         readable: Which of them count. (B, S)
     """
 

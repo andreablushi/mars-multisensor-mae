@@ -29,9 +29,9 @@ patchsize:
   # A gridded elevation at about 463 m a pixel: about 930 m, as a SHARAD patch: 1225
   # (1296).
   MOLA: {ground: 2}
-  # A sounder walks one line, so its ground is traces about 465 m apart and its delay
-  # is depth: 2926 (6790).
-  SHARAD: {ground: 2, delay: 256}
+  # A sounder walks one line, so its ground is traces about 465 m apart, and its
+  # whole delay is read as the patch's channels: 209 (485).
+  SHARAD: {ground: 2}
 
 # How many patches of each instrument a training or validation read keeps, the ones
 # nearest a centre drawn on one of the tile's patches; evaluation reads tiles whole.
@@ -42,8 +42,8 @@ budget:
   CRISM: 192
   # The same ground as CTX.
   MOLA: 92
-  # About 7 km of one track, every delay.
-  SHARAD: 112
+  # About the ground of CTX, over the tracks crossing it.
+  SHARAD: 24
 
 # The most a training batch's budget is multiplied by, drawn from 1 for each batch, so
 # training sees crops up to twice as wide and evaluation's whole tiles stay closer to

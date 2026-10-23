@@ -80,9 +80,9 @@ class Decoder(nn.Module):
 
         Args:
             context: The tokens the prediction reads. (B, S, D)
-            context_position: Each one's patch centre, in metres or rows. (B, S, 3)
+            context_position: Each one's patch centre, in metres. (B, S, 2)
             context_readable: Which of them count. (B, S)
-            position: Each asked patch's centre, in metres or rows. (B, K, 3)
+            position: Each asked patch's centre, in metres. (B, K, 2)
             hidden: Which of them to predict. (B, K)
             condition: What each asked patch is conditioned on. (B, K, C)
 
@@ -94,7 +94,7 @@ class Decoder(nn.Module):
         if self.conditioning is not None:
             queries = self.conditioning(queries, condition)
         keys = torch.cat([self.expand(context), queries], dim=1)  # (B, S + K, D')
-        placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
+        placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 2)
         # The readable context and the hidden patches are read, nothing else
         readable = torch.cat([context_readable, hidden], dim=1)  # (B, S + K)
         # The context is only keys, only the patch slots ask as queries and are updated
@@ -117,7 +117,7 @@ class Decoder(nn.Module):
         Args:
             own: The instrument's own tokens.
             others: Every other instrument's tokens.
-            position: Each asked patch's centre, in metres or rows. (B, K, 3)
+            position: Each asked patch's centre, in metres. (B, K, 2)
             hidden: Which of them to predict. (B, K)
             condition: What each asked patch is conditioned on. (B, K, C)
 
