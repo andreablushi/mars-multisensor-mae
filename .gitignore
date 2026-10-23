@@ -1,0 +1,30 @@
+# Artifacts and data
+/data
+.cache/
+
+# Temporary Markdown files
+CLAUDE.md
+AGENTS.md
+notes.md
+latent_space.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# uv
+.python-version
+.venv/
+.ruff_cache/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Runs
+/checkpoints
+/results
+/wandb
+

@@ -1,0 +1,6 @@
+# How a trained model's latent space is read: every labelled tile of the evaluation
+# build is embedded, and what its tokens come to is read against the class each tile
+# carries.
+
+# The build the labelled tiles are read from, published as dataset-<build>.
+build: evaluation-unbal
