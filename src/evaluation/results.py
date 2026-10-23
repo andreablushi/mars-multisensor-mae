@@ -38,18 +38,15 @@ class Metrics:
     """Everything one view of the tiles comes to.
 
     Attributes:
-        tiles: The tiles.
-        labels: The class of each, in the same order.
+        labels: The class of each tile.
         retrieval: Every tile's retrieval and ranking scores. (T,)
         knn: Accuracy and balanced accuracy of the kNN vote.
         classes: The classes, in the order both matrices hold them.
         confusion: Tiles of the row's class voted into the column's. (C, C)
         distances: The mean cosine distance between the tiles of two classes. (C, C)
         silhouette: How much nearer each tile sits to its class than to the next. (T,)
-        projection: Where each tile lands on the UMAP plane. (T, 2)
     """
 
-    tiles: list[str]
     labels: list[str]
     retrieval: dict[str, np.ndarray]
     knn: dict[str, float]
@@ -57,7 +54,6 @@ class Metrics:
     confusion: np.ndarray
     distances: np.ndarray
     silhouette: np.ndarray
-    projection: np.ndarray
 
 
 def write_tile_vectors(

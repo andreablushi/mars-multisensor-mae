@@ -129,7 +129,6 @@ def train(
     log_summary(
         run,
         {
-            "validation_loss": metrics["loss"],
             "steps": num_steps,
             "run_seconds": time.perf_counter() - started,
         },

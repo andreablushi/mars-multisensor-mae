@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 import torch
+from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 
 from architecture.mae import CrossSensorMAE
@@ -14,6 +15,8 @@ from dataset.patches import patch_arrays, read_tile_patches
 from dataset.store import DatasetBuild
 from evaluation.similarity import GAP
 from training.step import drawn_masks, mask_generators
+
+SOUNDER_INCIDENCE_DEG = 140.0
 
 
 def reconstruct(
@@ -42,11 +45,23 @@ def reconstruct(
 
     Returns:
         reconstruction: Each instrument's patches under "values", "measured" and
-            "cell", their "normalization", the "hidden" ones, and those rebuilt
-            under "umr" and "cmr".
+            "cell", the "clip", "mean" and "std" of their z-scores, the "hidden" ones,
+            and those rebuilt under "umr" and "cmr".
     """
-    # The most measured observation of each the tile holds, read whole
-    shown = {name: [max(rows[name], key=lambda one: one.valid_count)] for name in sizes}
+    # The most measured observation of each, a sounder's the pass nearest that incidence
+    shown = {
+        name: [
+            min(
+                rows[name],
+                key=lambda one: abs(
+                    one.acquisition.incidence_deg - SOUNDER_INCIDENCE_DEG
+                ),
+            )
+            if Axis.DELAY in axes[name]
+            else max(rows[name], key=lambda one: one.valid_count)
+        ]
+        for name in sizes
+    }
     read = read_tile_patches(shown, build, sizes)
     sample = {
         name: patch_arrays(
@@ -68,7 +83,11 @@ def reconstruct(
         predictions, _ = model(batch, visible, hidden, GAP)
     return {
         name: arrays
-        | {"normalization": np.array(f"zscore, clipped to {build.clips[name]}")}
+        | {"clip": np.array(build.clips[name], dtype=float)}
+        | {
+            key: np.array(build.read_stats()[name][key], dtype=float)
+            for key in ("mean", "std")
+        }
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
         for name, arrays in sample.items()

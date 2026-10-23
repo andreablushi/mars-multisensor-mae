@@ -26,4 +26,4 @@ stages:
     function: evaluate-mae
     profile: 1xa40-shared
     # The evaluation build holds 377 tiles, about 15 GiB once cut.
-    resources: {cpu: "8", mem: 16Gi, disk: 70Gi}
+    resources: {cpu: "4", mem: 16Gi, disk: 70Gi}

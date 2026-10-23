@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import ssl
 from collections.abc import Callable, Mapping
+from functools import partial
 
 import digitalhub as dh
+import urllib3.connection
 import yaml
 from dotenv import load_dotenv
 
@@ -21,6 +24,13 @@ SECRETS = [
     "WANDB_ENTITY",
     "WANDB_PROJECT",
 ]
+
+if PYTHONPATH in os.environ.get("PYTHONPATH", ""):
+    # A platform job only: the proxy's certificate fails Python 3.13's strict check
+    urllib3.connection.create_urllib3_context = partial(
+        urllib3.connection.create_urllib3_context,
+        verify_flags=ssl.VERIFY_X509_PARTIAL_CHAIN,
+    )
 
 
 def load_platform() -> dict:

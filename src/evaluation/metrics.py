@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections import Counter
 from collections.abc import Sequence
 
@@ -13,26 +12,17 @@ from sklearn.metrics import (
     confusion_matrix,
     silhouette_samples,
 )
-from umap import UMAP
 
 from evaluation.results import Metrics
 
 
-def compute_metrics(
-    similarities: np.ndarray,
-    tiles: Sequence[str],
-    labels: Sequence[str],
-    k: int,
-    seed: int,
-) -> Metrics:
+def compute_metrics(similarities: np.ndarray, labels: Sequence[str], k: int) -> Metrics:
     """Return every metric of one view.
 
     Args:
         similarities: The cosine of every pair of tiles. (T, T)
-        tiles: The tiles, in the same order.
-        labels: The class of each, in the same order.
+        labels: The class of each tile, in the same order.
         k: How many neighbours the kNN vote reads.
-        seed: What the UMAP layout is drawn with.
 
     Returns:
         metrics: The view's metrics.
@@ -40,7 +30,6 @@ def compute_metrics(
     classes = sorted(set(labels))
     knn, confusion = knn_metrics(similarities, labels, classes, k)
     return Metrics(
-        tiles=list(tiles),
         labels=list(labels),
         retrieval=retrieval_metrics(similarities, labels),
         knn=knn,
@@ -48,7 +37,6 @@ def compute_metrics(
         confusion=confusion,
         distances=class_distance_metrics(similarities, labels, classes),
         silhouette=silhouette_scores(similarities, labels),
-        projection=umap_projection(similarities, seed),
     )
 
 
@@ -158,24 +146,3 @@ def silhouette_scores(similarities: np.ndarray, labels: Sequence[str]) -> np.nda
     distances = np.clip(1 - similarities, 0, None)
     np.fill_diagonal(distances, 0)
     return silhouette_samples(distances, labels, metric="precomputed")
-
-
-def umap_projection(similarities: np.ndarray, seed: int) -> np.ndarray:
-    """Return every tile laid on a plane by UMAP, read off the cosine distances.
-
-    Args:
-        similarities: The cosine of every pair of tiles. (T, T)
-        seed: What the layout is drawn with, so the same similarities lay out the same.
-
-    Returns:
-        projection: Where each tile lands on the plane, in the same order. (T, 2)
-    """
-    distances = np.clip(1 - similarities, 0, 2)
-    np.fill_diagonal(distances, 0.0)
-    with warnings.catch_warnings():
-        # No inverse transform is ever asked of the layout
-        warnings.filterwarnings("ignore", "using precomputed metric")
-        # A seeded layout runs on one job either way
-        return UMAP(metric="precomputed", random_state=seed, n_jobs=1).fit_transform(
-            distances
-        )

@@ -1,13 +1,12 @@
-"""Evaluating one published model: run here by default, or submitted with --dh."""
+"""Evaluating one logged model: run here by default, or submitted with --dh."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
+from dataclasses import asdict
 
 import torch
-from building.common.layout import Axis
-from dhub.store import publish_results, published_build, published_checkpoint
+from dhub.store import published_build
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
 
@@ -22,11 +21,11 @@ from evaluation.evaluate import evaluate
 from evaluation.reconstruct import reconstruct
 from evaluation.results import write_reconstruction, write_tile_vectors
 from logs.console import console_logger
+from logs.evaluation import BASELINE, EVALUATION, log_evaluation
+from logs.tracker import logged_checkpoint, start_logging
 
-EVALUATION_STAGE = "evaluation"
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
-RANDOM = "random"
-RECONSTRUCTED_CLASS = "crater"
+RECONSTRUCTED_TILES = {"crater": "b234_c0487", "ice_rich": "b327_c0013"}
 EVALUATION_BATCH_SIZE = 1
 
 log = console_logger(__name__)
@@ -70,17 +69,13 @@ def built_model(
     return model, device, sizes, shapes
 
 
-def evaluate_checkpoint(
-    config: Config, run_name: str, checkpoint: Path | None, project=None
-) -> None:
-    """Measure one checkpoint's latent space over the labelled tiles, rebuild one.
+def evaluate_checkpoint(config: Config, run_name: str) -> None:
+    """Measure one model's latent space over the labelled tiles, rebuild two, log all.
 
     Args:
         config: What the run reads, the model it builds, and how it is measured.
-        run_name: What the run is called, which names its results.
-        checkpoint: The checkpoint to measure, on this machine, or None to measure
-            the weights the run's seed draws.
-        project: The DigitalHub project the results are published in, or None here.
+        run_name: What the run is called, which names the model read and the
+            tracked run, a last part of "random" measuring the seed's own weights.
     """
     # The model is built as the training build left it, whichever build the tiles
     # it never read come from.
@@ -107,66 +102,60 @@ def evaluate_checkpoint(
         sizes,
         shapes,
         EVALUATION_BATCH_SIZE,
-        stage_workers(EVALUATION_STAGE),
+        stage_workers(EVALUATION),
         shuffle=False,
         budget=None,
         scale=1.0,
         seed=None,
     )
-    if checkpoint is not None:
-        held = torch.load(checkpoint, map_location="cpu")
+    run = start_logging(
+        asdict(config),
+        run_name,
+        EVALUATION,
+        {"device": str(device), "reconstructed_tiles": RECONSTRUCTED_TILES},
+    )
+    if run_name.split("/")[-1] != BASELINE:
+        held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")
         model.load_state_dict(held["model"])
-        log.info("%s trained for %d steps", checkpoint, held["step"])
+        log.info("%s trained for %d steps", run_name, held["step"])
     log.info("evaluating %s on %s", run_name, device)
     results = results_path(run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
-    # The tile of the class seen by the most ground observations
-    tile = max(
-        sorted(one for one in by_tile if classes[one] == RECONSTRUCTED_CLASS),
-        key=lambda one: sum(
-            len(by_tile[one][name]) for name in sizes if Axis.DELAY not in axes[name]
-        ),
-    )
-    reconstruction = results_path(run_name, RECONSTRUCTION_FILE)
-    write_reconstruction(
-        reconstruction,
-        tile,
-        reconstruct(
-            model,
-            build,
-            by_tile[tile],
-            axes,
-            sizes,
-            shapes,
-            config.training.mask_ratio,
-            config.dataset.seed,
-            device,
-        ),
-    )
-    log.info("results written to %s", results.parent)
-    if project is not None:
-        for path in (results, reconstruction):
-            publish_results(project, path, run_name)
+    reconstructions = {}
+    for place, tile in RECONSTRUCTED_TILES.items():
+        reconstructions[place] = results_path(
+            run_name, RECONSTRUCTION_FILE.format(place)
+        )
+        write_reconstruction(
+            reconstructions[place],
+            tile,
+            reconstruct(
+                model,
+                build,
+                by_tile[tile],
+                axes,
+                sizes,
+                shapes,
+                config.training.mask_ratio,
+                config.dataset.seed,
+                device,
+            ),
+        )
+    log_evaluation(run, results, reconstructions, run_name)
+    run.finish()
 
 
 @handler()
-def run_evaluation(
-    run_name: str, project=None, overrides: list[str] | None = None
-) -> None:
-    """Measure what one published model's latent space made of the labelled tiles.
+def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
+    """Measure what one logged model's latent space made of the labelled tiles.
 
     Args:
-        run_name: What the run is called, which names the model read and its
-            results, a last part of "random" measuring the seed's own weights.
-        project: The DigitalHub project the model was published in, or None here.
+        run_name: What the run is called, which names the model read and the
+            tracked run, a last part of "random" measuring the seed's own weights.
         overrides: What to change in the configs, as dotted keys.
     """
-    config = load_config(overrides or [])
-    checkpoint = None
-    if run_name.split("/")[-1] != RANDOM:
-        checkpoint = published_checkpoint(run_name, config.training.checkpoints)
-    evaluate_checkpoint(config, run_name, checkpoint, project)
+    evaluate_checkpoint(load_config(overrides or []), run_name)
 
 
 if __name__ == "__main__":
-    run_stage(EVALUATION_STAGE, EVALUATION_HANDLER, run_evaluation, __doc__)
+    run_stage(EVALUATION, EVALUATION_HANDLER, run_evaluation, __doc__)

@@ -24,6 +24,7 @@ __pycache__/
 !.env.example
 
 # Runs
+/artifacts
 /checkpoints
 /results
 /wandb

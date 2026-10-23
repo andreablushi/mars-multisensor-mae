@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from dhub.store import publish_checkpoint, published_build
+from dhub.store import published_build
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
 from evaluate import built_model, evaluate_checkpoint
@@ -17,33 +17,25 @@ from dataset.loader import (
     loaders_by_split,
 )
 from logs.console import console_logger
-from logs.tracker import start_logging
+from logs.tracker import TRAINING, log_checkpoint, start_logging
 from training.train import train
 
-TRAINING_STAGE = "training"
 TRAINING_HANDLER = "scripts.train:run_training"
 
 log = console_logger(__name__)
 
 
-@handler(outputs=["model"])
+@handler()
 def run_training(
-    run_name: str,
-    project=None,
-    overrides: list[str] | None = None,
-    evaluate: bool = False,
-):
-    """Train one run, publish the checkpoint it ended on, and evaluate it if asked.
+    run_name: str, overrides: list[str] | None = None, evaluate: bool = False
+) -> None:
+    """Train one run, log the checkpoint it ended on, and evaluate it if asked.
 
     Args:
         run_name: What the run is called, which names the model it saves and the
             tracked run it logs to, the part before a slash grouping it.
-        project: The DigitalHub project the model is logged into, or None here.
         overrides: What to change in the configs, as dotted keys.
         evaluate: Whether to evaluate the checkpoint once the training ends.
-
-    Returns:
-        model: The published checkpoint, or where it was written on a run here.
     """
     config = load_config(overrides or [])
     build = published_build(
@@ -53,7 +45,7 @@ def run_training(
         config.model.clutter_conditioning,
     )
     model, device, sizes, shapes = built_model(config, build)
-    workers = stage_workers(TRAINING_STAGE)
+    workers = stage_workers(TRAINING)
     loaders = loaders_by_split(
         build,
         sizes,
@@ -72,7 +64,7 @@ def run_training(
     run = start_logging(
         asdict(config),
         run_name,
-        TRAINING_STAGE,
+        TRAINING,
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
@@ -102,18 +94,15 @@ def run_training(
         run,
         asdict(config),
     )
+    log_checkpoint(run, last, run_name)
     run.finish()
-    published = last
-    if project is not None:
-        published = publish_checkpoint(project, last, run_name)
     if evaluate:
-        evaluate_checkpoint(config, run_name, last, project)
-    return published
+        evaluate_checkpoint(config, run_name)
 
 
 if __name__ == "__main__":
     run_stage(
-        TRAINING_STAGE,
+        TRAINING,
         TRAINING_HANDLER,
         run_training,
         __doc__,
