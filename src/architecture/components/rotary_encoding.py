@@ -5,8 +5,6 @@ from __future__ import annotations
 import math
 
 import torch
-from building.configs import sharad
-from common.maths import physics
 from torch import Tensor, nn
 
 # B = batch, H = heads, N = tokens, E = head channels, F = frequencies.
@@ -15,13 +13,11 @@ SHORTEST_M = 1280.0
 
 LONGEST_M = 64_000.0
 
-METRES_PER_ROW = physics.SPEED_OF_LIGHT_M_S * sharad.DELAY_INTERVAL_S / 2
-
-COORDINATES = 3
+COORDINATES = 2
 
 
 class RotaryEncoding(nn.Module):
-    """A rotary encoding of east, north and height, so attention reads offsets alone.
+    """A rotary encoding of east and north, so attention reads ground offsets alone.
 
     Attributes:
         frequencies: The angular frequency of each rotated pair, in radians a metre. (F)
@@ -31,7 +27,7 @@ class RotaryEncoding(nn.Module):
         """Lay out the frequencies for one head width.
 
         Args:
-            head_dim: How wide one attention head is, its remainder past 6F left as is.
+            head_dim: How wide one attention head is, its remainder past 4F left as is.
         """
         super().__init__()
         wavelengths = torch.logspace(
@@ -44,21 +40,19 @@ class RotaryEncoding(nn.Module):
 
         Args:
             heads: The queries or keys of every head. (B, H, N, E)
-            position: Each token's patch centre, in metres or rows. (B, N, 3)
+            position: Each token's patch centre, east and north in metres first, a
+                sounder's delay after them left out. (B, N, 3)
 
         Returns:
             rotated: The same heads, each pair turned by its coordinate. (B, H, N, E)
         """
-        where = torch.stack(
-            [position[..., 0], position[..., 1], position[..., 2] * METRES_PER_ROW],
-            dim=-1,
-        )  # (B, N, 3)
-        angle = (where.unsqueeze(-1) * self.frequencies).flatten(-2)  # (B, N, 3F)
-        cos = angle.cos().unsqueeze(1).to(heads.dtype)  # (B, 1, N, 3F)
-        sin = angle.sin().unsqueeze(1).to(heads.dtype)  # (B, 1, N, 3F)
+        where = position[..., :COORDINATES]  # (B, N, 2)
+        angle = (where.unsqueeze(-1) * self.frequencies).flatten(-2)  # (B, N, 2F)
+        cos = angle.cos().unsqueeze(1).to(heads.dtype)  # (B, 1, N, 2F)
+        sin = angle.sin().unsqueeze(1).to(heads.dtype)  # (B, 1, N, 2F)
         turned = angle.shape[-1]
-        first = heads[..., :turned]  # (B, H, N, 3F)
-        second = heads[..., turned : 2 * turned]  # (B, H, N, 3F)
+        first = heads[..., :turned]  # (B, H, N, 2F)
+        second = heads[..., turned : 2 * turned]  # (B, H, N, 2F)
         return torch.cat(
             [
                 first * cos - second * sin,

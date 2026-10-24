@@ -9,6 +9,7 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 from architecture.components.cluttergram_conditioning import CluttergramConditioning
+from architecture.components.delay_encoding import DelayEncoding
 from architecture.components.transformer import Transformer
 from architecture.tokens import Context
 
@@ -24,6 +25,7 @@ class Decoder(nn.Module):
         expand: From the shared width to the decoder width.
         mask: The token standing in for a hidden patch. (D')
         conditioning: What tells a hidden patch's token its condition, or None.
+        delay: What tells a sounder's hidden patch's token its delay, or None.
         blocks: The transformer the patches read the context through.
         predict: From a token to every sample of its patch.
     """
@@ -36,6 +38,7 @@ class Decoder(nn.Module):
         dim: int,
         heads: int,
         depth: int,
+        sounded: bool,
     ) -> None:
         """Build the decoder for one instrument.
 
@@ -46,6 +49,7 @@ class Decoder(nn.Module):
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
+            sounded: Whether the instrument is a sounder, its patches cut in delay.
         """
         super().__init__()
         # The shape of one patch, which the output is unflattened to
@@ -66,6 +70,7 @@ class Decoder(nn.Module):
         self.conditioning = (
             CluttergramConditioning(condition, dim) if condition else None
         )
+        self.delay = DelayEncoding(dim) if sounded else None
 
     def reconstructed_patches(
         self,
@@ -93,6 +98,8 @@ class Decoder(nn.Module):
         queries = self.mask.expand(*hidden.shape, -1)  # (B, K, D')
         if self.conditioning is not None:
             queries = self.conditioning(queries, condition)
+        if self.delay is not None:
+            queries = self.delay(queries, position[..., 2])
         keys = torch.cat([self.expand(context), queries], dim=1)  # (B, S + K, D')
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
         # The readable context and the hidden patches are read, nothing else

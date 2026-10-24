@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 
 import torch
 from torch import Tensor, nn
@@ -30,6 +30,7 @@ class CrossSensorMAE(nn.Module):
         self,
         shapes: dict[str, tuple[int, ...]],
         conditions: dict[str, int],
+        sounders: Collection[str],
         encoder_dim: int,
         encoder_heads: int,
         encoder_depth: int,
@@ -44,6 +45,8 @@ class CrossSensorMAE(nn.Module):
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
             conditions: How many values each instrument's patches are conditioned on.
+            sounders: The instruments whose patches are cut in delay, each token told
+                its delay apart from its place on the ground.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
@@ -73,6 +76,7 @@ class CrossSensorMAE(nn.Module):
                         encoder_dim,
                         encoder_heads,
                         encoder_depth,
+                        name in sounders,
                     ),
                 )
                 for name, shape in shapes.items()
@@ -95,6 +99,7 @@ class CrossSensorMAE(nn.Module):
                         decoder_dim,
                         decoder_heads,
                         decoder_depth,
+                        name in sounders,
                     ),
                 )
                 for name, shape in shapes.items()

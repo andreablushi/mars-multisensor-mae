@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import asdict
 
 import torch
+from building.common.layout import Axis
 from dhub.store import published_build
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
@@ -55,9 +56,11 @@ def built_model(
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
     shapes = read_patch_shapes(build, sizes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    axes = build.read_axes_by_instrument()
     model = CrossSensorMAE(
         shapes,
         {name: build.condition_width(name, shape) for name, shape in shapes.items()},
+        [name for name in shapes if Axis.DELAY in axes[name]],
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,

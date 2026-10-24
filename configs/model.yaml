@@ -1,7 +1,7 @@
 # An encoder and a decoder per instrument, one cross-sensor encoder between them.
 
-# The instruments read as tokens. Every surface patch sits at the areoid row, so
-# delay places SHARAD alone.
+# The instruments read as tokens, each placed on the ground by east and north, SHARAD's
+# delay told to its tokens apart.
 instruments: [CTX, CRISM, MOLA, SHARAD]
 
 # The instrument encoders and the cross-sensor encoder, all one width.

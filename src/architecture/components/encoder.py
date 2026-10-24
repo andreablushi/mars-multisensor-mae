@@ -9,6 +9,7 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 from architecture.components.cluttergram_conditioning import CluttergramConditioning
+from architecture.components.delay_encoding import DelayEncoding
 from architecture.components.transformer import Transformer
 from architecture.tokens import Tokens
 
@@ -21,6 +22,7 @@ class Encoder(nn.Module):
     Attributes:
         embed: From every sample of a patch to a token.
         conditioning: What tells a token its patch's condition, or None.
+        delay: What tells a sounder's token its patch's delay, or None.
         cls: The token that leads every sequence and gathers it. (D)
         blocks: The transformer.
     """
@@ -32,6 +34,7 @@ class Encoder(nn.Module):
         dim: int,
         heads: int,
         depth: int,
+        sounded: bool,
     ) -> None:
         """Build the encoder for one instrument.
 
@@ -41,6 +44,7 @@ class Encoder(nn.Module):
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
+            sounded: Whether the instrument is a sounder, its patches cut in delay.
         """
         super().__init__()
         # Map every sample of a patch into the token width
@@ -53,6 +57,7 @@ class Encoder(nn.Module):
         self.conditioning = (
             CluttergramConditioning(condition, dim) if condition else None
         )
+        self.delay = DelayEncoding(dim) if sounded else None
 
     def forward(self, patches: Tokens, visible: Tensor) -> Tensor:
         """Return the encoded tokens.
@@ -70,6 +75,8 @@ class Encoder(nn.Module):
         keys = self.embed(read)  # (B, K, D)
         if self.conditioning is not None:
             keys = self.conditioning(keys, patches.condition)
+        if self.delay is not None:
+            keys = self.delay(keys, patches.position[..., 2])
         keys = torch.cat([self.cls.expand(len(keys), 1, -1), keys], 1)  # (B, 1 + K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
         readable, position = patches.readable_and_position_with_cls(visible)
