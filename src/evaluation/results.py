@@ -105,42 +105,40 @@ def read_tile_vectors(
     return tiles, [classes[tile] for tile in tiles], vectors
 
 
-def write_reconstruction(
-    path: Path, tile: str, reconstruction: Mapping[str, Mapping[str, np.ndarray]]
+def write_tile_arrays(
+    path: Path, by_instrument: Mapping[str, Mapping[str, np.ndarray]]
 ) -> None:
-    """Write one tile's reconstruction, every array under <instrument>/<key>.
+    """Write one tile's arrays, every one under <instrument>/<key>.
 
     Args:
         path: The npz file to write, whose directory is made if missing.
-        tile: The tile rebuilt.
-        reconstruction: Each instrument's arrays, keyed as reconstruct names them.
+        by_instrument: Each instrument's arrays, keyed as reconstruct or attend
+            names them.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         path,
-        tile=np.array(tile),
         **{
             f"{name}/{key}": array
-            for name, arrays in reconstruction.items()
+            for name, arrays in by_instrument.items()
             for key, array in arrays.items()
         },
     )
 
 
-def read_reconstruction(path: Path) -> tuple[str, dict[str, dict[str, np.ndarray]]]:
-    """Return one tile's reconstruction, as write_reconstruction wrote it.
+def read_tile_arrays(path: Path) -> dict[str, dict[str, np.ndarray]]:
+    """Return one tile's arrays, as write_tile_arrays wrote them.
 
     Args:
         path: The npz file.
 
     Returns:
-        tile: The tile rebuilt.
-        reconstruction: Each instrument's arrays, keyed as reconstruct names them.
+        by_instrument: Each instrument's arrays, keyed as reconstruct or attend
+            names them.
     """
-    reconstruction = defaultdict(dict)
+    by_instrument = defaultdict(dict)
     with np.load(path) as arrays:
         for packed in arrays.files:
-            if packed != "tile":
-                name, key = packed.split("/")
-                reconstruction[name][key] = arrays[packed]
-        return str(arrays["tile"]), dict(reconstruction)
+            name, key = packed.split("/")
+            by_instrument[name][key] = arrays[packed]
+    return dict(by_instrument)

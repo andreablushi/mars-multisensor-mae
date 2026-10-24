@@ -57,6 +57,13 @@ uv run --group digitalhub python scripts/evaluate.py --dh --ref main default/mae
 - A reconstruction shows each instrument's most measured observation, SHARAD's
   pass nearest 140° solar incidence, drawn over the configured clip or, on an
   open side, the original's own extreme.
+- On the same two tiles each instrument is also rebuilt by CMR from every other
+  instrument read whole, beside where it looked: the decoder's attention rolled
+  out over its blocks (Abnar and Zuidema, 2020), its heads averaged, red where a
+  place drew more than its instrument's mean and blue where less, each
+  instrument's share in the caption. SHARAD shows its most attended pass. The
+  rebuilt observation is outlined in orange on every map, a SHARAD pass as its
+  track.
 - `random` is the baseline every score is coloured against.
 
 ## Comparison views

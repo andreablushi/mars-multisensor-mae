@@ -19,6 +19,62 @@ from training.step import drawn_masks, mask_generators
 SOUNDER_INCIDENCE_DEG = 140.0
 
 
+def shown_observation(
+    rows: Sequence[ObservationMetadata], axes: Sequence[str]
+) -> ObservationMetadata:
+    """Return the observation one instrument of a tile is drawn by.
+
+    Args:
+        rows: The tile's index rows of the instrument.
+        axes: What each axis of its values holds.
+
+    Returns:
+        shown: The most measured observation, a sounder's the pass nearest
+            SOUNDER_INCIDENCE_DEG.
+    """
+    if Axis.DELAY in axes:
+        return min(
+            rows,
+            key=lambda one: abs(one.acquisition.incidence_deg - SOUNDER_INCIDENCE_DEG),
+        )
+    return max(rows, key=lambda one: one.valid_count)
+
+
+def drawn_stats(build: DatasetBuild, name: str) -> dict[str, np.ndarray]:
+    """Return what one instrument's z-scores are drawn by.
+
+    Args:
+        build: The build the instrument is read from.
+        name: The instrument, as ODE names it.
+
+    Returns:
+        stats: The "clip" they were cut to, and the "mean" and "std" that undo them.
+    """
+    return {"clip": np.array(build.clips[name], dtype=float)} | {
+        key: np.array(build.read_stats()[name][key], dtype=float)
+        for key in ("mean", "std")
+    }
+
+
+def tile_batch(
+    sample: Mapping[str, Mapping[str, np.ndarray]], device: torch.device
+) -> dict[str, Tokens]:
+    """Return one tile's patch arrays as a batch of one, on the device.
+
+    Args:
+        sample: Each instrument's patch arrays.
+        device: Where the model runs.
+
+    Returns:
+        batch: Each instrument's patches, as the model reads them.
+    """
+    batch, _ = token_batch_padding([(sample, "")])
+    return {
+        name: Tokens(*(one.to(device) for one in tokens))
+        for name, tokens in batch.items()
+    }
+
+
 def reconstruct(
     model: CrossSensorMAE,
     build: DatasetBuild,
@@ -48,20 +104,7 @@ def reconstruct(
             "cell", the "clip", "mean" and "std" of their z-scores, the "hidden" ones,
             and those rebuilt under "umr" and "cmr".
     """
-    # The most measured observation of each, a sounder's the pass nearest that incidence
-    shown = {
-        name: [
-            min(
-                rows[name],
-                key=lambda one: abs(
-                    one.acquisition.incidence_deg - SOUNDER_INCIDENCE_DEG
-                ),
-            )
-            if Axis.DELAY in axes[name]
-            else max(rows[name], key=lambda one: one.valid_count)
-        ]
-        for name in sizes
-    }
+    shown = {name: [shown_observation(rows[name], axes[name])] for name in sizes}
     read = read_tile_patches(shown, build, sizes)
     sample = {
         name: patch_arrays(
@@ -70,11 +113,7 @@ def reconstruct(
         | {"cell": np.array([one.cell for one in held])}
         for name, held in read.items()
     }
-    batch, _ = token_batch_padding([(sample, "")])
-    batch = {
-        name: Tokens(*(one.to(device) for one in tokens))
-        for name, tokens in batch.items()
-    }
+    batch = tile_batch(sample, device)
     visible, hidden = drawn_masks(
         batch, mask_ratio, mask_generators(batch, seed, device)
     )
@@ -83,11 +122,7 @@ def reconstruct(
         predictions, _ = model(batch, visible, hidden, GAP)
     return {
         name: arrays
-        | {"clip": np.array(build.clips[name], dtype=float)}
-        | {
-            key: np.array(build.read_stats()[name][key], dtype=float)
-            for key in ("mean", "std")
-        }
+        | drawn_stats(build, name)
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
         for name, arrays in sample.items()

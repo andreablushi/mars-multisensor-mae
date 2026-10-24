@@ -12,20 +12,21 @@ from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config
-from configs.paths import RECONSTRUCTION_FILE, results_path
+from configs.paths import ATTENTION_FILE, RECONSTRUCTION_FILE, results_path
 from configs.schema import Config
 from dataset.loader import tile_loader
 from dataset.patches import read_patch_shapes
 from dataset.store import DatasetBuild
+from evaluation.attention import attend
 from evaluation.evaluate import evaluate
 from evaluation.reconstruct import reconstruct
-from evaluation.results import write_reconstruction, write_tile_vectors
+from evaluation.results import write_tile_arrays, write_tile_vectors
 from logs.console import console_logger
 from logs.evaluation import BASELINE, EVALUATION, log_evaluation
 from logs.tracker import logged_checkpoint, start_logging
 
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
-RECONSTRUCTED_TILES = {"crater": "b234_c0487", "ice_rich": "b327_c0013"}
+RECONSTRUCTED_TILES = {"crater": "b209_c0352", "ice_rich": "b327_c0013"}
 EVALUATION_BATCH_SIZE = 1
 
 log = console_logger(__name__)
@@ -121,14 +122,13 @@ def evaluate_checkpoint(config: Config, run_name: str) -> None:
     log.info("evaluating %s on %s", run_name, device)
     results = results_path(run_name)
     write_tile_vectors(results, classes, evaluate(model, loader, device))
-    reconstructions = {}
+    reconstructions, attentions = {}, {}
     for place, tile in RECONSTRUCTED_TILES.items():
         reconstructions[place] = results_path(
             run_name, RECONSTRUCTION_FILE.format(place)
         )
-        write_reconstruction(
+        write_tile_arrays(
             reconstructions[place],
-            tile,
             reconstruct(
                 model,
                 build,
@@ -141,7 +141,15 @@ def evaluate_checkpoint(config: Config, run_name: str) -> None:
                 device,
             ),
         )
-    log_evaluation(run, results, reconstructions, run_name)
+        for query in sizes:
+            attentions[place, query] = results_path(
+                run_name, ATTENTION_FILE.format(place, query)
+            )
+            write_tile_arrays(
+                attentions[place, query],
+                attend(model, build, by_tile[tile], axes, sizes, shapes, query, device),
+            )
+    log_evaluation(run, results, reconstructions, attentions, run_name)
     run.finish()
 
 

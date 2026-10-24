@@ -20,6 +20,8 @@ RESULTS_FILE = "results.parquet"
 
 RECONSTRUCTION_FILE = "reconstruction-{}.npz"
 
+ATTENTION_FILE = "attention-{}-{}.npz"
+
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.
