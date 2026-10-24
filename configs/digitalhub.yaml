@@ -21,7 +21,7 @@ stages:
     function: train-mae
     profile: 1xa40-shared
     # Every tile of the training build cut, about 280 GiB.
-    resources: {cpu: "8", mem: 48Gi, disk: 350Gi}
+    resources: {cpu: "4", mem: 48Gi, disk: 350Gi}
   evaluation:
     function: evaluate-mae
     profile: 1xa40-shared
