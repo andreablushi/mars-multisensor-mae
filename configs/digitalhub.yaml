@@ -6,10 +6,10 @@ project: mars-multisensor-features
 # The repository a job clones when it starts.
 repository: https://github.com/andreablushi/mars-multisensor-mae
 
-# The interpreter and the platform's own base image a job runs on, which installs
-# requirements.txt from its clone with uv.
+# The interpreter and the base image a job runs on, which installs requirements.txt
+# from its clone with uv. The full image holds the C compiler torch.compile builds with.
 python_version: PYTHON3_13
-base_image: python:3.13-slim
+base_image: python:3.13
 
 # What each stage is registered as and gets: a -shared profile queues on the shared
 # pool and caps the cores, memory and GPU. The cores and memory asked are what the queue
