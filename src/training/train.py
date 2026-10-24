@@ -14,6 +14,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
+from architecture.components.transformer import Transformer
 from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
 from logs.console import console_logger
@@ -78,6 +79,10 @@ def train(
         fused=True,
     )
     torch.set_float32_matmul_precision("high")
+    # Every attention stack compiled in place, its shapes free as the budget draws them
+    for module in model.modules():
+        if isinstance(module, Transformer):
+            module.compile(dynamic=True)
 
     def lambda_lr_schedule(step: int) -> float:
         if step < warmup_steps:

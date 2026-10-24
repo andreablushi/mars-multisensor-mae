@@ -144,7 +144,6 @@ def tile_loader(
         shuffle=shuffle,
         num_workers=workers,
         persistent_workers=workers > 0,
-        prefetch_factor=4 if workers else None,
         pin_memory=True,
         generator=generator,
         collate_fn=partial(
