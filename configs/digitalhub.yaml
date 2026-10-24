@@ -6,10 +6,10 @@ project: mars-multisensor-features
 # The repository a job clones when it starts.
 repository: https://github.com/andreablushi/mars-multisensor-mae
 
-# The interpreter and the base image a job runs on, which installs requirements.txt
-# from its clone with uv. The full image holds the C compiler torch.compile builds with.
+# The interpreter and the platform's own base image a job runs on, which installs
+# requirements.txt from its clone with uv.
 python_version: PYTHON3_13
-base_image: python:3.13
+base_image: python:3.13-slim
 
 # What each stage is registered as and gets: a -shared profile queues on the shared
 # pool and caps the cores, memory and GPU. The cores and memory asked are what the queue
@@ -21,7 +21,7 @@ stages:
     function: train-mae
     profile: 1xa40-shared
     # Every tile of the training build cut, about 280 GiB.
-    resources: {cpu: "4", mem: 48Gi, disk: 350Gi}
+    resources: {cpu: "6", mem: 48Gi, disk: 350Gi}
   evaluation:
     function: evaluate-mae
     profile: 1xa40-shared
