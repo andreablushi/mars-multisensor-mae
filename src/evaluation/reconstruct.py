@@ -124,6 +124,6 @@ def reconstruct(
         name: arrays
         | drawn_stats(build, name)
         | {"hidden": hidden[name][0].cpu().numpy()}
-        | {term: predictions[term][name][0].cpu().numpy() for term in predictions}
+        | {term: predictions[term][name][0].cpu().numpy() for term in ("umr", "cmr")}
         for name, arrays in sample.items()
     }
