@@ -7,7 +7,7 @@ from dataclasses import asdict
 from dhub.store import published_build
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
-from evaluate import built_model, evaluate_checkpoint
+from evaluate import CLUTTER_NONE, built_model, evaluate_checkpoint
 
 from configs.load import load_config
 from dataset.loader import (
@@ -42,7 +42,7 @@ def run_training(
         config.dataset.build,
         config.dataset.root,
         config.dataset.clip,
-        config.model.clutter_conditioning,
+        config.model.clutter != CLUTTER_NONE,
     )
     model, device, sizes, shapes = built_model(config, build)
     workers = stage_workers(TRAINING)

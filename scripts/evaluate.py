@@ -28,6 +28,9 @@ from logs.tracker import logged_checkpoint, start_logging
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 RECONSTRUCTED_TILES = {"crater": "b209_c0352", "ice_rich": "b327_c0013"}
 EVALUATION_BATCH_SIZE = 1
+CLUTTER_CONDITION = "condition"
+CLUTTER_TARGET = "target"
+CLUTTER_NONE = "none"
 
 log = console_logger(__name__)
 
@@ -57,7 +60,15 @@ def built_model(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
-        {name: build.condition_width(name, shape) for name, shape in shapes.items()},
+        {
+            name: build.condition_width(name, shape)
+            if config.model.clutter == CLUTTER_CONDITION
+            else 0
+            for name, shape in shapes.items()
+        },
+        [name for name in shapes if build.conditions(name)]
+        if config.model.clutter == CLUTTER_TARGET
+        else [],
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,
@@ -84,7 +95,7 @@ def evaluate_checkpoint(config: Config, run_name: str) -> None:
         config.dataset.build,
         config.dataset.root,
         config.dataset.clip,
-        config.model.clutter_conditioning,
+        config.model.clutter != CLUTTER_NONE,
     )
     model, device, sizes, shapes = built_model(config, trained)
     axes = trained.read_axes_by_instrument()
@@ -92,7 +103,7 @@ def evaluate_checkpoint(config: Config, run_name: str) -> None:
         config.evaluation.build,
         config.dataset.root,
         config.dataset.clip,
-        config.model.clutter_conditioning,
+        config.model.clutter != CLUTTER_NONE,
     )
     classes = build.read_label_by_tile()
     by_tile = build.read_observation_metadata()

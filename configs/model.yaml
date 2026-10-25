@@ -15,6 +15,7 @@ decoder_dim: 384
 decoder_heads: 6
 decoder_depth: 4
 
-# Whether SHARAD's patches are conditioned on their cluttergram, as
-# src/architecture/components/cluttergram_conditioning.py reads it.
-clutter_conditioning: true
+# What SHARAD's cluttergram is to the model: condition, added to its tokens as
+# src/architecture/components/cluttergram_conditioning.py reads it, target, predicted
+# from every other instrument's tokens by a one-block head, or none.
+clutter: condition

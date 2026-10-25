@@ -47,8 +47,8 @@ class ModelConfig:
         decoder_dim: How wide a token is in the decoders, a multiple of 6.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
-        clutter_conditioning: Whether SHARAD's patches are conditioned on their
-            cluttergram.
+        clutter: What SHARAD's cluttergram is to the model: "condition", added to
+            its tokens, "target", predicted from every other instrument, or "none".
     """
 
     instruments: list[str]
@@ -59,7 +59,7 @@ class ModelConfig:
     decoder_dim: int
     decoder_heads: int
     decoder_depth: int
-    clutter_conditioning: bool
+    clutter: str
 
 
 @dataclass
