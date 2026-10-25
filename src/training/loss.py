@@ -69,33 +69,6 @@ def cmr(
     return {name: mse(predictions[name], batch[name], hidden[name]) for name in batch}
 
 
-def clutter(
-    predictions: Mapping[str, Tensor],
-    batch: Mapping[str, Tokens],
-    hidden: Mapping[str, Tensor],
-) -> dict[str, Tensor]:
-    """Return each cluttered instrument's cluttergram error, read as its CMR is.
-
-    Args:
-        predictions: Each cluttered instrument's cluttergram read from the others'
-            tokens. (B, K, *P)
-        batch: Each instrument's patches over the batch, its cluttergram the
-            condition.
-        hidden: Which patches are predicted. (B, K)
-
-    Returns:
-        errors: Each cluttered instrument's error over its hidden patches. ()
-    """
-    return {
-        name: mse(
-            prediction,
-            batch[name]._replace(values=batch[name].condition.reshape_as(prediction)),
-            hidden[name],
-        )
-        for name, prediction in predictions.items()
-    }
-
-
 def mim(
     pooled: Mapping[str, Tensor], aligned: Sequence[str], temperature: float
 ) -> dict[str, Tensor]:
@@ -125,7 +98,6 @@ def mim(
 def total(
     umr_errors: Mapping[str, Tensor],
     cmr_errors: Mapping[str, Tensor],
-    clutter_errors: Mapping[str, Tensor],
     mim_errors: Mapping[str, Tensor],
 ) -> dict[str, Tensor]:
     """Return every term and the loss, the reconstruction sum plus the mean MIM.
@@ -133,7 +105,6 @@ def total(
     Args:
         umr_errors: Each instrument's UMR error. ()
         cmr_errors: Each instrument's CMR error. ()
-        clutter_errors: Each cluttered instrument's cluttergram error. ()
         mim_errors: Each aligned pair's MIM error, none when nothing is aligned. ()
 
     Returns:
@@ -141,11 +112,7 @@ def total(
     """
     terms = {
         f"{term}/{name}": error
-        for term, errors in (
-            ("umr", umr_errors),
-            ("cmr", cmr_errors),
-            ("clutter", clutter_errors),
-        )
+        for term, errors in (("umr", umr_errors), ("cmr", cmr_errors))
         for name, error in errors.items()
     }
     loss = sum(terms.values())

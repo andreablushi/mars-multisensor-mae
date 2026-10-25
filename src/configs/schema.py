@@ -48,7 +48,8 @@ class ModelConfig:
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
         clutter: What SHARAD's cluttergram is to the model: "condition", added to
-            its tokens, "target", predicted from every other instrument, or "none".
+            its tokens in its encoder and decoder, "encoder", in its encoder alone,
+            or "none".
     """
 
     instruments: list[str]

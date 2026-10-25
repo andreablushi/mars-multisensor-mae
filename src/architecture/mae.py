@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
-from torch.utils.checkpoint import checkpoint
 
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
@@ -18,8 +17,6 @@ from evaluation.similarity import CLS, global_average_pooling
 
 # B = batch, K = patches, S = tokens read together, D = token channels,
 # P = patch dimensions.
-
-CLUTTER_DEPTH = 1
 
 
 class CrossSensorMAE(nn.Module):
@@ -32,8 +29,8 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
-        conditions: dict[str, int],
-        cluttered: Collection[str],
+        encoder_conditions: dict[str, int],
+        decoder_conditions: dict[str, int],
         encoder_dim: int,
         encoder_heads: int,
         encoder_depth: int,
@@ -47,9 +44,10 @@ class CrossSensorMAE(nn.Module):
 
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
-            conditions: How many values each instrument's patches are conditioned on.
-            cluttered: The instruments whose cluttergram a head predicts from every
-                other instrument's tokens.
+            encoder_conditions: How many values each instrument's encoder reads its
+                patches conditioned on.
+            decoder_conditions: How many values each instrument's decoder reads its
+                patches conditioned on.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
@@ -75,7 +73,7 @@ class CrossSensorMAE(nn.Module):
                     f"encoders.{name}",
                     lambda: Encoder(
                         shape,
-                        conditions[name],
+                        encoder_conditions[name],
                         encoder_dim,
                         encoder_heads,
                         encoder_depth,
@@ -96,7 +94,7 @@ class CrossSensorMAE(nn.Module):
                     f"decoders.{name}",
                     lambda: Decoder(
                         shape,
-                        conditions[name],
+                        decoder_conditions[name],
                         encoder_dim,
                         decoder_dim,
                         decoder_heads,
@@ -104,23 +102,6 @@ class CrossSensorMAE(nn.Module):
                     ),
                 )
                 for name, shape in shapes.items()
-            }
-        )
-        # One shallow head per cluttered instrument, so the geometry sits in the tokens
-        self.clutter = nn.ModuleDict(
-            {
-                name: seeded(
-                    f"clutter.{name}",
-                    lambda: Decoder(
-                        shapes[name],
-                        0,
-                        encoder_dim,
-                        decoder_dim,
-                        decoder_heads,
-                        CLUTTER_DEPTH,
-                    ),
-                )
-                for name in cluttered
             }
         )
 
@@ -200,8 +181,7 @@ class CrossSensorMAE(nn.Module):
         Returns:
             predictions: Under "umr" each instrument's patches read from its own
                 tokens with the CLS of every instrument, under "cmr" from every
-                other instrument's without it, and under "clutter" each cluttered
-                instrument's cluttergram read as its CMR is. (B, K, *P)
+                other instrument's without it. (B, K, *P)
             pooled: Each instrument's tile vector as one unit vector, in float.
                 (B, D)
         """
@@ -209,27 +189,17 @@ class CrossSensorMAE(nn.Module):
         seen = {name: kept for name, (kept, _) in read.items()}
         readable = {name: counted for name, (_, counted) in read.items()}
         cls, tokens = self.shared_tokens(seen, readable)
-        predictions = {"umr": {}, "cmr": {}, "clutter": {}}
+        predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
             others = [other for other in batch if other != name]
             sources = self.context(cls, tokens, seen, readable, others)
-            sources = Context(*(one[:, 1:] for one in sources))
             predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
                 self.context(cls, tokens, seen, readable, [name]),
-                sources,
+                Context(*(one[:, 1:] for one in sources)),
                 one.position,
                 hidden[name],
                 one.condition,
             )  # (B, K, *P) each
-            if name in self.clutter:
-                predictions["clutter"][name] = checkpoint(
-                    self.clutter[name].reconstructed_patches,
-                    *sources,
-                    one.position,
-                    hidden[name],
-                    one.condition,
-                    use_reentrant=False,
-                )  # (B, K, *P)
         pooled = {
             name: functional.normalize(tokens[name][:, 0].float(), dim=-1)
             if pooling == CLS

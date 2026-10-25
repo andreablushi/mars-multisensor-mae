@@ -10,7 +10,7 @@ from torch import Tensor
 from architecture.mae import CrossSensorMAE
 from architecture.tokens import Tokens
 from configs.load import named_seed
-from training.loss import clutter, cmr, mim, total, umr
+from training.loss import cmr, mim, total, umr
 
 
 def mask_generators(
@@ -101,6 +101,5 @@ def step_terms(
     return total(
         umr(predictions["umr"], batch, hidden),
         cmr(predictions["cmr"], batch, hidden),
-        clutter(predictions["clutter"], batch, hidden),
         mim(pooled, aligned, temperature),
     )
