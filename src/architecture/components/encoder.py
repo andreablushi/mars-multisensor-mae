@@ -75,6 +75,10 @@ class Encoder(nn.Module):
         keys = torch.cat([self.cls.expand(len(keys), 1, -1), keys], 1)  # (B, 1 + K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
         readable, position = patches.readable_and_position_with_cls(visible)
+        # The CLS reads every patch and none reads it back, so patches see offsets alone
+        heard = torch.ones(keys.shape[1], keys.shape[1], dtype=torch.bool)
+        heard[1:, 0] = False
+        reads = readable.unsqueeze(1) & heard.to(keys.device)  # (B, 1 + K, 1 + K)
         return checkpoint(
-            self.blocks, keys, readable.unsqueeze(1), position, use_reentrant=False
+            self.blocks, keys, reads, position, use_reentrant=False
         )  # (B, 1 + K, D)
