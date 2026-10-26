@@ -8,13 +8,13 @@ build: training
 root: data/dataset
 
 # The range each instrument's normalised values are clipped to, null leaving a side
-# open and an instrument left out unclipped. SHARAD's bound is in std of the dB aligned
-# on each crop's surface, the scale its cluttergram is stored on too. CTX is clipped
-# per scan in the dataset already, and MOLA holds no noise tail.
+# open and an instrument left out unclipped. SHARAD is gated at its noise floor in the
+# dataset, and its cluttergram shares its scale and its range. CTX is clipped per scan
+# in the dataset already, and MOLA holds no noise tail.
 clip:
   CTX: [null, null]
   CRISM: [-6.0, 6.0]
-  SHARAD: [-2.0, 3.0]
+  SHARAD: [null, null]
   MOLA: [null, null]
 
 # How far a patch runs along an axis holding each thing, an axis left out taken
