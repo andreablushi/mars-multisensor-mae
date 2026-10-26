@@ -29,6 +29,7 @@ EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 RECONSTRUCTED_TILES = {"crater": "b209_c0352", "ice_rich": "b327_c0013"}
 EVALUATION_BATCH_SIZE = 1
 CLUTTER_CONDITION = "condition"
+CLUTTER_FILM = "film"
 CLUTTER_NONE = "none"
 
 log = console_logger(__name__)
@@ -66,6 +67,7 @@ def built_model(
         widths
         if config.model.clutter == CLUTTER_CONDITION
         else dict.fromkeys(widths, 0),
+        config.model.clutter == CLUTTER_FILM,
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,

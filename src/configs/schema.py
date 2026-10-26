@@ -49,7 +49,7 @@ class ModelConfig:
         decoder_depth: How many blocks each decoder stacks.
         clutter: What SHARAD's cluttergram is to the model: "condition", added to
             its tokens in its encoder and decoder, "encoder", in its encoder alone,
-            or "none".
+            "film", in its encoder alone and scaling its tokens too, or "none".
     """
 
     instruments: list[str]

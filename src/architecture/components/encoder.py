@@ -29,6 +29,7 @@ class Encoder(nn.Module):
         self,
         shape: tuple[int, ...],
         condition: int,
+        gain: bool,
         dim: int,
         heads: int,
         depth: int,
@@ -38,6 +39,7 @@ class Encoder(nn.Module):
         Args:
             shape: The shape of one patch of the instrument.
             condition: How many values each patch is conditioned on.
+            gain: Whether the condition also scales each token, as FiLM does.
             dim: The token width.
             heads: How many attention heads each block runs.
             depth: How many blocks are stacked.
@@ -51,7 +53,7 @@ class Encoder(nn.Module):
         # The transformer the instrument's patch tokens attend over each other in
         self.blocks = Transformer(dim, heads, depth)
         self.conditioning = (
-            CluttergramConditioning(condition, dim) if condition else None
+            CluttergramConditioning(condition, dim, gain) if condition else None
         )
 
     def forward(self, patches: Tokens, visible: Tensor) -> Tensor:
