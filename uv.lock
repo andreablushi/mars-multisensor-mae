@@ -669,11 +669,12 @@ dependencies = [
     { name = "pyproj" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "scipy" },
     { name = "shapely" },
     { name = "tifffile" },
     { name = "zarr" },
 ]
-sdist = { hash = "sha256:540500b0f1017253bb3619beb662f2058062ab7c0cbb8496b32a38e014040ddc" }
+sdist = { hash = "sha256:aa41287a58d6ecdba35cba70594bda52333e8e2cbbb87d510b8fcbc4bd7baa0d" }
 
 [package.metadata]
 requires-dist = [
@@ -684,6 +685,7 @@ requires-dist = [
     { name = "pyproj", specifier = ">=3.8.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.0.0" },
+    { name = "scipy", specifier = ">=1.18.0" },
     { name = "shapely", specifier = ">=2.1.2" },
     { name = "tifffile", specifier = ">=2026.8.23" },
     { name = "zarr", specifier = ">=3.3" },
