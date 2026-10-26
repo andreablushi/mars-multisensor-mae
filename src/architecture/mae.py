@@ -29,8 +29,7 @@ class CrossSensorMAE(nn.Module):
     def __init__(
         self,
         shapes: dict[str, tuple[int, ...]],
-        encoder_conditions: dict[str, int],
-        decoder_conditions: dict[str, int],
+        conditions: dict[str, int],
         gain: bool,
         encoder_dim: int,
         encoder_heads: int,
@@ -45,10 +44,8 @@ class CrossSensorMAE(nn.Module):
 
         Args:
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
-            encoder_conditions: How many values each instrument's encoder reads its
-                patches conditioned on.
-            decoder_conditions: How many values each instrument's decoder reads its
-                patches conditioned on.
+            conditions: How many values each instrument's encoder reads its patches
+                conditioned on.
             gain: Whether the encoders' condition also scales each token, as FiLM
                 does.
             encoder_dim: How wide a token is everywhere but the decoders.
@@ -76,7 +73,7 @@ class CrossSensorMAE(nn.Module):
                     f"encoders.{name}",
                     lambda: Encoder(
                         shape,
-                        encoder_conditions[name],
+                        conditions[name],
                         gain,
                         encoder_dim,
                         encoder_heads,
@@ -98,7 +95,6 @@ class CrossSensorMAE(nn.Module):
                     f"decoders.{name}",
                     lambda: Decoder(
                         shape,
-                        decoder_conditions[name],
                         encoder_dim,
                         decoder_dim,
                         decoder_heads,
@@ -202,7 +198,6 @@ class CrossSensorMAE(nn.Module):
                 Context(*(one[:, 1:] for one in sources)),
                 one.position,
                 hidden[name],
-                one.condition,
             )  # (B, K, *P) each
         pooled = {
             name: functional.normalize(tokens[name][:, 0].float(), dim=-1)

@@ -15,8 +15,7 @@ decoder_dim: 384
 decoder_heads: 6
 decoder_depth: 4
 
-# What SHARAD's cluttergram is to the model, added to its tokens as
-# src/architecture/components/cluttergram_conditioning.py reads it: condition, in
-# its encoder and decoder, encoder, in its encoder alone, film, in its encoder alone
-# and scaling its tokens too, or none.
-clutter: condition
+# What SHARAD's cluttergram is to its encoder, as
+# src/architecture/components/cluttergram_conditioning.py reads it: encoder, added to
+# its tokens, film, added and scaling them too, or none.
+clutter: none

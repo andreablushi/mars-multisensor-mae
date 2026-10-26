@@ -47,9 +47,8 @@ class ModelConfig:
         decoder_dim: How wide a token is in the decoders, a multiple of 6.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
-        clutter: What SHARAD's cluttergram is to the model: "condition", added to
-            its tokens in its encoder and decoder, "encoder", in its encoder alone,
-            "film", in its encoder alone and scaling its tokens too, or "none".
+        clutter: What SHARAD's cluttergram is to its encoder: "encoder", added to
+            its tokens, "film", added and scaling them too, or "none".
     """
 
     instruments: list[str]

@@ -34,7 +34,7 @@ uv run --group digitalhub python scripts/train.py --dh --ref main --evaluate def
 
 - The run name is required: it names the W&B run, its model and its evaluation,
   the part before a slash grouping it.
-- Overrides are dotted keys over `configs/`: `model.clutter=none`,
+- Overrides are dotted keys over `configs/`: `model.clutter=encoder`,
   `training.contrastive.instruments=[CTX,CRISM]`.
 - `--dh` submits to DigitalHub, `--ref` names the pushed branch or tag it runs.
 - `--evaluate` evaluates the model once trained.

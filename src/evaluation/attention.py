@@ -131,7 +131,6 @@ def attend(
             *context,
             batch[query].position,
             present[query],
-            batch[query].condition,
         )  # (1, K, *P)
     for hook in hooks:
         hook.remove()

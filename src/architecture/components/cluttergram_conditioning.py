@@ -17,7 +17,7 @@ class CluttergramConditioning(nn.Module):
             scale, started at zero too, or None for a shift alone.
     """
 
-    def __init__(self, width: int, dim: int, gain: bool = False) -> None:
+    def __init__(self, width: int, dim: int, gain: bool) -> None:
         """Build the conditioning for one token width.
 
         Args:

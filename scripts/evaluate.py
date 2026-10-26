@@ -28,7 +28,6 @@ from logs.tracker import logged_checkpoint, start_logging
 EVALUATION_HANDLER = "scripts.evaluate:run_evaluation"
 RECONSTRUCTED_TILES = {"crater": "b209_c0352", "ice_rich": "b327_c0013"}
 EVALUATION_BATCH_SIZE = 1
-CLUTTER_CONDITION = "condition"
 CLUTTER_FILM = "film"
 CLUTTER_NONE = "none"
 
@@ -58,15 +57,9 @@ def built_model(
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
     shapes = read_patch_shapes(build, sizes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    widths = {
-        name: build.condition_width(name, shape) for name, shape in shapes.items()
-    }
     model = CrossSensorMAE(
         shapes,
-        widths,
-        widths
-        if config.model.clutter == CLUTTER_CONDITION
-        else dict.fromkeys(widths, 0),
+        {name: build.condition_width(name, shape) for name, shape in shapes.items()},
         config.model.clutter == CLUTTER_FILM,
         config.model.encoder_dim,
         config.model.encoder_heads,
