@@ -54,11 +54,8 @@ class CrossSensorEncoder(nn.Module):
         owner = torch.repeat_interleave(
             torch.tensor(sizes, device=counted.device)
         )  # (S)
-        # Each instrument's CLS leads its tokens, reading them and never read back
-        lead = functional.pad(owner[1:] != owner[:-1], (1, 0), value=True)  # (S)
-        apart = (owner[:, None] == owner) & (lead[:, None] | ~lead)  # (S, S)
         reads = torch.cat(
-            [counted.unsqueeze(1), apart & counted.unsqueeze(1)], 1
+            [counted.unsqueeze(1), (owner[:, None] == owner) & counted.unsqueeze(1)], 1
         )  # (B, 1 + S, S)
         mapped = self.blocks(
             torch.cat([self.cls.expand(len(counted), 1, -1), *keys], 1),
