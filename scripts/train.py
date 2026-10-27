@@ -43,6 +43,8 @@ def run_training(
         config.dataset.root,
         config.dataset.clip,
         config.model.clutter,
+        config.training.acquisition,
+        config.dataset.acquisition,
     )
     model, device, sizes, shapes = built_model(config, build)
     workers = stage_workers(TRAINING)

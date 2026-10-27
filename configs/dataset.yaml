@@ -11,6 +11,15 @@ clip:
   SHARAD: [null, null]
   MOLA: [null, null]
 
+# Acquisition angles each instrument's encoder and decoder read when training turns
+# them on, of incidence_deg, emission_deg, phase_deg, solar_longitude_deg and
+# solar_azimuth_deg.
+acquisition:
+  CTX: [incidence_deg, emission_deg, phase_deg, solar_longitude_deg, solar_azimuth_deg]
+  CRISM: [incidence_deg, emission_deg, phase_deg, solar_longitude_deg, solar_azimuth_deg]
+  SHARAD: [incidence_deg, solar_longitude_deg]
+  MOLA: []
+
 # Patch length along each axis, a missing axis taken whole.
 patchsize:
   CTX: {ground: 16}

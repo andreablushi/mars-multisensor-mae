@@ -56,6 +56,7 @@ def built_model(
         shapes,
         {name: build.condition_width(name, shape) for name, shape in shapes.items()},
         config.model.film,
+        {name: len(build.acquired(name)) for name in shapes},
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,
@@ -83,6 +84,8 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         config.dataset.root,
         config.dataset.clip,
         config.model.clutter,
+        config.training.acquisition,
+        config.dataset.acquisition,
     )
     model, device, sizes, shapes = built_model(config, build)
     workers = stage_workers(EVALUATION)

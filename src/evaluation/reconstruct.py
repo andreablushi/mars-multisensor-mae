@@ -83,6 +83,7 @@ def reconstruction_and_attention(
                 shapes[name],
                 observations[0].axes,
                 build.condition_width(name, shapes[name]),
+                len(build.acquired(name)),
             )
             | {"cell": np.array([one.cell for one in patches])}
             | {"clip": np.array(build.clips[name], dtype=float)}

@@ -8,6 +8,7 @@ import torch
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
+from architecture.components.acquisition_conditioning import AcquisitionConditioning
 from architecture.components.transformer import Transformer
 from architecture.tokens import Context
 
@@ -24,11 +25,13 @@ class Decoder(nn.Module):
         mask: The token standing in for a hidden patch. (D')
         blocks: The transformer the patches read the context through.
         predict: From a token to every sample of its patch.
+        acquisition: What tells a hidden patch's query how it was acquired, or None.
     """
 
     def __init__(
         self,
         shape: tuple[int, ...],
+        acquired: int,
         shared: int,
         dim: int,
         heads: int,
@@ -38,6 +41,7 @@ class Decoder(nn.Module):
 
         Args:
             shape: The shape of one patch of the instrument.
+            acquired: How many acquisition angles each patch carries.
             shared: The width the cross-sensor encoder hands tokens at.
             dim: The decoder's token width.
             heads: How many attention heads each block runs.
@@ -59,6 +63,7 @@ class Decoder(nn.Module):
         # Start by predicting zero, the dataset's mean after standardisation
         nn.init.zeros_(self.predict.weight)
         nn.init.zeros_(self.predict.bias)
+        self.acquisition = AcquisitionConditioning(acquired, dim) if acquired else None
 
     def reconstructed_patches(
         self,
@@ -66,6 +71,7 @@ class Decoder(nn.Module):
         context_position: Tensor,
         context_readable: Tensor,
         position: Tensor,
+        acquisition: Tensor,
         hidden: Tensor,
     ) -> Tensor:
         """Return the hidden patches as read from one context.
@@ -75,6 +81,7 @@ class Decoder(nn.Module):
             context_position: Each one's patch centre, in metres or rows. (B, S, 3)
             context_readable: Which of them count. (B, S)
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
+            acquisition: Each asked patch's acquisition angles, in degrees. (B, K, A)
             hidden: Which of them to predict. (B, K)
 
         Returns:
@@ -82,6 +89,8 @@ class Decoder(nn.Module):
         """
         # One mask token per slot as a query
         queries = self.mask.expand(*hidden.shape, -1)  # (B, K, D')
+        if self.acquisition is not None:
+            queries = self.acquisition(queries, acquisition)
         keys = torch.cat([self.expand(context), queries], dim=1)  # (B, S + K, D')
         placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
         # The readable context and the hidden patches are read, nothing else
@@ -98,6 +107,7 @@ class Decoder(nn.Module):
         own: Context,
         others: Context,
         position: Tensor,
+        acquisition: Tensor,
         hidden: Tensor,
     ) -> tuple[Tensor, Tensor]:
         """Return the instrument's hidden patches, from its own tokens and the others'.
@@ -106,6 +116,7 @@ class Decoder(nn.Module):
             own: The instrument's own tokens.
             others: Every other instrument's tokens.
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
+            acquisition: Each asked patch's acquisition angles, in degrees. (B, K, A)
             hidden: Which of them to predict. (B, K)
 
         Returns:
@@ -117,6 +128,7 @@ class Decoder(nn.Module):
             self.reconstructed_patches,
             *own,
             position,
+            acquisition,
             hidden,
             use_reentrant=False,
         )
@@ -124,6 +136,7 @@ class Decoder(nn.Module):
             self.reconstructed_patches,
             *others,
             position,
+            acquisition,
             hidden,
             use_reentrant=False,
         )

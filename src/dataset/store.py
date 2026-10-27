@@ -53,6 +53,9 @@ class DatasetBuild:
             None leaving a side open.
         conditioned: Whether patches are read with what `CONDITIONS` conditions
             them on.
+        acquiring: Whether patches carry the acquisition angles `acquisition` names.
+        acquisition: The acquisition angles each instrument's patches may carry, as
+            the index names them.
         records: The rows of each sensor of each tile, once the index is read, else
             None.
         stats: The constants of each instrument, once the manifest is read, else
@@ -63,6 +66,8 @@ class DatasetBuild:
     fetch: Callable[[str], bytes]
     clips: Mapping[str, Sequence[float | None]]
     conditioned: bool
+    acquiring: bool
+    acquisition: Mapping[str, Sequence[str]]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
     stats: dict[str, dict[str, Any]] | None = None
 
@@ -92,6 +97,17 @@ class DatasetBuild:
             conditions: The arrays read beside its values, none when unconditioned.
         """
         return CONDITIONS.get(name, ()) if self.conditioned else ()
+
+    def acquired(self, name: str) -> tuple[str, ...]:
+        """Return the acquisition angles one instrument's patches carry.
+
+        Args:
+            name: The instrument, keyed as ODE names it.
+
+        Returns:
+            fields: The angles, as the index names them, none when not acquiring.
+        """
+        return tuple(self.acquisition[name]) if self.acquiring else ()
 
     def condition_width(self, name: str, shape: Sequence[int]) -> int:
         """Return how many values each patch of one instrument is conditioned on.
@@ -197,9 +213,15 @@ class DatasetBuild:
             key: Which of its patch arrays.
 
         Returns:
-            path: The array's file, apart for every patch size, condition and clip.
+            path: The array's file, apart for every patch size, condition, clip and
+                acquisition.
         """
-        setup = (sorted(size.items()), self.conditions(name), self.clips[name])
+        setup = (
+            sorted(size.items()),
+            self.conditions(name),
+            self.clips[name],
+            self.acquired(name),
+        )
         return self.root / ready_array_path(identity, name, setup, key)
 
     def cache_tile(
@@ -229,6 +251,7 @@ class DatasetBuild:
                 shapes[name],
                 rows[name][0].axes,
                 self.condition_width(name, shapes[name]),
+                len(self.acquired(name)),
             )
             for key, array in arrays.items():
                 with (

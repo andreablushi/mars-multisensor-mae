@@ -19,5 +19,8 @@ contrastive:
   instruments: ${model.instruments}
   temperature: 0.5
 
+# Whether the encoders and decoders read the acquisition angles the dataset lists.
+acquisition: false
+
 # Checkpoint folder.
 checkpoints: checkpoints

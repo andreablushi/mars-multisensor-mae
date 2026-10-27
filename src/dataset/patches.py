@@ -40,13 +40,17 @@ def cut_tile_patches(
         held: list[Patch] = []
         for record in rows[name]:
             observation = build.read_observation(record.path, build.conditions(name))
+            angles = np.array(
+                [getattr(record.acquisition, one) for one in build.acquired(name)],
+                np.float32,
+            )
             shape = observation.values.shape
             lengths = patch_lengths(shape, record.axes, size)
             counts = tuple(
                 length // patch for length, patch in zip(shape, lengths, strict=True)
             )
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, at, lengths, counts)
+                patch = cut_patch(observation, at, lengths, counts, angles)
                 if patch.measured.any():
                     held.append(patch)
         read[name] = held
@@ -58,6 +62,7 @@ def cut_patch(
     index: int,
     lengths: tuple[int, ...],
     counts: tuple[int, ...],
+    acquisition: np.ndarray,
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -66,6 +71,7 @@ def cut_patch(
         index: Which patch, counting whole ones as the axes run, the last fastest.
         lengths: How far one patch of it runs along each axis.
         counts: How many whole patches each of those axes holds.
+        acquisition: The observation's acquisition angles the model reads.
 
     Returns:
         patch: The patch, copied, with what it measured and where it sits.
@@ -107,6 +113,7 @@ def cut_patch(
         values=observation.values[window].copy(),
         measured=measured,
         condition=condition,
+        acquisition=acquisition,
         north_m=north_m,
         east_m=east_m,
         delay=delay,
@@ -139,6 +146,7 @@ def patch_arrays(
     shape: Sequence[int],
     axes: Sequence[str],
     width: int,
+    acquired: int,
 ) -> dict[str, np.ndarray]:
     """Return one instrument's read patches as the arrays a model is handed.
 
@@ -147,9 +155,11 @@ def patch_arrays(
         shape: The shape of one patch of it as the model reads it.
         axes: What each axis of its values holds.
         width: How many values each patch is conditioned on.
+        acquired: How many acquisition angles each patch carries.
 
     Returns:
-        arrays: The patches under "values", "measured", "condition" and "position".
+        arrays: The patches under "values", "measured", "condition", "acquisition"
+            and "position".
     """
     measured_shape = tuple(
         held if holds == Axis.GROUND else 1
@@ -165,6 +175,9 @@ def patch_arrays(
         "condition": np.array([one.condition for one in patches], np.float32).reshape(
             len(patches), width
         ),
+        "acquisition": np.array(
+            [one.acquisition for one in patches], np.float32
+        ).reshape(len(patches), acquired),
         "position": np.array(
             [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
         ).reshape(-1, 3),

@@ -14,6 +14,8 @@ class DatasetConfig:
         root: Where every build sits on this machine, under a directory of its own name.
         clip: The low and high each instrument's normalised values are clipped to,
             None leaving a side open.
+        acquisition: The acquisition angles each instrument's encoder and decoder
+            read when the training turns them on, as the index names them.
         patchsize: How far a patch runs along an axis holding each thing, by
             instrument, an axis it omits taken whole.
         budget: How many patches of each instrument a training or validation read
@@ -27,6 +29,7 @@ class DatasetConfig:
     build: str
     root: str
     clip: dict[str, list[float | None]]
+    acquisition: dict[str, list[str]]
     patchsize: dict[str, dict[str, int]]
     budget: dict[str, int]
     budget_scale: float
@@ -93,6 +96,8 @@ class TrainingConfig:
         validate_every: How many steps between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
+        acquisition: Whether the encoders and decoders read the acquisition angles
+            the dataset lists.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -104,6 +109,7 @@ class TrainingConfig:
     validate_every: int
     mask_ratio: float
     contrastive: ContrastiveConfig
+    acquisition: bool
     checkpoints: str
 
 

@@ -22,6 +22,8 @@ def published_build(
     root: str,
     clips: Mapping[str, Sequence[float | None]],
     conditioned: bool,
+    acquiring: bool,
+    acquisition: Mapping[str, Sequence[str]],
 ) -> DatasetBuild:
     """Return one published build of the dataset, read from the platform's store.
 
@@ -30,6 +32,8 @@ def published_build(
         root: Where every build sits here, relative to the repository.
         clips: The low and high each instrument's normalised values are clipped to.
         conditioned: Whether patches are read with what they are conditioned on.
+        acquiring: Whether patches carry the acquisition angles.
+        acquisition: The acquisition angles each instrument's patches may carry.
 
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
@@ -70,4 +74,6 @@ def published_build(
         fetch=fetch,
         clips=clips,
         conditioned=conditioned,
+        acquiring=acquiring,
+        acquisition=acquisition,
     )

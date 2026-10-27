@@ -16,6 +16,8 @@ class Patch:
         measured: Whether each sample is a measurement, broadcasting over the values.
         condition: What the model reads beside the values, flattened, zero where
             unmeasured: the cluttergram for SHARAD when conditioned, else nothing.
+        acquisition: The acquisition angles of its observation the model reads, in
+            degrees, NaN where the index holds none.
         north_m: How far north of the tile centre the patch centre sits, in metres.
         east_m: How far east of it, in metres.
         delay: Which row of the radargram window the patch centre sounds at, its
@@ -26,6 +28,7 @@ class Patch:
     values: np.ndarray
     measured: np.ndarray
     condition: np.ndarray
+    acquisition: np.ndarray
     north_m: float
     east_m: float
     delay: float

@@ -30,6 +30,7 @@ class CrossSensorMAE(nn.Module):
         shapes: dict[str, tuple[int, ...]],
         conditions: dict[str, int],
         gain: bool,
+        acquired: dict[str, int],
         encoder_dim: int,
         encoder_heads: int,
         encoder_depth: int,
@@ -47,6 +48,8 @@ class CrossSensorMAE(nn.Module):
                 conditioned on.
             gain: Whether the encoders' condition also scales each token, as FiLM
                 does.
+            acquired: How many acquisition angles each instrument's encoder and
+                decoder read each patch with.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
@@ -74,6 +77,7 @@ class CrossSensorMAE(nn.Module):
                         shape,
                         conditions[name],
                         gain,
+                        acquired[name],
                         encoder_dim,
                         encoder_heads,
                         encoder_depth,
@@ -94,6 +98,7 @@ class CrossSensorMAE(nn.Module):
                     f"decoders.{name}",
                     lambda: Decoder(
                         shape,
+                        acquired[name],
                         encoder_dim,
                         decoder_dim,
                         decoder_heads,
@@ -196,6 +201,7 @@ class CrossSensorMAE(nn.Module):
                 self.context(cls, tokens, seen, readable, [name]),
                 Context(*(one[:, 1:] for one in sources)),
                 one.position,
+                one.acquisition,
                 hidden[name],
             )  # (B, K, *P) each
         pooled = {
