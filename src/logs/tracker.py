@@ -44,49 +44,27 @@ def start_logging(
         filters={"display_name": run_name},
     ):
         if tracked.job_type == stage:
-            tracked.delete()
+            tracked.delete(delete_artifacts=True)
     group = run_name.split("/")[0]
     run = wandb.init(config=dict(config), name=run_name, group=group, job_type=stage)
     run.config.update(dict(facts))
     return run
 
 
-def log_step(run: Run, step: int, terms: Mapping[str, Tensor]) -> None:
-    """Log one training step.
+def log_terms(
+    run: Run, step: int, prefix: str, terms: Mapping[str, Tensor | float]
+) -> None:
+    """Log one step's terms under a prefix.
 
     Args:
         run: The tracked run.
         step: Which step of the whole run it is.
-        terms: Every loss term, keyed as the loss names them, and the gradient norm.
+        prefix: Where the terms are logged, TRAIN or VALIDATION.
+        terms: Every term, keyed as the loss names them.
     """
     run.log(
-        {f"{TRAIN}/{name}": value.item() for name, value in terms.items()},
-        step=step,
+        {f"{prefix}/{name}": float(value) for name, value in terms.items()}, step=step
     )
-
-
-def log_validation(run: Run, step: int, metrics: Mapping[str, float]) -> None:
-    """Log one validation.
-
-    Args:
-        run: The tracked run.
-        step: Which step of the whole run it was measured after.
-        metrics: Every loss term over the validation split, keyed as they name them.
-    """
-    run.log(
-        {f"{VALIDATION}/{name}": value for name, value in metrics.items()},
-        step=step,
-    )
-
-
-def log_summary(run: Run, summary: Mapping[str, object]) -> None:
-    """Write what the whole run came to.
-
-    Args:
-        run: The tracked run.
-        summary: What it came to, keyed as it is recorded.
-    """
-    run.summary.update(dict(summary))
 
 
 def artifact_name(kind: str, run_name: str) -> str:

@@ -13,6 +13,9 @@ from torch.nn.utils.rnn import pad_sequence
 # B = batch, K = patches, S = tokens read together, P = patch dimensions,
 # D = token channels.
 
+CLS = "CLS"
+GAP = "GAP"
+
 
 class Tokens(NamedTuple):
     """One sensor's patches over a batch of tiles, padded to one count.
@@ -89,7 +92,7 @@ class Context(NamedTuple):
     readable: Tensor
 
 
-def token_batch_padding(
+def padded_batch(
     samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
 ) -> tuple[dict[str, Tokens], list[str]]:
     """Return one batch of every instrument's tokens, and whose.
@@ -117,3 +120,16 @@ def token_batch_padding(
         batch[name] = Tokens(**padded)
     # The patches and the tile names, in the batch's order
     return batch, [identity for _, identity in samples]
+
+
+def global_average_pooling(tokens: Tensor, present: Tensor) -> Tensor:
+    """Return each row's present tokens summed, of unit length.
+
+    Args:
+        tokens: The tokens of every row. (B, K, D)
+        present: Which of them hold something rather than padding. (B, K)
+
+    Returns:
+        pooled: One unit vector per row. (B, D)
+    """
+    return functional.normalize((tokens * present.unsqueeze(-1)).sum(dim=1), dim=-1)

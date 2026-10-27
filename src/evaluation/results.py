@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,31 +79,6 @@ def write_tile_vectors(
     )
 
 
-def read_tile_vectors(
-    path: Path,
-) -> tuple[list[str], list[str], dict[tuple[str, str], np.ndarray]]:
-    """Return one evaluation's vectors, every pooling and view on one tile order.
-
-    Args:
-        path: The parquet file written by write_tile_vectors.
-
-    Returns:
-        tiles: Every tile, sorted.
-        labels: The class of each, in the same order.
-        vectors: Each tile's vector, keyed by pooling and view. (T, D)
-    """
-    rows = parquet.read_rows(TileVector, RESULTS_SCHEMA, path)
-    classes = {row.tile: row.label for row in rows}
-    tiles = sorted(classes)
-    by_view = defaultdict(dict)
-    for row in rows:
-        by_view[row.pooling, row.instrument][row.tile] = row.vector
-    vectors = {
-        view: np.array([held[tile] for tile in tiles]) for view, held in by_view.items()
-    }
-    return tiles, [classes[tile] for tile in tiles], vectors
-
-
 def write_tile_arrays(
     path: Path, by_instrument: Mapping[str, Mapping[str, np.ndarray]]
 ) -> None:
@@ -112,8 +86,8 @@ def write_tile_arrays(
 
     Args:
         path: The npz file to write, whose directory is made if missing.
-        by_instrument: Each instrument's arrays, keyed as reconstruct or attend
-            names them.
+        by_instrument: Each instrument's arrays, keyed as
+            reconstruction_and_attention names them.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
@@ -124,21 +98,3 @@ def write_tile_arrays(
             for key, array in arrays.items()
         },
     )
-
-
-def read_tile_arrays(path: Path) -> dict[str, dict[str, np.ndarray]]:
-    """Return one tile's arrays, as write_tile_arrays wrote them.
-
-    Args:
-        path: The npz file.
-
-    Returns:
-        by_instrument: Each instrument's arrays, keyed as reconstruct or attend
-            names them.
-    """
-    by_instrument = defaultdict(dict)
-    with np.load(path) as arrays:
-        for packed in arrays.files:
-            name, key = packed.split("/")
-            by_instrument[name][key] = arrays[packed]
-    return dict(by_instrument)

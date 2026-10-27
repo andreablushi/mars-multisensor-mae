@@ -27,13 +27,14 @@ from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 from common.disk import parquet
 from common.disk.files import atomic_path
 
-from architecture.tokens import Tokens, token_batch_padding
-from configs.paths import ready_tile_path
+from architecture.tokens import Tokens, padded_batch
+from configs.paths import ready_array_path
 from dataset.models.observation import Observation
 from dataset.patches import (
     cropped_patch_arrays,
+    cut_tile_patches,
     patch_arrays,
-    read_tile_patches,
+    patch_lengths,
 )
 
 CONDITIONS = {sharad.LAYOUT.instrument: ("clutter",)}
@@ -120,25 +121,26 @@ class DatasetBuild:
             self.records = {tile: dict(rows) for tile, rows in standing.items()}
         return self.records
 
-    def read_row_by_instrument(self) -> dict[str, ObservationMetadata]:
-        """Return one index row of each instrument the build reached.
+    def read_patch_shapes(
+        self, sizes: Mapping[str, Mapping[str, int]]
+    ) -> dict[str, tuple[int, ...]]:
+        """Return the shape of one patch of each instrument as the model reads it.
+
+        Args:
+            sizes: How far a patch of each sensor runs along each axis it is cut on.
 
         Returns:
-            rows: One row per sensor, saying what each axis holds and how far it runs.
+            shapes: The shape of one patch of each instrument, keyed as ODE names it.
         """
-        return {
+        rows = {
             name: held[-1]
             for rows in self.read_observation_metadata().values()
             for name, held in rows.items()
         }
-
-    def read_axes_by_instrument(self) -> dict[str, tuple[str, ...]]:
-        """Return what each axis of each instrument's values holds.
-
-        Returns:
-            axes: The axes of one sensor's values, in the array's own order, per sensor.
-        """
-        return {name: one.axes for name, one in self.read_row_by_instrument().items()}
+        return {
+            name: patch_lengths(rows[name].shape, rows[name].axes, size)
+            for name, size in sizes.items()
+        }
 
     def read_stats(self) -> dict[str, dict[str, Any]]:
         """Return the constants each instrument is normalised by, read once.
@@ -183,73 +185,73 @@ class DatasetBuild:
         held = self.local_root(labelled.LABELS_NAME) / labelled.LABELS_NAME
         return {one.tile: one.label for one in parquet.read_rows(Label, LABELS, held)}
 
-    def read_ready_tile(
+    def ready_array(
+        self, identity: str, name: str, size: Mapping[str, int], key: str
+    ) -> Path:
+        """Return where one cut array of one tile is cached, by what changes its values.
+
+        Args:
+            identity: The tile.
+            name: The instrument.
+            size: How far its patch runs along each axis it is cut on.
+            key: Which of its patch arrays.
+
+        Returns:
+            path: The array's file, apart for every patch size, condition and clip.
+        """
+        setup = (sorted(size.items()), self.conditions(name), self.clips[name])
+        return self.root / ready_array_path(identity, name, setup, key)
+
+    def cache_tile(
         self,
         identity: str,
         rows: Mapping[str, list[ObservationMetadata]],
-        axes: Mapping[str, tuple[str, ...]],
         sizes: Mapping[str, Mapping[str, int]],
         shapes: Mapping[str, tuple[int, ...]],
-    ) -> dict[str, dict[str, np.ndarray]]:
-        """Return one tile's patch arrays, read from the run's cache or cut and cached.
+    ) -> None:
+        """Cut one tile into the run's cache, unless it is there already.
 
         Args:
             identity: The tile.
             rows: The tile's index rows of each sensor.
-            axes: What each axis of each instrument's values holds.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
             shapes: The shape of one patch of each instrument as the model reads it.
-
-        Returns:
-            sample: Each instrument's patch arrays over the whole tile.
         """
-        held = self.root / ready_tile_path(identity)
-        sample = {}
-        for name in sizes:
-            files = {key: held / name / f"{key}.npy" for key in Tokens._fields}
-            if all(one.is_file() for one in files.values()):
-                sample[name] = {
-                    key: np.load(one, mmap_mode="c") for key, one in files.items()
-                }
-        if sizes.keys() - sample.keys():
-            read = read_tile_patches(rows, self, sizes)
-            sample = {
-                name: patch_arrays(
-                    drawn,
-                    shapes[name],
-                    axes[name],
-                    self.condition_width(name, shapes[name]),
-                )
-                for name, drawn in read.items()
-            }
-            for name, arrays in sample.items():
-                for key, array in arrays.items():
-                    with (
-                        atomic_path(held / name / f"{key}.npy") as written,
-                        written.open("wb") as file,
-                    ):
-                        np.save(file, array)
-        return sample
+        if all(
+            self.ready_array(identity, name, sizes[name], key).is_file()
+            for name in sizes
+            for key in Tokens._fields
+        ):
+            return
+        for name, patches in cut_tile_patches(rows, self, sizes).items():
+            arrays = patch_arrays(
+                patches,
+                shapes[name],
+                rows[name][0].axes,
+                self.condition_width(name, shapes[name]),
+            )
+            for key, array in arrays.items():
+                with (
+                    atomic_path(
+                        self.ready_array(identity, name, sizes[name], key)
+                    ) as written,
+                    written.open("wb") as file,
+                ):
+                    np.save(file, array)
 
-    def read_tiles(
+    def read_batch(
         self,
         identities: Sequence[str],
-        tiles: Mapping[str, dict[str, list[ObservationMetadata]]],
-        axes: Mapping[str, tuple[str, ...]],
         sizes: Mapping[str, Mapping[str, int]],
-        shapes: Mapping[str, tuple[int, ...]],
         budget: Mapping[str, int] | None,
         scale: float,
         seed: int | None,
     ) -> tuple[dict[str, Tokens], list[str]]:
-        """Return one batch of tiles, each read from the run's cache or cut and cached.
+        """Return one batch of cached tiles, each cut to the budget around a centre.
 
         Args:
             identities: The tiles of the batch.
-            tiles: The index rows of each sensor of each tile, keyed by tile.
-            axes: What each axis of each instrument's values holds.
             sizes: How far a patch of each sensor runs along each axis it is cut on.
-            shapes: The shape of one patch of each instrument as the model reads it.
             budget: How many patches of each instrument a tile keeps, or None to
                 read it whole.
             scale: The most the budget is multiplied by, drawn once per batch from 1.
@@ -264,16 +266,23 @@ class DatasetBuild:
             budget = {name: round(count * factor) for name, count in budget.items()}
         samples = []
         for identity in identities:
-            sample = self.read_ready_tile(
-                identity, tiles[identity], axes, sizes, shapes
-            )
+            sample = {
+                name: {
+                    key: np.load(
+                        self.ready_array(identity, name, sizes[name], key),
+                        mmap_mode="c",
+                    )
+                    for key in Tokens._fields
+                }
+                for name in sizes
+            }
             if budget is not None:
                 draw = random.Random(
                     random.random() if seed is None else f"{seed}/{identity}"
                 )
                 sample = cropped_patch_arrays(sample, budget, draw)
             samples.append((sample, identity))
-        return token_batch_padding(samples)
+        return padded_batch(samples)
 
     def read_observation(self, path: str, beside: Sequence[str]) -> Observation:
         """Return one stored observation, read out of the object it was written as.

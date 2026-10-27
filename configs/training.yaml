@@ -1,31 +1,23 @@
-# How a run trains, validates and stops.
-
-# A run is a fixed number of steps, and its last checkpoint is the one kept: 150 passes
-# as CSMAE trains, the training build's 13,681 training tiles in batches of 128 making
-# 107 steps a pass.
+# 150 passes over the training tiles, in batches of 128.
 num_steps: 16050
-# How many tiles one step's gradient is averaged over, each cut to the dataset's
-# budget.
 batch_size: 128
 learning_rate: 0.0001
 weight_decay: 0.05
-# How many steps the rate climbs before the cosine decay, 10 passes.
+# 10 passes of warmup before the cosine decay.
 warmup_steps: 1070
 
-# How many steps between two validations, a check that the loss still falls.
+# Steps between validations.
 validate_every: 1070
 
-# The share of each instrument's patches hidden from its encoder, drawn independently.
+# Share of each instrument's patches hidden from its encoder.
 mask_ratio: 0.75
 
-# CSMAE's MIM, which aligns instruments across tiles: an NT-Xent on every pair of the
-# instruments, the pairs' mean added to the loss. Each instrument's tile vector is its
-# visible tokens pooled (GAP) or its CLS token (CLS).
+# CSMAE's MIM between instruments, pooled by GAP or CLS.
 contrastive:
   enabled: true
   pooling: GAP
   instruments: ${model.instruments}
   temperature: 0.5
 
-# Where checkpoints land, relative to the repository.
+# Checkpoint folder.
 checkpoints: checkpoints

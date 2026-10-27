@@ -1,6 +1,7 @@
-# How a trained model's latent space is read: every labelled tile of the evaluation
-# build is embedded, and what its tokens come to is read against the class each tile
-# carries.
-
-# The build the labelled tiles are read from, published as dataset-<build>.
+# Labelled build the evaluation reads.
 build: evaluation-unbal
+
+# Tiles drawn as reconstructions and attention maps.
+tiles:
+  crater: b209_c0352
+  ice_rich: b327_c0013

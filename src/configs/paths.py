@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import zlib
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,17 +38,21 @@ def build_root(build: str, root: str) -> Path:
     return REPO_ROOT / root / build
 
 
-def ready_tile_path(identity: str) -> str:
-    """Return where one tile's patch arrays are kept, under its build's root.
+def ready_array_path(
+    identity: str, name: str, setup: Sequence[object], key: str
+) -> str:
+    """Return where one array of one tile's patches is kept, under its build's root.
 
     Args:
         identity: The tile.
+        name: The instrument.
+        setup: What the patches were cut with, so another setup keeps its own.
+        key: Which of its patch arrays.
 
     Returns:
-        path: That directory, one array file per instrument and key, relative to
-            the build root.
+        path: That array's file, relative to the build root.
     """
-    return f"ready/{identity}"
+    return f"ready/{identity}/{name}-{zlib.crc32(repr(setup).encode()):08x}/{key}.npy"
 
 
 def checkpoint_path(checkpoints: str, name: str) -> Path:

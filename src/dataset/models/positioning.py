@@ -12,7 +12,6 @@ from common.models.tile import Tile
 from dataset.models.observation import Observation
 
 
-# It's done there for memory reasons
 def metres_from_centre(
     observation: Observation, taken: tuple[slice, ...]
 ) -> tuple[np.ndarray, np.ndarray]:

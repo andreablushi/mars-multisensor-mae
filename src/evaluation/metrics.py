@@ -16,6 +16,18 @@ from sklearn.metrics import (
 from evaluation.results import Metrics
 
 
+def cosine_similarity(vectors: np.ndarray) -> np.ndarray:
+    """Return the cosine between every pair of tiles' vectors.
+
+    Args:
+        vectors: One unit vector per tile. (T, D)
+
+    Returns:
+        similarities: The cosine of every pair. (T, T)
+    """
+    return vectors @ vectors.T
+
+
 def compute_metrics(similarities: np.ndarray, labels: Sequence[str], k: int) -> Metrics:
     """Return every metric of one view.
 

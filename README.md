@@ -34,7 +34,7 @@ uv run --group digitalhub python scripts/train.py --dh --ref main --evaluate def
 
 - The run name is required: it names the W&B run, its model and its evaluation,
   the part before a slash grouping it.
-- Overrides are dotted keys over `configs/`: `model.clutter=encoder`,
+- Overrides are dotted keys over `configs/`: `model.clutter=true`,
   `training.contrastive.instruments=[CTX,CRISM]`.
 - `--dh` submits to DigitalHub, `--ref` names the pushed branch or tag it runs.
 - `--evaluate` evaluates the model once trained.
@@ -52,8 +52,8 @@ uv run --group digitalhub python scripts/evaluate.py --dh --ref main default/mae
 
 - It reads the run's latest W&B model and logs an evaluation run of the same name:
   every score by pooling and view, the kNN confusion and class distance matrices,
-  a crater tile and a north polar layered deposits tile rebuilt, and the vectors and
-  reconstructions as the artifact `evaluation-<run name>`.
+  the tiles `evaluation.tiles` names rebuilt, and the vectors and reconstructions as
+  the artifact `evaluation-<run name>`.
 - A reconstruction shows each instrument's most measured observation, SHARAD's
   pass nearest 140° solar incidence, drawn over the configured clip or, on an
   open side, the original's own extreme.

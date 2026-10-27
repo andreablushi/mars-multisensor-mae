@@ -1,21 +1,18 @@
-# An encoder and a decoder per instrument, one cross-sensor encoder between them.
-
-# The instruments read as tokens. Every surface patch sits at the areoid row, so
-# delay places SHARAD alone.
+# Instruments read as tokens.
 instruments: [CTX, CRISM, MOLA, SHARAD]
 
-# The instrument encoders and the cross-sensor encoder, all one width.
+# Instrument encoders and cross-sensor encoder.
 encoder_dim: 384
 encoder_heads: 6
 encoder_depth: 4
 crossencoder_depth: 2
 
-# The decoders.
+# Decoders.
 decoder_dim: 384
 decoder_heads: 6
 decoder_depth: 4
 
-# What SHARAD's cluttergram is to its encoder, as
-# src/architecture/components/cluttergram_conditioning.py reads it: encoder, added to
-# its tokens, film, added and scaling them too, or none.
-clutter: none
+# Whether SHARAD's encoder reads the cluttergram.
+clutter: false
+# Whether the cluttergram also scales SHARAD's tokens (FiLM).
+film: false

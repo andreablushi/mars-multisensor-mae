@@ -7,13 +7,13 @@ from dataclasses import asdict
 from dhub.store import published_build
 from dhub.submit import run_stage, stage_workers
 from digitalhub_runtime_python import handler
-from evaluate import CLUTTER_NONE, built_model, evaluate_checkpoint
+from evaluate import built_model, run_evaluation
 
 from configs.load import load_config
 from dataset.loader import (
     TRAINING_SPLIT,
     VALIDATION_SPLIT,
-    fill_cache,
+    cache_tiles,
     loaders_by_split,
 )
 from logs.console import console_logger
@@ -42,14 +42,13 @@ def run_training(
         config.dataset.build,
         config.dataset.root,
         config.dataset.clip,
-        config.model.clutter != CLUTTER_NONE,
+        config.model.clutter,
     )
     model, device, sizes, shapes = built_model(config, build)
     workers = stage_workers(TRAINING)
     loaders = loaders_by_split(
         build,
         sizes,
-        shapes,
         config.dataset.budget,
         config.dataset.budget_scale,
         config.dataset.split,
@@ -59,7 +58,7 @@ def run_training(
     )
     training, validation = loaders[TRAINING_SPLIT], loaders[VALIDATION_SPLIT]
     contrastive = config.training.contrastive
-    fill_cache(build, sizes, shapes, workers)
+    cache_tiles(build, sizes, shapes, workers)
     log.info("training on %s", device)
     run = start_logging(
         asdict(config),
@@ -97,7 +96,7 @@ def run_training(
     log_checkpoint(run, last, run_name)
     run.finish()
     if evaluate:
-        evaluate_checkpoint(config, run_name)
+        run_evaluation.__wrapped__(run_name, overrides)
 
 
 if __name__ == "__main__":

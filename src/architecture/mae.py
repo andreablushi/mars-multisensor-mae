@@ -11,9 +11,8 @@ from torch.nn import functional
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.tokens import Context, Tokens
+from architecture.tokens import CLS, Context, Tokens, global_average_pooling
 from configs.load import named_seed
-from evaluation.similarity import CLS, global_average_pooling
 
 # B = batch, K = patches, S = tokens read together, D = token channels,
 # P = patch dimensions.

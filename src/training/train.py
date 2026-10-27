@@ -17,7 +17,7 @@ from wandb.sdk.wandb_run import Run
 from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
 from logs.console import console_logger
-from logs.tracker import log_step, log_summary, log_validation
+from logs.tracker import TRAIN, VALIDATION, log_terms
 from training.step import mask_generators, step_terms
 from training.validate import validation_terms
 
@@ -105,7 +105,7 @@ def train(
             )
         optimizer.step()
         scheduler.step()
-        log_step(run, step, terms | {"grad_norm": norm})
+        log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
         # The last step is validated too, so every run ends on a measured loss
         if step % validate_every and step < num_steps:
             continue
@@ -113,7 +113,7 @@ def train(
             model, validation, mask_ratio, aligned, pooling, temperature, seed, device
         )
         model.train()  # Validating switched it to evaluation
-        log_validation(run, step, metrics)
+        log_terms(run, step, VALIDATION, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
     last = checkpoint_path(checkpoints, "last")
     last.parent.mkdir(parents=True, exist_ok=True)
@@ -126,11 +126,7 @@ def train(
         },
         last,
     )
-    log_summary(
-        run,
-        {
-            "steps": num_steps,
-            "run_seconds": time.perf_counter() - started,
-        },
+    run.summary.update(
+        {"steps": num_steps, "run_seconds": time.perf_counter() - started}
     )
     return last

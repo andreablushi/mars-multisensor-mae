@@ -1,29 +1,20 @@
-# What a run submitted to DigitalHub is given.
-
-# The project every run and every published model belongs to.
+# Platform project.
 project: mars-multisensor-features
 
-# The repository a job clones when it starts.
+# Repository a job clones.
 repository: https://github.com/andreablushi/mars-multisensor-mae
 
-# The interpreter and the platform's own base image a job runs on, which installs
-# requirements.txt from its clone with uv.
+# Job interpreter and base image.
 python_version: PYTHON3_13
 base_image: python:3.13-slim
 
-# What each stage is registered as and gets: a -shared profile queues on the shared
-# pool and caps the cores, memory and GPU. The cores and memory asked are what the queue
-# admits the run on, and twice the cores are the workers reading tiles. The disk is a
-# new one per run on the node's own drive, holding the clone, its environment, the
-# checkpoints and every tile the run cuts, beside 16Gi for the rest.
+# Function, profile and resources per stage; tile readers are twice the cores.
 stages:
   training:
     function: train-mae
     profile: 1xa40-shared
-    # Every tile of the training build cut, about 280 GiB.
     resources: {cpu: "6", mem: 48Gi, disk: 350Gi}
   evaluation:
     function: evaluate-mae
     profile: 1xa40-shared
-    # The evaluation build holds 377 tiles, about 15 GiB once cut.
     resources: {cpu: "4", mem: 16Gi, disk: 70Gi}

@@ -6,6 +6,7 @@ from collections.abc import Iterator, Mapping
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import binary_dilation
 
 from logs.reconstruction import (
     COMPOSITES_NM,
@@ -27,6 +28,7 @@ OPACITY = 0.9
 FULL_RATIO = 2.0
 TRACE_RGB = (255, 140, 0)
 OUTLINE = 3
+SQUARE = np.ones((3, 3), bool)
 QUERY_COMPOSITE = "false_colour_2529_1506_1080nm"
 GREY_COMPOSITE = "albedo_770nm"
 
@@ -58,7 +60,7 @@ def ground_samples(
     """Yield which measured sample of each observation lands on each pixel of a map.
 
     Args:
-        arrays: One ground instrument's patches, as attend wrote them.
+        arrays: One ground instrument's patches, as the evaluation drew them.
         places: Where every pixel centre of the map lies. (H, W, 2)
 
     Yields:
@@ -97,7 +99,7 @@ def ground_map(
     """Return one ground instrument's observations laid on a map, and its attention.
 
     Args:
-        arrays: Its patches, as attend wrote them.
+        arrays: Its patches, as the evaluation drew them.
         frame: The map's north, south, west and east edges, in metres.
 
     Returns:
@@ -121,32 +123,13 @@ def ground_map(
     return scaled_values(grey[None], clip)[0], total / np.maximum(count, 1)
 
 
-def thickened(mask: np.ndarray, width: int) -> np.ndarray:
-    """Return a mask grown by some pixels every way.
-
-    Args:
-        mask: The mask. (H, W)
-        width: How many pixels it grows by.
-
-    Returns:
-        grown: The mask, grown. (H, W)
-    """
-    grown = mask.copy()
-    for _ in range(width):
-        grown[1:] |= grown[:-1].copy()
-        grown[:-1] |= grown[1:].copy()
-        grown[:, 1:] |= grown[:, :-1].copy()
-        grown[:, :-1] |= grown[:, 1:].copy()
-    return grown
-
-
 def query_trace(
     arrays: Mapping[str, np.ndarray], frame: np.ndarray, sounder: bool
 ) -> np.ndarray:
     """Return where the query's observation lies on a map ROW_HEIGHT rows high.
 
     Args:
-        arrays: The query's patches, as attend wrote them.
+        arrays: The query's patches, as the evaluation drew them.
         frame: The map's north, south, west and east edges, in metres.
         sounder: Whether the query is a sounder, which lies on a line.
 
@@ -159,7 +142,7 @@ def query_trace(
         area = np.zeros(places.shape[:2], bool)
         for shown, _, _ in ground_samples(arrays, places):
             area |= shown
-        return area & thickened(~area, OUTLINE)
+        return area & binary_dilation(~area, SQUARE, OUTLINE)
     # The track through its patch centres, one per trace pair, densely sampled
     _, first = np.unique(arrays["cell"][:, -1], return_index=True)
     track = arrays["position"][first, :2]
@@ -174,7 +157,7 @@ def query_trace(
     inside = ((pixels >= 0) & (pixels < places.shape[:2])).all(axis=-1)
     line = np.zeros(places.shape[:2], bool)
     line[tuple(pixels[inside].T)] = True
-    return thickened(line, OUTLINE // 2)
+    return binary_dilation(line, SQUARE, OUTLINE // 2)
 
 
 def sounder_pass(
@@ -183,7 +166,7 @@ def sounder_pass(
     """Return the sounder's pass that drew the most attention, and that attention.
 
     Args:
-        arrays: Its patches, as attend wrote them.
+        arrays: Its patches, as the evaluation drew them.
 
     Returns:
         grey: The pass's radargram from 0 to 1, NaN where none is measured,
@@ -243,7 +226,7 @@ def attention_image(
     """Return the query's original and CMR above every other instrument's attention.
 
     Args:
-        attention: Each instrument's patches, as attend wrote them.
+        attention: Each instrument's patches, as the evaluation drew them.
         query: The instrument rebuilt.
 
     Returns:

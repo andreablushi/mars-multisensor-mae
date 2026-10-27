@@ -10,8 +10,7 @@ from torch.nn import functional
 from torch.utils.data import DataLoader
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import Tokens
-from evaluation.similarity import CLS, GAP, global_average_pooling
+from architecture.tokens import CLS, GAP, Tokens, global_average_pooling
 
 EVERY_INSTRUMENT = "all"
 

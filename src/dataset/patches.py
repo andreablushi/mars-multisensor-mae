@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from dataset.store import DatasetBuild
 
 
-def read_tile_patches(
+def cut_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
@@ -132,26 +132,6 @@ def patch_lengths(
     return tuple(
         patchsize.get(holds, size) for size, holds in zip(shape, axes, strict=True)
     )
-
-
-def read_patch_shapes(
-    build: DatasetBuild,
-    sizes: Mapping[str, Mapping[str, int]],
-) -> dict[str, tuple[int, ...]]:
-    """Return the shape of one patch of each instrument as the model reads it.
-
-    Args:
-        build: The published build the instruments are read from.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-
-    Returns:
-        shapes: The shape of one patch of each instrument, keyed as ODE names it.
-    """
-    rows = build.read_row_by_instrument()
-    return {
-        name: patch_lengths(rows[name].shape, rows[name].axes, size)
-        for name, size in sizes.items()
-    }
 
 
 def patch_arrays(

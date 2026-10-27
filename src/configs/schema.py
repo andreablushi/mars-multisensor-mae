@@ -47,8 +47,8 @@ class ModelConfig:
         decoder_dim: How wide a token is in the decoders, a multiple of 6.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
-        clutter: What SHARAD's cluttergram is to its encoder: "encoder", added to
-            its tokens, "film", added and scaling them too, or "none".
+        clutter: Whether SHARAD's encoder reads the cluttergram, added to its tokens.
+        film: Whether the cluttergram also scales SHARAD's tokens, as FiLM does.
     """
 
     instruments: list[str]
@@ -59,7 +59,8 @@ class ModelConfig:
     decoder_dim: int
     decoder_heads: int
     decoder_depth: int
-    clutter: str
+    clutter: bool
+    film: bool
 
 
 @dataclass
@@ -112,9 +113,12 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
+        tiles: The tiles drawn as reconstructions and attention maps, by what they
+            show.
     """
 
     build: str
+    tiles: dict[str, str]
 
 
 @dataclass

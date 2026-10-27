@@ -1,16 +1,15 @@
-"""Logging what one evaluation's files come to: scores, matrices, the rebuilt tiles."""
+"""Logging what one evaluation comes to: scores, matrices, the rebuilt tiles."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import numpy as np
 import wandb
 from wandb.sdk.wandb_run import Run
 
-from evaluation.metrics import compute_metrics
-from evaluation.results import read_tile_arrays, read_tile_vectors
-from evaluation.similarity import cosine_similarity
+from evaluation.metrics import compute_metrics, cosine_similarity
 from logs.attention import attention_image
 from logs.reconstruction import PANELS, reconstruction_images
 from logs.tracker import artifact_name
@@ -27,28 +26,33 @@ NEIGHBOURS = 5
 
 def log_evaluation(
     run: Run,
-    results: Path,
-    reconstructions: Mapping[str, Path],
-    attentions: Mapping[tuple[str, str], Path],
     run_name: str,
+    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    classes: Mapping[str, str],
+    reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    files: Sequence[Path],
 ) -> None:
     """Log every score, both class matrices, the rebuilt tiles and where CMR looked.
 
     Args:
         run: The tracked run.
-        results: The tiles' vectors, as write_tile_vectors wrote them.
-        reconstructions: Each rebuilt tile, as write_tile_arrays wrote it, keyed
-            by what it shows.
-        attentions: Each tile's instrument rebuilt from the others whole, as
-            write_tile_arrays wrote it, keyed by what the tile shows and the
-            instrument.
         run_name: What the run is called, which names its artifact.
+        vectors: Each tile's vector, keyed by pooling, then view, then tile.
+        classes: The class each tile earned, keyed by the tile.
+        reconstructions: Each rebuilt tile's arrays, keyed by what it shows.
+        attentions: Each tile's instrument rebuilt from the others whole, keyed by
+            what the tile shows and the instrument.
+        files: What the evaluation wrote, logged as its artifact.
     """
-    _, labels, vectors = read_tile_vectors(results)
-    measured = {
-        view: compute_metrics(cosine_similarity(held), labels, NEIGHBOURS)
-        for view, held in vectors.items()
-    }
+    measured = {}
+    for pooling, by_view in vectors.items():
+        for view, by_tile in by_view.items():
+            tiles = sorted(by_tile)
+            held = np.array([by_tile[tile] for tile in tiles], np.float64)
+            measured[pooling, view] = compute_metrics(
+                cosine_similarity(held), [classes[tile] for tile in tiles], NEIGHBOURS
+            )
     scores = [
         [pooling, view, name, value]
         for (pooling, view), one in measured.items()
@@ -65,13 +69,13 @@ def log_evaluation(
         }
     )
     media = {}
-    for place, path in reconstructions.items():
-        for title, image in reconstruction_images(read_tile_arrays(path)).items():
+    for place, reconstruction in reconstructions.items():
+        for title, image in reconstruction_images(reconstruction).items():
             media[f"{RECONSTRUCTION}/{place}/{title}"] = wandb.Image(
                 image, caption=" | ".join(PANELS)
             )
-    for (place, query), path in attentions.items():
-        image, caption = attention_image(read_tile_arrays(path), query)
+    for (place, query), attention in attentions.items():
+        image, caption = attention_image(attention, query)
         media[f"{ATTENTION}/{query}/{place}"] = wandb.Image(image, caption=caption)
     run.log(
         {
@@ -95,7 +99,7 @@ def log_evaluation(
             **media,
         }
     )
-    files = wandb.Artifact(artifact_name(EVALUATION, run_name), type=EVALUATION)
-    for path in (results, *reconstructions.values(), *attentions.values()):
-        files.add_file(str(path))
-    run.log_artifact(files)
+    artifact = wandb.Artifact(artifact_name(EVALUATION, run_name), type=EVALUATION)
+    for path in files:
+        artifact.add_file(str(path))
+    run.log_artifact(artifact)
