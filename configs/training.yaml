@@ -20,7 +20,7 @@ contrastive:
   temperature: 0.5
 
 # Whether the encoders and decoders read the acquisition angles the dataset lists.
-acquisition: false
+acquisition: true
 
 # Checkpoint folder.
 checkpoints: checkpoints

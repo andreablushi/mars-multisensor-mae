@@ -55,7 +55,6 @@ def built_model(
     model = CrossSensorMAE(
         shapes,
         {name: build.condition_width(name, shape) for name, shape in shapes.items()},
-        config.model.film,
         {name: len(build.acquired(name)) for name in shapes},
         config.model.encoder_dim,
         config.model.encoder_heads,
@@ -83,7 +82,6 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         config.evaluation.build,
         config.dataset.root,
         config.dataset.clip,
-        config.model.clutter,
         config.training.acquisition,
         config.dataset.acquisition,
     )

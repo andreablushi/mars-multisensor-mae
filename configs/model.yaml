@@ -11,8 +11,3 @@ crossencoder_depth: 2
 decoder_dim: 384
 decoder_heads: 6
 decoder_depth: 4
-
-# Whether SHARAD's encoder reads the cluttergram.
-clutter: false
-# Whether the cluttergram also scales SHARAD's tokens (FiLM).
-film: false

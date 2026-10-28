@@ -42,7 +42,6 @@ def run_training(
         config.dataset.build,
         config.dataset.root,
         config.dataset.clip,
-        config.model.clutter,
         config.training.acquisition,
         config.dataset.acquisition,
     )

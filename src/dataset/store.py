@@ -51,8 +51,6 @@ class DatasetBuild:
         fetch: How one object is brought down when the root holds none of it.
         clips: The low and high each instrument's normalised values are clipped to,
             None leaving a side open.
-        conditioned: Whether patches are read with what `CONDITIONS` conditions
-            them on.
         acquiring: Whether patches carry the acquisition angles `acquisition` names.
         acquisition: The acquisition angles each instrument's patches may carry, as
             the index names them.
@@ -65,7 +63,6 @@ class DatasetBuild:
     root: Path
     fetch: Callable[[str], bytes]
     clips: Mapping[str, Sequence[float | None]]
-    conditioned: bool
     acquiring: bool
     acquisition: Mapping[str, Sequence[str]]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
@@ -94,9 +91,9 @@ class DatasetBuild:
             name: The instrument, keyed as ODE names it.
 
         Returns:
-            conditions: The arrays read beside its values, none when unconditioned.
+            conditions: The arrays read beside its values, none for most instruments.
         """
-        return CONDITIONS.get(name, ()) if self.conditioned else ()
+        return CONDITIONS.get(name, ())
 
     def acquired(self, name: str) -> tuple[str, ...]:
         """Return the acquisition angles one instrument's patches carry.

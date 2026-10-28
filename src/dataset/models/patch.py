@@ -15,7 +15,7 @@ class Patch:
         values: The patch's own values, in the observation's axis order.
         measured: Whether each sample is a measurement, broadcasting over the values.
         condition: What the model reads beside the values, flattened, zero where
-            unmeasured: the cluttergram for SHARAD when conditioned, else nothing.
+            unmeasured: the cluttergram for SHARAD, else nothing.
         acquisition: The acquisition angles of its observation the model reads, in
             degrees, NaN where the index holds none.
         north_m: How far north of the tile centre the patch centre sits, in metres.

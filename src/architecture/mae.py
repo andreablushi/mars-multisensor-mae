@@ -29,7 +29,6 @@ class CrossSensorMAE(nn.Module):
         self,
         shapes: dict[str, tuple[int, ...]],
         conditions: dict[str, int],
-        gain: bool,
         acquired: dict[str, int],
         encoder_dim: int,
         encoder_heads: int,
@@ -46,8 +45,6 @@ class CrossSensorMAE(nn.Module):
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
             conditions: How many values each instrument's encoder reads its patches
                 conditioned on.
-            gain: Whether the encoders' condition also scales each token, as FiLM
-                does.
             acquired: How many acquisition angles each instrument's encoder and
                 decoder read each patch with.
             encoder_dim: How wide a token is everywhere but the decoders.
@@ -76,7 +73,6 @@ class CrossSensorMAE(nn.Module):
                     lambda: Encoder(
                         shape,
                         conditions[name],
-                        gain,
                         acquired[name],
                         encoder_dim,
                         encoder_heads,

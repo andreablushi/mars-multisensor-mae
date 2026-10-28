@@ -21,7 +21,6 @@ def published_build(
     build: str,
     root: str,
     clips: Mapping[str, Sequence[float | None]],
-    conditioned: bool,
     acquiring: bool,
     acquisition: Mapping[str, Sequence[str]],
 ) -> DatasetBuild:
@@ -31,7 +30,6 @@ def published_build(
         build: The build to read, which is published as dataset-<build>.
         root: Where every build sits here, relative to the repository.
         clips: The low and high each instrument's normalised values are clipped to.
-        conditioned: Whether patches are read with what they are conditioned on.
         acquiring: Whether patches carry the acquisition angles.
         acquisition: The acquisition angles each instrument's patches may carry.
 
@@ -73,7 +71,6 @@ def published_build(
         root=build_root(build, root),
         fetch=fetch,
         clips=clips,
-        conditioned=conditioned,
         acquiring=acquiring,
         acquisition=acquisition,
     )
