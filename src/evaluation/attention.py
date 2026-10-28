@@ -16,7 +16,11 @@ from architecture.tokens import Context
 
 
 def rolled_attention(
-    decoder: Decoder, context: Context, position: Tensor, hidden: Tensor
+    decoder: Decoder,
+    context: Context,
+    position: Tensor,
+    acquisition: Tensor,
+    hidden: Tensor,
 ) -> tuple[Tensor, Tensor]:
     """Return the patches a decoder reads from one context, and what each token drew.
 
@@ -24,6 +28,7 @@ def rolled_attention(
         decoder: The decoder, its model in evaluation.
         context: The tokens it reads, a batch of one.
         position: Each asked patch's centre. (1, K, 2 or 3)
+        acquisition: Each asked patch's acquisition angles, in degrees. (1, K, A)
         hidden: Which of them to predict. (1, K)
 
     Returns:
@@ -57,7 +62,9 @@ def rolled_attention(
     ]
     # The pass itself, the asked patches reading the context
     with torch.no_grad():
-        prediction = decoder.reconstructed_patches(*context, position, hidden)
+        prediction = decoder.reconstructed_patches(
+            *context, position, acquisition, hidden
+        )
     for hook in hooks:
         hook.remove()
     # Roll out: half of each block passes on what the queries it read had gathered

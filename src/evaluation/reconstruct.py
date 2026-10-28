@@ -146,7 +146,11 @@ def reconstruction_and_attention(
         # CMR reads the others without the CLS of every instrument
         context = Context(*(one[:, 1:] for one in sources))
         cmr, drawn = rolled_attention(
-            model.decoders[query], context, batch[query].position, present[query]
+            model.decoders[query],
+            context,
+            batch[query].position,
+            batch[query].acquisition,
+            present[query],
         )
         drawn = drawn.cpu().numpy()
         readable = int(context.readable.sum())
