@@ -249,6 +249,7 @@ scikit-learn==1.9.1
     # via mars-multisensor-mae
 scipy==1.18.1
     # via
+    #   mars-multisensor-dataset
     #   mlcroissant
     #   scikit-learn
 sentry-sdk==2.69.0

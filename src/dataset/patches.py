@@ -100,7 +100,7 @@ def cut_patch(
     if Axis.DELAY in axes:
         # A sounder is placed by the rows it sounded, which is the patch's own cut.
         at = axes.index(Axis.DELAY)
-        delay = origin[at] + lengths[at] / 2
+        delay = observation.first_row + origin[at] + lengths[at] / 2
     else:
         # Every ground patch sits at the areoid row, so delay only places a sounder
         delay = float(sharad.AREOID_ROW)

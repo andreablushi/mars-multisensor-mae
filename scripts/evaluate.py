@@ -82,6 +82,7 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         config.evaluation.build,
         config.dataset.root,
         config.dataset.clip,
+        config.dataset.sharad_atmosphere_cropping,
         config.training.acquisition,
         config.dataset.acquisition,
     )

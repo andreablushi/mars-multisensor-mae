@@ -42,6 +42,7 @@ def run_training(
         config.dataset.build,
         config.dataset.root,
         config.dataset.clip,
+        config.dataset.sharad_atmosphere_cropping,
         config.training.acquisition,
         config.dataset.acquisition,
     )

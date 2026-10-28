@@ -24,6 +24,7 @@ from building.metadata.index import read_observation_metadata
 from building.metadata.observation import ObservationMetadata
 from building.preprocessing.common.store import EAST, MEASURED, META, NORTH
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
+from building.preprocessing.sharad.window import rows_below_atmosphere
 from common.disk import parquet
 from common.disk.files import atomic_path
 
@@ -51,6 +52,8 @@ class DatasetBuild:
         fetch: How one object is brought down when the root holds none of it.
         clips: The low and high each instrument's normalised values are clipped to,
             None leaving a side open.
+        sharad_atmosphere_cropping: Whether SHARAD is cropped to the rows below its
+            atmosphere before it is patched.
         acquiring: Whether patches carry the acquisition angles `acquisition` names.
         acquisition: The acquisition angles each instrument's patches may carry, as
             the index names them.
@@ -63,6 +66,7 @@ class DatasetBuild:
     root: Path
     fetch: Callable[[str], bytes]
     clips: Mapping[str, Sequence[float | None]]
+    sharad_atmosphere_cropping: bool
     acquiring: bool
     acquisition: Mapping[str, Sequence[str]]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
@@ -210,14 +214,15 @@ class DatasetBuild:
             key: Which of its patch arrays.
 
         Returns:
-            path: The array's file, apart for every patch size, condition, clip and
-                acquisition.
+            path: The array's file, apart for every patch size, condition, clip,
+                acquisition and atmosphere cropping.
         """
         setup = (
             sorted(size.items()),
             self.conditions(name),
             self.clips[name],
             self.acquired(name),
+            self.sharad_atmosphere_cropping and name == sharad.LAYOUT.instrument,
         )
         return self.root / ready_array_path(identity, name, setup, key)
 
@@ -315,7 +320,8 @@ class DatasetBuild:
         Returns:
             observation: The observation, its values normalised by the build's own
                 constants and clipped, a CRISM pixel missing any band left unmeasured
-                and zeroed, the rest as the build wrote them.
+                and zeroed, SHARAD cropped below its atmosphere when asked, the rest
+                as the build wrote them.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
@@ -329,6 +335,14 @@ class DatasetBuild:
             }
         axes = tuple(described["axes"])
         instrument = described["instrument"]
+        first_row = 0
+        if self.sharad_atmosphere_cropping and instrument == sharad.LAYOUT.instrument:
+            rows = rows_below_atmosphere(
+                arrays[described["measurement"]], arrays[MEASURED]
+            )
+            first_row = rows.start
+            for name in (described["measurement"], *beside):
+                arrays[name] = arrays[name][rows]
         values = self.normalised_values(
             arrays[described["measurement"]], axes, instrument
         )
@@ -352,4 +366,5 @@ class DatasetBuild:
                 for name in beside
             },
             described=described,
+            first_row=first_row,
         )

@@ -1,5 +1,5 @@
 # Labelled build the evaluation reads.
-build: evaluation-unbal
+build: evaluation
 
 # Tiles drawn as reconstructions and attention maps.
 tiles:

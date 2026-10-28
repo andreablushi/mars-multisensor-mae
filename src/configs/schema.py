@@ -14,6 +14,8 @@ class DatasetConfig:
         root: Where every build sits on this machine, under a directory of its own name.
         clip: The low and high each instrument's normalised values are clipped to,
             None leaving a side open.
+        sharad_atmosphere_cropping: Whether SHARAD is cropped to the rows below its
+            atmosphere before it is patched.
         acquisition: The acquisition angles each instrument's encoder and decoder
             read when the training turns them on, as the index names them.
         patchsize: How far a patch runs along an axis holding each thing, by
@@ -29,6 +31,7 @@ class DatasetConfig:
     build: str
     root: str
     clip: dict[str, list[float | None]]
+    sharad_atmosphere_cropping: bool
     acquisition: dict[str, list[str]]
     patchsize: dict[str, dict[str, int]]
     budget: dict[str, int]

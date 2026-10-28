@@ -20,6 +20,7 @@ class Observation:
         east: How far it sits eastward, holding the same.
         beside: What else the instrument stores, of what the read asked for.
         described: What the build wrote beside the arrays, which places them.
+        first_row: Which archive row a sounder's first delay row is, 0 when uncropped.
     """
 
     values: np.ndarray
@@ -29,6 +30,7 @@ class Observation:
     east: np.ndarray
     beside: dict[str, np.ndarray]
     described: dict
+    first_row: int
 
     @property
     def ground_axes(self) -> tuple[int, ...]:
