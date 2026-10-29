@@ -12,6 +12,9 @@ validate_every: 1070
 # Share of each instrument's patches hidden from its encoder.
 mask_ratio: 0.75
 
+# What UMR and CMR measure, MSE or RMSE.
+reconstruction_error: MSE
+
 # CSMAE's MIM between instruments, pooled by GAP or CLS.
 contrastive:
   enabled: true

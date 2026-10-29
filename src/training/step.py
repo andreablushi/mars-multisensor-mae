@@ -73,6 +73,7 @@ def step_terms(
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
+    measure: str,
     generators: Mapping[str, torch.Generator],
     device: torch.device,
 ) -> dict[str, Tensor]:
@@ -85,6 +86,7 @@ def step_terms(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        measure: The reconstruction error, MSE or RMSE.
         generators: What fixes each instrument's masks, on the device.
         device: Where the model runs.
 
@@ -99,7 +101,7 @@ def step_terms(
     with torch.autocast(device.type, dtype=torch.bfloat16):
         predictions, pooled = model(batch, visible, hidden, pooling)
     return total(
-        umr(predictions["umr"], batch, hidden),
-        cmr(predictions["cmr"], batch, hidden),
+        umr(predictions["umr"], batch, hidden, measure),
+        cmr(predictions["cmr"], batch, hidden, measure),
         mim(pooled, aligned, temperature),
     )

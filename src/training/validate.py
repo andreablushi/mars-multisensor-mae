@@ -18,6 +18,7 @@ def validation_terms(
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
+    measure: str,
     seed: int,
     device: torch.device,
 ) -> dict[str, float]:
@@ -30,6 +31,7 @@ def validation_terms(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        measure: The reconstruction error, MSE or RMSE.
         seed: What fixes the masks.
         device: Where the model runs.
 
@@ -47,6 +49,7 @@ def validation_terms(
                 aligned,
                 pooling,
                 temperature,
+                measure,
                 generators,
                 device,
             )

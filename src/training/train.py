@@ -37,6 +37,7 @@ def train(
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
+    measure: str,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -58,6 +59,7 @@ def train(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        measure: The reconstruction error, MSE or RMSE.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -94,7 +96,15 @@ def train(
         batch, identities = next(batches)
         optimizer.zero_grad()
         terms = step_terms(
-            model, batch, mask_ratio, aligned, pooling, temperature, generators, device
+            model,
+            batch,
+            mask_ratio,
+            aligned,
+            pooling,
+            temperature,
+            measure,
+            generators,
+            device,
         )
         terms["loss"].backward()
         # Stabilize training against exploding gradients
@@ -110,7 +120,15 @@ def train(
         if step % validate_every and step < num_steps:
             continue
         metrics = validation_terms(
-            model, validation, mask_ratio, aligned, pooling, temperature, seed, device
+            model,
+            validation,
+            mask_ratio,
+            aligned,
+            pooling,
+            temperature,
+            measure,
+            seed,
+            device,
         )
         model.train()  # Validating switched it to evaluation
         log_terms(run, step, VALIDATION, metrics)

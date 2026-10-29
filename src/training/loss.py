@@ -11,31 +11,38 @@ from torch.nn import functional
 
 from architecture.tokens import Tokens
 
+RMSE = "RMSE"
 
-def mse(prediction: Tensor, target: Tokens, scored: Tensor) -> Tensor:
-    """Return the mean squared error over the scored patches.
+
+def reconstruction_error(
+    prediction: Tensor, target: Tokens, scored: Tensor, measure: str
+) -> Tensor:
+    """Return the mean squared error over the scored patches, or its root.
 
     Args:
         prediction: The predicted patches. (B, K, *P)
         target: The instrument's patches over the batch.
         scored: Which patches are scored. (B, K)
+        measure: MSE, or RMSE for its root.
 
     Returns:
         error: Each scored patch's squared error over its measured samples,
-            averaged over the patches. ()
+            averaged over the patches, rooted for RMSE. ()
     """
     measured = target.measured.to(target.values.dtype).expand_as(target.values)
     samples = tuple(range(2, target.values.dim()))
     # Each patch's squared error, averaged over its measured samples
     error = ((prediction - target.values) ** 2 * measured).sum(dim=samples)
     error = error / measured.sum(dim=samples).clamp(min=1)  # (B, K)
-    return error[scored].mean()  # ()
+    error = error[scored].mean()  # ()
+    return error.sqrt() if measure == RMSE else error
 
 
 def umr(
     predictions: Mapping[str, Tensor],
     batch: Mapping[str, Tokens],
     hidden: Mapping[str, Tensor],
+    measure: str,
 ) -> dict[str, Tensor]:
     """Return each instrument's UMR error, read from its own tokens.
 
@@ -43,17 +50,24 @@ def umr(
         predictions: Each instrument's patches read from its own tokens. (B, K, *P)
         batch: Each instrument's patches over the batch.
         hidden: Which patches are predicted. (B, K)
+        measure: MSE, or RMSE for its root.
 
     Returns:
         errors: Each instrument's error over its hidden patches. ()
     """
-    return {name: mse(predictions[name], batch[name], hidden[name]) for name in batch}
+    return {
+        name: reconstruction_error(
+            predictions[name], batch[name], hidden[name], measure
+        )
+        for name in batch
+    }
 
 
 def cmr(
     predictions: Mapping[str, Tensor],
     batch: Mapping[str, Tokens],
     hidden: Mapping[str, Tensor],
+    measure: str,
 ) -> dict[str, Tensor]:
     """Return each instrument's CMR error, read from every other instrument's tokens.
 
@@ -62,11 +76,17 @@ def cmr(
             (B, K, *P)
         batch: Each instrument's patches over the batch.
         hidden: Which patches are predicted. (B, K)
+        measure: MSE, or RMSE for its root.
 
     Returns:
         errors: Each instrument's error over its hidden patches. ()
     """
-    return {name: mse(predictions[name], batch[name], hidden[name]) for name in batch}
+    return {
+        name: reconstruction_error(
+            predictions[name], batch[name], hidden[name], measure
+        )
+        for name in batch
+    }
 
 
 def mim(

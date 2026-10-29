@@ -89,6 +89,7 @@ def run_training(
         contrastive.instruments if contrastive.enabled else [],
         contrastive.pooling,
         contrastive.temperature,
+        config.training.reconstruction_error,
         config.training.checkpoints,
         config.dataset.seed,
         device,
