@@ -10,8 +10,9 @@ import wandb
 from wandb.sdk.wandb_run import Run
 
 from evaluation.metrics import compute_metrics, cosine_similarity
-from logs.attention import attention_image
-from logs.reconstruction import PANELS, reconstruction_images
+from logs.attention import attention_image, sounder_read_image
+from logs.reconstruction import PANELS, SOUNDER, reconstruction_images
+from logs.tokens import token_image
 from logs.tracker import artifact_name
 
 EVALUATION = "evaluation"
@@ -21,6 +22,8 @@ CONFUSION = f"{EVALUATION}/confusion"
 DISTANCES = f"{EVALUATION}/distances"
 RECONSTRUCTION = f"{EVALUATION}/reconstruction"
 ATTENTION = f"{EVALUATION}/attention"
+RANGING = f"{EVALUATION}/ranging"
+TOKENS = f"{EVALUATION}/tokens"
 NEIGHBOURS = 5
 
 
@@ -31,6 +34,7 @@ def log_evaluation(
     classes: Mapping[str, str],
     reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     files: Sequence[Path],
 ) -> None:
     """Log every score, both class matrices, the rebuilt tiles and where CMR looked.
@@ -43,6 +47,8 @@ def log_evaluation(
         reconstructions: Each rebuilt tile's arrays, keyed by what it shows.
         attentions: Each tile's instrument rebuilt from the others whole, keyed by
             what the tile shows and the instrument.
+        rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
+            alike.
         files: What the evaluation wrote, logged as its artifact.
     """
     measured = {}
@@ -74,9 +80,15 @@ def log_evaluation(
             media[f"{RECONSTRUCTION}/{place}/{title}"] = wandb.Image(
                 image, caption=" | ".join(PANELS)
             )
+        image, caption = token_image(reconstruction)
+        media[f"{TOKENS}/{place}"] = wandb.Image(image, caption=caption)
     for (place, query), attention in attentions.items():
         image, caption = attention_image(attention, query)
         media[f"{ATTENTION}/{query}/{place}"] = wandb.Image(image, caption=caption)
+    for (place, query), attention in rangings.items():
+        drawn = attention_image if query == SOUNDER else sounder_read_image
+        image, caption = drawn(attention, query)
+        media[f"{RANGING}/{query}/{place}"] = wandb.Image(image, caption=caption)
     run.log(
         {
             SCORES: wandb.Table(

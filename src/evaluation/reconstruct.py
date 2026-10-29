@@ -26,12 +26,15 @@ def reconstruction_and_attention(
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
     mask_ratio: float,
+    ranging: Sequence[str],
     seed: int,
     device: torch.device,
 ) -> tuple[
-    dict[str, dict[str, np.ndarray]], dict[str, dict[str, dict[str, np.ndarray]]]
+    dict[str, dict[str, np.ndarray]],
+    dict[str, dict[str, dict[str, np.ndarray]]],
+    dict[str, dict[str, dict[str, np.ndarray]]],
 ]:
-    """Return each instrument's shown observation rebuilt, and rebuilt from the rest.
+    """Return each instrument's shown observation rebuilt, and rebuilt from others.
 
     Args:
         model: The model, on the device.
@@ -40,19 +43,22 @@ def reconstruction_and_attention(
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
+        ranging: The two ranging instruments, each also rebuilt from the other alone.
         seed: What fixes the masks.
         device: Where the model runs.
 
     Returns:
         reconstruction: Each instrument's shown observation under "values",
-            "measured" and "cell", the "clip", "mean" and "std" of its z-scores, the
-            "hidden" patches, and those rebuilt under "umr" and "cmr".
+            "measured" and "cell", the "clip", "mean" and "std" of its z-scores, its
+            "spacing", "observation" and "identifier", the "hidden" patches, those
+            rebuilt under "umr" and "cmr", and its tokens in the shared space with
+            every patch read under "token".
         attention: For each instrument rebuilt from every other whole, keyed by it,
             its shown observation with the rebuilt one under "cmr", and every
             other's observations with their tokens' rolled out attention relative to
             uniform under "attention", the share all their tokens drew under
-            "share" and their CLS under "cls", beside "spacing", "observation" and
-            "identifier".
+            "share" and their CLS under "cls".
+        ranged: The same for each ranging instrument, rebuilt from the other alone.
     """
     # The most measured observation of each instrument is shown, a sounder's pass
     # nearest SOUNDER_INCIDENCE_DEG, and every observation is read once, least
@@ -77,6 +83,7 @@ def reconstruction_and_attention(
     def arrays(name: str, observations: Sequence[ObservationMetadata]) -> dict:
         """Return some observations of one instrument as the arrays drawn."""
         patches = [patch for row in observations for patch in read[row.path]]
+        counts = [len(read[row.path]) for row in observations]
         return (
             patch_arrays(
                 patches,
@@ -90,6 +97,13 @@ def reconstruction_and_attention(
             | {
                 key: np.array(build.read_stats()[name][key], dtype=float)
                 for key in ("mean", "std")
+            }
+            | {
+                "spacing": np.repeat(
+                    [row.sample_spacing_m for row in observations], counts, axis=0
+                ),
+                "observation": np.repeat(np.arange(len(observations)), counts),
+                "identifier": np.array([row.identifier for row in observations]),
             }
         )
 
@@ -110,41 +124,33 @@ def reconstruction_and_attention(
     )
     with torch.no_grad():
         predictions, _ = model(batch, visible, hidden, GAP)
+        _, tokens = model.shared_tokens(
+            batch, {name: one.present for name, one in batch.items()}
+        )
     reconstruction = {
         name: one
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in ("umr", "cmr")}
+        | {"token": tokens[name][0, 1:].cpu().numpy()}
         for name, one in sample.items()
     }
-    attention = {}
-    for query in sizes:
-        # The query's shown observation hidden whole, every other's all read whole
+
+    def cmr_attention(query: str, sources: Sequence[str]) -> dict:
+        """Return the query rebuilt from some others whole, and where it looked."""
+        # The query's shown observation hidden whole, every source's all read whole
         observations = {
-            name: [shown[name]] if name == query else held[name] for name in sizes
+            name: [shown[name]] if name == query else held[name]
+            for name in sizes
+            if name == query or name in sources
         }
-        sample = {
-            name: arrays(name, kept)
-            | {
-                "spacing": np.repeat(
-                    [row.sample_spacing_m for row in kept],
-                    [len(read[row.path]) for row in kept],
-                    axis=0,
-                ),
-                "observation": np.repeat(
-                    np.arange(len(kept)), [len(read[row.path]) for row in kept]
-                ),
-                "identifier": np.array([row.identifier for row in kept]),
-            }
-            for name, kept in observations.items()
-        }
+        sample = {name: arrays(name, kept) for name, kept in observations.items()}
         batch = on_device(sample)
         present = {name: one.present for name, one in batch.items()}
-        others = [name for name in batch if name != query]
         with torch.no_grad():
             cls, tokens = model.shared_tokens(batch, present)
-            sources = model.context(cls, tokens, batch, present, others)
+            context = model.context(cls, tokens, batch, present, list(sources))
         # CMR reads the others without the CLS of every instrument
-        context = Context(*(one[:, 1:] for one in sources))
+        context = Context(*(one[:, 1:] for one in context))
         cmr, drawn = rolled_attention(
             model.decoders[query],
             context,
@@ -154,15 +160,25 @@ def reconstruction_and_attention(
         )
         drawn = drawn.cpu().numpy()
         readable = int(context.readable.sum())
-        attention[query] = {query: sample[query] | {"cmr": cmr[0].cpu().numpy()}}
+        attended = {query: sample[query] | {"cmr": cmr[0].cpu().numpy()}}
         start = 0
-        for name in others:
+        for name in sources:
             # Each instrument's CLS, then its tokens
             taken = drawn[start : start + 1 + batch[name].values.shape[1]]
             start += taken.size
-            attention[query][name] = sample[name] | {
+            attended[name] = sample[name] | {
                 "attention": taken[1:] * readable,
                 "share": taken.sum(),
                 "cls": taken[0],
             }
-    return reconstruction, attention
+        return attended
+
+    attention = {
+        query: cmr_attention(query, [name for name in sizes if name != query])
+        for query in sizes
+    }
+    ranged = {
+        query: cmr_attention(query, [other])
+        for query, other in zip(ranging, ranging[::-1], strict=True)
+    }
+    return reconstruction, attention, ranged

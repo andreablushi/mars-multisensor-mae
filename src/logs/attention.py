@@ -1,8 +1,8 @@
-"""One instrument rebuilt from the others whole, and where its CMR looked on each."""
+"""One instrument rebuilt from others whole, and where its CMR looked on each."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 
 import numpy as np
 from PIL import Image
@@ -31,6 +31,28 @@ OUTLINE = 3
 SQUARE = np.ones((3, 3), bool)
 QUERY_COMPOSITE = "false_colour_2529_1506_1080nm"
 GREY_COMPOSITE = "albedo_770nm"
+TOP_PASSES = 3
+
+
+def map_frame(framed: Sequence[Mapping[str, np.ndarray]]) -> np.ndarray:
+    """Return a map's edges around ground patches, half the widest patch past them.
+
+    Args:
+        framed: Each ground instrument's patches, as the evaluation drew them.
+
+    Returns:
+        frame: The map's north, south, west and east edges, in metres.
+    """
+    half = max(
+        (np.array(held["values"].shape[1:3]) * held["spacing"]).max() / 2
+        for held in framed
+    )
+    centres = np.concatenate([held["position"][:, :2] for held in framed])
+    (west, south), (east, north) = (
+        centres.min(axis=0) - half,
+        centres.max(axis=0) + half,
+    )
+    return np.array([north, south, west, east])
 
 
 def map_places(frame: np.ndarray) -> np.ndarray:
@@ -93,6 +115,48 @@ def ground_samples(
         yield shown, patch[shown], inner[shown]
 
 
+def grey_patches(
+    arrays: Mapping[str, np.ndarray], patches: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return one ground instrument's patches as one grey value a sample.
+
+    Args:
+        arrays: Its patches, as the evaluation drew them.
+        patches: What is drawn of them, as z-scores. (K, *P)
+
+    Returns:
+        grey: The same, a spectrum's GREY_COMPOSITE band as stored. (K, *ground)
+        clip: The low and high to scale them by, NaN for an open side.
+    """
+    if patches.ndim < 4:
+        return patches, arrays["clip"]
+    band = nearest_bands(COMPOSITES_NM[GREY_COMPOSITE])[0]
+    return patches[..., band] * arrays["std"][band] + arrays["mean"][band], np.full(
+        2, np.nan
+    )
+
+
+def laid_patches(
+    arrays: Mapping[str, np.ndarray], patches: np.ndarray, frame: np.ndarray
+) -> np.ndarray:
+    """Return one value a sample of one ground instrument laid on a map.
+
+    Args:
+        arrays: Its patches, as the evaluation drew them.
+        patches: One value per sample of each patch. (K, *ground)
+        frame: The map's north, south, west and east edges, in metres.
+
+    Returns:
+        laid: The values, the most measured observation on top, NaN where none is
+            measured. (ROW_HEIGHT, W)
+    """
+    places = map_places(frame)
+    laid = np.full(places.shape[:2], np.nan)
+    for shown, patch, inner in ground_samples(arrays, places):
+        laid[shown] = patches[patch, *inner.T]
+    return laid
+
+
 def ground_map(
     arrays: Mapping[str, np.ndarray], frame: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -108,30 +172,24 @@ def ground_map(
         ratio: The attention the tokens there drew on average, relative to uniform.
             (ROW_HEIGHT, W)
     """
-    values, clip = arrays["values"], arrays["clip"]
-    if values.ndim == 4:
-        band = nearest_bands(COMPOSITES_NM[GREY_COMPOSITE])[0]
-        values = values[..., band] * arrays["std"][band] + arrays["mean"][band]
-        clip = np.full(2, np.nan)
-    places = map_places(frame)
-    grey = np.full(places.shape[:2], np.nan)
+    values, clip = grey_patches(arrays, arrays["values"])
+    grey = laid_patches(arrays, values, frame)
     total, count = np.zeros((2, *grey.shape))
-    for shown, patch, inner in ground_samples(arrays, places):
-        grey[shown] = values[patch, *inner.T]
+    for shown, patch, _ in ground_samples(arrays, map_places(frame)):
         total[shown] += arrays["attention"][patch]
         count[shown] += 1
     return scaled_values(grey[None], clip)[0], total / np.maximum(count, 1)
 
 
-def query_trace(
+def observation_trace(
     arrays: Mapping[str, np.ndarray], frame: np.ndarray, sounder: bool
 ) -> np.ndarray:
-    """Return where the query's observation lies on a map ROW_HEIGHT rows high.
+    """Return where one observation lies on a map ROW_HEIGHT rows high.
 
     Args:
-        arrays: The query's patches, as the evaluation drew them.
+        arrays: Its patches, as the evaluation drew them.
         frame: The map's north, south, west and east edges, in metres.
-        sounder: Whether the query is a sounder, which lies on a line.
+        sounder: Whether it is a sounder's pass, which lies on a line.
 
     Returns:
         trace: The outline of the ground it measured, or a sounder's track.
@@ -160,43 +218,50 @@ def query_trace(
     return binary_dilation(line, SQUARE, OUTLINE // 2)
 
 
-def sounder_pass(
-    arrays: Mapping[str, np.ndarray],
-) -> tuple[np.ndarray, np.ndarray, str, float]:
-    """Return the sounder's pass that drew the most attention, and that attention.
+def sounder_passes(
+    arrays: Mapping[str, np.ndarray], count: int
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, str, float]]:
+    """Return the sounder's passes whose tokens drew the most attention each.
 
     Args:
         arrays: Its patches, as the evaluation drew them.
+        count: How many passes are returned, the most attended first.
 
     Returns:
-        grey: The pass's radargram from 0 to 1, NaN where none is measured,
-            resampled to ROW_HEIGHT rows. (ROW_HEIGHT, ROW_HEIGHT / 2)
-        ratio: The attention its tokens drew, relative to uniform, likewise.
-        identifier: The pass.
-        share: Its share of what the sounder's tokens drew.
+        passes: For each, which patches are its own (K,), its radargram from 0 to 1,
+            NaN where none is measured, and the attention its tokens drew relative
+            to uniform, both resampled to ROW_HEIGHT rows (ROW_HEIGHT, ROW_HEIGHT /
+            2), the pass, and its share of the passes' attention per token.
     """
     by_pass = np.bincount(arrays["observation"], weights=arrays["attention"])
-    chosen = by_pass.argmax()
-    mine = arrays["observation"] == chosen
-    values = arrays["values"][mine]
-    attention = np.broadcast_to(
-        arrays["attention"][mine].reshape(-1, *[1] * (values.ndim - 1)), values.shape
-    )
-    grey, ratio = sounder_resampled(
-        np.stack(
-            [
-                patch_mosaic(one, arrays["measured"][mine], arrays["cell"][mine])
-                for one in (values, attention)
-            ]
-        ),
-        ROW_HEIGHT,
-    )
-    return (
-        scaled_values(grey[None], arrays["clip"])[0],
-        ratio,
-        str(arrays["identifier"][chosen]),
-        by_pass[chosen] / by_pass.sum(),
-    )
+    by_pass /= np.bincount(arrays["observation"])
+    passes = []
+    for chosen in by_pass.argsort()[::-1][:count]:
+        mine = arrays["observation"] == chosen
+        values = arrays["values"][mine]
+        attention = np.broadcast_to(
+            arrays["attention"][mine].reshape(-1, *[1] * (values.ndim - 1)),
+            values.shape,
+        )
+        grey, ratio = sounder_resampled(
+            np.stack(
+                [
+                    patch_mosaic(one, arrays["measured"][mine], arrays["cell"][mine])
+                    for one in (values, attention)
+                ]
+            ),
+            ROW_HEIGHT,
+        )
+        passes.append(
+            (
+                mine,
+                scaled_values(grey[None], arrays["clip"])[0],
+                ratio,
+                str(arrays["identifier"][chosen]),
+                by_pass[chosen] / by_pass.sum(),
+            )
+        )
+    return passes
 
 
 def overlaid(grey: np.ndarray, ratio: np.ndarray) -> np.ndarray:
@@ -251,26 +316,16 @@ def attention_image(
     )
     sources = {name: held for name, held in attention.items() if name != query}
     grounds = [held for name, held in sources.items() if name != SOUNDER]
-    # One frame for every map: each ground patch centre, a ground query's too, half
-    # the widest patch around
-    half = max(
-        (np.array(held["values"].shape[1:3]) * held["spacing"]).max() / 2
-        for held in grounds
-    )
-    framed = grounds if query == SOUNDER else [*grounds, arrays]
-    centres = np.concatenate([held["position"][:, :2] for held in framed])
-    (west, south), (east, north) = (
-        centres.min(axis=0) - half,
-        centres.max(axis=0) + half,
-    )
-    frame = np.array([north, south, west, east])
-    trace = query_trace(arrays, frame, query == SOUNDER)
+    # One frame for every map: each ground patch, a ground query's too
+    frame = map_frame(grounds if query == SOUNDER else [*grounds, arrays])
+    trace = observation_trace(arrays, frame, query == SOUNDER)
     panels, drew = [], []
+    total = sum(held["attention"].mean() for held in sources.values())
     for name, held in sources.items():
-        drew.append(f"{name} {held['share'] - held['cls']:.0%}")
+        drew.append(f"{name} {held['attention'].mean() / total:.0%}")
         if name == SOUNDER:
-            grey, ratio, identifier, share = sounder_pass(held)
-            drew[-1] += f" (pass {identifier} drew {share:.0%} of it)"
+            ((_, grey, ratio, identifier, share),) = sounder_passes(held, 1)
+            drew[-1] += f" (pass {identifier} {share:.0%})"
         else:
             grey, ratio = ground_map(held, frame)
         # Where it looked within the instrument, its share being in the caption
@@ -279,19 +334,84 @@ def attention_image(
             # A track is drawn over what was measured alone
             panel[trace & ~np.isnan(grey) if query == SOUNDER else trace] = TRACE_RGB
         panels.append(panel)
-    # Both rows centred on white, a gap above, between and below
-    rows = [top, spaced_row(panels)]
+    cls = sum(held["cls"] for held in sources.values())
+    caption = (
+        f"{query} original | CMR from {', '.join(sources)} whole. Attention per"
+        " token: "
+        + ", ".join(drew)
+        + f"; the CLS tokens drew {cls:.0%} of all. Red above the instrument's mean,"
+        f" blue below, full at {FULL_RATIO:g}x. Orange: where the {query}"
+        " observation lies."
+    )
+    return centred_rows([top, spaced_row(panels)]), caption
+
+
+def sounder_read_image(
+    attention: Mapping[str, Mapping[str, np.ndarray]], query: str
+) -> tuple[np.ndarray, str]:
+    """Return a ground query's original and CMR from the sounder alone, and its passes.
+
+    Args:
+        attention: The query's and the sounder's patches, as the evaluation drew them.
+        query: The ground instrument rebuilt.
+
+    Returns:
+        image: The query's two panels with the most attended tracks, above those
+            passes' radargrams, each row centred. (H, W, 3)
+        caption: What each panel shows and what each pass drew.
+    """
+    arrays, held = attention[query], attention[SOUNDER]
+    frame = map_frame([arrays])
+    laid = []
+    for one in (arrays["values"], arrays["cmr"]):
+        grey, clip = grey_patches(arrays, one)
+        laid.append(laid_patches(arrays, grey, frame))
+    passes = sounder_passes(held, TOP_PASSES)
+    track = np.any(
+        [
+            observation_trace(
+                {key: held[key][mine] for key in ("cell", "position")}, frame, True
+            )
+            for mine, *_ in passes
+        ],
+        axis=0,
+    )
+    top = []
+    for grey in scaled_values(np.stack(laid), clip):
+        panel = overlaid(grey, np.ones_like(grey))
+        panel[track & ~np.isnan(grey)] = TRACE_RGB
+        top.append(panel)
+    radargrams = [
+        overlaid(grey, ratio / held["attention"].mean())
+        for _, grey, ratio, *_ in passes
+    ]
+    caption = (
+        f"{query} original | CMR from {SOUNDER} alone, orange: the tracks of the"
+        f" {len(passes)} passes read most per token. Below, left to right: "
+        + ", ".join(
+            f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
+        )
+        + f" of the passes' attention per token; the CLS drew {held['cls']:.0%} of all."
+        f" Red above the {SOUNDER} mean, blue below, full at {FULL_RATIO:g}x."
+    )
+    return centred_rows([spaced_row(top), spaced_row(radargrams)]), caption
+
+
+def centred_rows(rows: list[np.ndarray]) -> np.ndarray:
+    """Return rows ROW_HEIGHT high stacked and centred on white, a gap around each.
+
+    Args:
+        rows: The rows, top first. (ROW_HEIGHT, W, 3) each
+
+    Returns:
+        image: The rows. (H, W', 3)
+    """
     width, gap = max(row.shape[1] for row in rows), ROW_HEIGHT // SPACE
-    image = np.full((3 * gap + 2 * ROW_HEIGHT, width, 3), 255, np.uint8)
+    image = np.full(
+        ((len(rows) + 1) * gap + len(rows) * ROW_HEIGHT, width, 3), 255, np.uint8
+    )
     for at, row in enumerate(rows):
         left = (width - row.shape[1]) // 2
         top_row = gap + at * (ROW_HEIGHT + gap)
         image[top_row : top_row + ROW_HEIGHT, left : left + row.shape[1]] = row
-    cls = sum(held["cls"] for held in sources.values())
-    caption = (
-        f"{query} original | CMR from the others whole. Attention: "
-        + ", ".join(drew)
-        + f", CLS {cls:.0%}. Red above the instrument's mean, blue below, full at"
-        f" {FULL_RATIO:g}x. Orange: where the {query} observation lies."
-    )
-    return image, caption
+    return image

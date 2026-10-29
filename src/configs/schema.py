@@ -120,10 +120,13 @@ class EvaluationConfig:
         build: The build the labelled tiles are read from, published as dataset-<build>.
         tiles: The tiles drawn as reconstructions and attention maps, by what they
             show.
+        ranging: The two ranging instruments, each also rebuilt from the other
+            alone.
     """
 
     build: str
     tiles: dict[str, str]
+    ranging: list[str]
 
 
 @dataclass

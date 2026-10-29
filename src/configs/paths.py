@@ -24,6 +24,8 @@ RECONSTRUCTION_FILE = "reconstruction-{}.npz"
 
 ATTENTION_FILE = "attention-{}-{}.npz"
 
+RANGING_FILE = "ranging-{}-{}.npz"
+
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.

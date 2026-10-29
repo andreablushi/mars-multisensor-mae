@@ -12,7 +12,12 @@ from digitalhub_runtime_python import handler
 
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config
-from configs.paths import ATTENTION_FILE, RECONSTRUCTION_FILE, results_path
+from configs.paths import (
+    ATTENTION_FILE,
+    RANGING_FILE,
+    RECONSTRUCTION_FILE,
+    results_path,
+)
 from configs.schema import Config
 from dataset.loader import cache_tiles, tile_loader
 from dataset.store import DatasetBuild
@@ -111,15 +116,16 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     classes = build.read_label_by_tile()
     files = [results_path(run_name)]
     write_tile_vectors(files[0], classes, vectors)
-    reconstructions, attentions = {}, {}
+    reconstructions, attentions, rangings = {}, {}, {}
     for place, tile in config.evaluation.tiles.items():
-        reconstructions[place], by_query = reconstruction_and_attention(
+        reconstructions[place], by_query, ranged = reconstruction_and_attention(
             model,
             build,
             by_tile[tile],
             sizes,
             shapes,
             config.training.mask_ratio,
+            config.evaluation.ranging,
             config.dataset.seed,
             device,
         )
@@ -129,7 +135,13 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
             attentions[place, query] = attention
             files.append(results_path(run_name, ATTENTION_FILE.format(place, query)))
             write_tile_arrays(files[-1], attention)
-    log_evaluation(run, run_name, vectors, classes, reconstructions, attentions, files)
+        for query, attention in ranged.items():
+            rangings[place, query] = attention
+            files.append(results_path(run_name, RANGING_FILE.format(place, query)))
+            write_tile_arrays(files[-1], attention)
+    log_evaluation(
+        run, run_name, vectors, classes, reconstructions, attentions, rangings, files
+    )
     run.finish()
 
 

@@ -5,3 +5,6 @@ build: evaluation
 tiles:
   crater: b209_c0352
   ice_rich: b327_c0013
+
+# The two ranging instruments, each also rebuilt from the other alone.
+ranging: [MOLA, SHARAD]
