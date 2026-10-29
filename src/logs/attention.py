@@ -296,7 +296,7 @@ def attention_image(
 
     Returns:
         image: The two rows, each centred. (H, W, 3)
-        caption: What each panel shows and what each instrument drew.
+        caption: What is rebuilt from what, and each instrument's share per token.
     """
     arrays = attention[query]
     images = np.stack(
@@ -334,15 +334,7 @@ def attention_image(
             # A track is drawn over what was measured alone
             panel[trace & ~np.isnan(grey) if query == SOUNDER else trace] = TRACE_RGB
         panels.append(panel)
-    cls = sum(held["cls"] for held in sources.values())
-    caption = (
-        f"{query} original | CMR from {', '.join(sources)} whole. Attention per"
-        " token: "
-        + ", ".join(drew)
-        + f"; the CLS tokens drew {cls:.0%} of all. Red above the instrument's mean,"
-        f" blue below, full at {FULL_RATIO:g}x. Orange: where the {query}"
-        " observation lies."
-    )
+    caption = f"{query} from {', '.join(sources)}: " + ", ".join(drew)
     return centred_rows([top, spaced_row(panels)]), caption
 
 
@@ -358,7 +350,7 @@ def sounder_read_image(
     Returns:
         image: The query's two panels with the most attended tracks, above those
             passes' radargrams, each row centred. (H, W, 3)
-        caption: What each panel shows and what each pass drew.
+        caption: What is rebuilt from what, and each pass's share per token.
     """
     arrays, held = attention[query], attention[SOUNDER]
     frame = map_frame([arrays])
@@ -385,14 +377,8 @@ def sounder_read_image(
         overlaid(grey, ratio / held["attention"].mean())
         for _, grey, ratio, *_ in passes
     ]
-    caption = (
-        f"{query} original | CMR from {SOUNDER} alone, orange: the tracks of the"
-        f" {len(passes)} passes read most per token. Below, left to right: "
-        + ", ".join(
-            f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
-        )
-        + f" of the passes' attention per token; the CLS drew {held['cls']:.0%} of all."
-        f" Red above the {SOUNDER} mean, blue below, full at {FULL_RATIO:g}x."
+    caption = f"{query} from {SOUNDER}: " + ", ".join(
+        f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
     )
     return centred_rows([spaced_row(top), spaced_row(radargrams)]), caption
 
