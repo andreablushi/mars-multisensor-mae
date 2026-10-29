@@ -35,6 +35,7 @@ def log_evaluation(
     reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    tokens: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     files: Sequence[Path],
 ) -> None:
     """Log every score, both class matrices, the rebuilt tiles and where CMR looked.
@@ -49,6 +50,8 @@ def log_evaluation(
             what the tile shows and the instrument.
         rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
             alike.
+        tokens: Each tile's observations drawn whole with their shared tokens, keyed
+            by what the tile shows.
         files: What the evaluation wrote, logged as its artifact.
     """
     measured = {}
@@ -80,7 +83,8 @@ def log_evaluation(
             media[f"{RECONSTRUCTION}/{place}/{title}"] = wandb.Image(
                 image, caption=" | ".join(PANELS)
             )
-        image, caption = token_image(reconstruction)
+    for place, held in tokens.items():
+        image, caption = token_image(held)
         media[f"{TOKENS}/{place}"] = wandb.Image(image, caption=caption)
     for (place, query), attention in attentions.items():
         image, caption = attention_image(attention, query)

@@ -20,33 +20,33 @@ SPREAD_PERCENT = (1.0, 99.0)
 
 
 def token_image(
-    reconstruction: Mapping[str, Mapping[str, np.ndarray]],
+    tokens: Mapping[str, Mapping[str, np.ndarray]],
 ) -> tuple[np.ndarray, str]:
     """Return every instrument's tokens coloured by the main directions of them all.
 
     Args:
-        reconstruction: Each instrument's shown observation and its tokens, as the
+        tokens: Each instrument's observations drawn whole and their tokens, as the
             evaluation drew them.
 
     Returns:
         image: Each ground instrument on one map, the sounder's radargram beside.
             (H, W, 3)
-        caption: What the colours show.
+        caption: What is drawn, and each colour's share of the variance.
     """
     # One principal component analysis over every instrument's tokens together, each
     # centred on its own mean so the colours follow what varies, not the instrument
     centred = np.concatenate(
-        [held["token"] - held["token"].mean(axis=0) for held in reconstruction.values()]
+        [held["token"] - held["token"].mean(axis=0) for held in tokens.values()]
     )
     _, spread, directions = np.linalg.svd(centred, full_matrices=False)
     projected = centred @ directions[:COMPONENTS].T  # (N, 3)
     low, high = np.percentile(projected, SPREAD_PERCENT, axis=0)
     colours = np.clip((projected - low) / (high - low), 0, 1)
     explained = spread[:COMPONENTS] ** 2 / (spread**2).sum()
-    grounds = [held for name, held in reconstruction.items() if name != SOUNDER]
+    grounds = [held for name, held in tokens.items() if name != SOUNDER]
     frame = map_frame(grounds)
     panels, start = [], 0
-    for name, held in reconstruction.items():
+    for name, held in tokens.items():
         mine = colours[start : start + len(held["token"])]  # (K, 3)
         start += len(held["token"])
         if name == SOUNDER:
@@ -84,11 +84,7 @@ def token_image(
         image = np.nan_to_num(rgb) * 255
         image[np.isnan(rgb[..., 0])] = EMPTY_RGB
         panels.append(image.astype(np.uint8))
-    caption = (
-        f"{', '.join(reconstruction)} tokens in the shared space, every patch read."
-        f" Colour: the first {COMPONENTS} principal components of all of them together"
-        f" as red, green and blue ({', '.join(f'{one:.0%}' for one in explained)} of"
-        " the variance), each instrument centred on its own mean. The same colour"
-        " means the model puts those tokens together."
+    caption = f"{', '.join(tokens)} tokens PCA: " + ", ".join(
+        f"{one:.0%}" for one in explained
     )
     return centred_rows([spaced_row(panels)]), caption

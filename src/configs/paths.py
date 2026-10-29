@@ -26,6 +26,8 @@ ATTENTION_FILE = "attention-{}-{}.npz"
 
 RANGING_FILE = "ranging-{}-{}.npz"
 
+TOKENS_FILE = "tokens-{}.npz"
+
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine.

@@ -33,6 +33,7 @@ def reconstruction_and_attention(
     dict[str, dict[str, np.ndarray]],
     dict[str, dict[str, dict[str, np.ndarray]]],
     dict[str, dict[str, dict[str, np.ndarray]]],
+    dict[str, dict[str, np.ndarray]],
 ]:
     """Return each instrument's shown observation rebuilt, and rebuilt from others.
 
@@ -50,22 +51,25 @@ def reconstruction_and_attention(
     Returns:
         reconstruction: Each instrument's shown observation under "values",
             "measured" and "cell", the "clip", "mean" and "std" of its z-scores, its
-            "spacing", "observation" and "identifier", the "hidden" patches, those
-            rebuilt under "umr" and "cmr", and its tokens in the shared space with
-            every patch read under "token".
+            "spacing", "observation" and "identifier", the "hidden" patches, and
+            those rebuilt under "umr" and "cmr".
         attention: For each instrument rebuilt from every other whole, keyed by it,
             its shown observation with the rebuilt one under "cmr", and every
             other's observations with their tokens' rolled out attention relative to
             uniform under "attention", the share all their tokens drew under
             "share" and their CLS under "cls".
         ranged: The same for each ranging instrument, rebuilt from the other alone.
+        tokens: Every observation of each ground instrument and the sounder's shown
+            pass, alike, with their tokens in the shared space, every patch read,
+            under "token".
     """
     # The most measured observation of each instrument is shown, a sounder's pass
     # nearest SOUNDER_INCIDENCE_DEG, and every observation is read once, least
     # measured first
-    shown, held, read = {}, {}, {}
+    shown, held, read, whole = {}, {}, {}, {}
     for name in sizes:
-        if Axis.DELAY in rows[name][0].axes:
+        sounder = Axis.DELAY in rows[name][0].axes
+        if sounder:
             shown[name] = min(
                 rows[name],
                 key=lambda one: abs(
@@ -75,6 +79,8 @@ def reconstruction_and_attention(
         else:
             shown[name] = max(rows[name], key=lambda one: one.valid_count)
         held[name] = sorted(rows[name], key=lambda one: one.valid_count)
+        # A sounder's passes cross, so one alone is drawn whole
+        whole[name] = [shown[name]] if sounder else held[name]
         for row in held[name]:
             read[row.path] = cut_tile_patches(
                 {name: [row]}, build, {name: sizes[name]}
@@ -124,14 +130,21 @@ def reconstruction_and_attention(
     )
     with torch.no_grad():
         predictions, _ = model(batch, visible, hidden, GAP)
-        _, tokens = model.shared_tokens(
-            batch, {name: one.present for name, one in batch.items()}
-        )
     reconstruction = {
         name: one
         | {"hidden": hidden[name][0].cpu().numpy()}
         | {term: predictions[term][name][0].cpu().numpy() for term in ("umr", "cmr")}
-        | {"token": tokens[name][0, 1:].cpu().numpy()}
+        for name, one in sample.items()
+    }
+    # Every observation drawn whole, every patch read
+    sample = {name: arrays(name, kept) for name, kept in whole.items()}
+    batch = on_device(sample)
+    with torch.no_grad():
+        _, tokens = model.shared_tokens(
+            batch, {name: one.present for name, one in batch.items()}
+        )
+    tokens = {
+        name: one | {"token": tokens[name][0, 1:].cpu().numpy()}
         for name, one in sample.items()
     }
 
@@ -181,4 +194,4 @@ def reconstruction_and_attention(
         query: cmr_attention(query, [other])
         for query, other in zip(ranging, ranging[::-1], strict=True)
     }
-    return reconstruction, attention, ranged
+    return reconstruction, attention, ranged, tokens

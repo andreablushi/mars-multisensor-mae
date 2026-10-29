@@ -16,6 +16,7 @@ from configs.paths import (
     ATTENTION_FILE,
     RANGING_FILE,
     RECONSTRUCTION_FILE,
+    TOKENS_FILE,
     results_path,
 )
 from configs.schema import Config
@@ -116,9 +117,14 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     classes = build.read_label_by_tile()
     files = [results_path(run_name)]
     write_tile_vectors(files[0], classes, vectors)
-    reconstructions, attentions, rangings = {}, {}, {}
+    reconstructions, attentions, rangings, tokens = {}, {}, {}, {}
     for place, tile in config.evaluation.tiles.items():
-        reconstructions[place], by_query, ranged = reconstruction_and_attention(
+        (
+            reconstructions[place],
+            by_query,
+            ranged,
+            tokens[place],
+        ) = reconstruction_and_attention(
             model,
             build,
             by_tile[tile],
@@ -131,6 +137,8 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         )
         files.append(results_path(run_name, RECONSTRUCTION_FILE.format(place)))
         write_tile_arrays(files[-1], reconstructions[place])
+        files.append(results_path(run_name, TOKENS_FILE.format(place)))
+        write_tile_arrays(files[-1], tokens[place])
         for query, attention in by_query.items():
             attentions[place, query] = attention
             files.append(results_path(run_name, ATTENTION_FILE.format(place, query)))
@@ -140,7 +148,15 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
             files.append(results_path(run_name, RANGING_FILE.format(place, query)))
             write_tile_arrays(files[-1], attention)
     log_evaluation(
-        run, run_name, vectors, classes, reconstructions, attentions, rangings, files
+        run,
+        run_name,
+        vectors,
+        classes,
+        reconstructions,
+        attentions,
+        rangings,
+        tokens,
+        files,
     )
     run.finish()
 
