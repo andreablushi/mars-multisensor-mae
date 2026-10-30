@@ -18,6 +18,11 @@ from configs.paths import ENV_PATH, PLATFORM_CONFIG_PATH
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
 PYTHONPATH = "/shared:/shared/src:/shared/scripts"
 
+HANDLERS = {
+    "training": "scripts.train:run_training",
+    "evaluation": "scripts.evaluate:run_evaluation",
+}
+
 SECRETS = [
     "DHCORE_PERSONAL_ACCESS_TOKEN",
     "WANDB_API_KEY",
@@ -42,7 +47,7 @@ def load_platform() -> dict:
     return yaml.safe_load(PLATFORM_CONFIG_PATH.read_text(encoding="utf-8"))
 
 
-def stage_workers(stage: str) -> int:
+def requested_read_workers(stage: str) -> int:
     """Return how many processes read tiles beside one stage's work, twice its cores.
 
     Args:
@@ -56,7 +61,6 @@ def stage_workers(stage: str) -> int:
 
 def run_stage(
     stage: str,
-    handler: str,
     run: Callable,
     description: str,
     flags: Mapping[str, str] | None = None,
@@ -64,8 +68,7 @@ def run_stage(
     """Run one stage here, or register it from a pushed branch or tag and start it.
 
     Args:
-        stage: Which stage, naming what it is registered as and the resources it gets.
-        handler: The dotted path the platform imports and calls.
+        stage: Which stage, naming its handler, registration and resources.
         run: The handler, which a run here calls the function under.
         description: What the stage does, shown by --help.
         flags: The switches the handler takes beside the run name and the overrides,
@@ -103,7 +106,7 @@ def run_stage(
         python_version=platform["python_version"],
         base_image=platform["base_image"],
         code_src=f"git+{platform['repository']}#{ref}",
-        handler=handler,
+        handler=HANDLERS[stage],
     )
     job = function.run(
         action="job",

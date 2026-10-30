@@ -11,11 +11,12 @@ from pathlib import Path
 import torch
 from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from configs.paths import checkpoint_path
+from dataset.loader import tile_loader
+from dataset.store import DatasetBuild
 from logs.console import console_logger
 from logs.tracker import TRAIN, VALIDATION, log_terms
 from training.step import mask_generators, step_terms
@@ -26,8 +27,14 @@ log = console_logger(__name__)
 
 def train(
     model: CrossSensorMAE,
-    training: DataLoader,
-    validation: DataLoader,
+    build: DatasetBuild,
+    training: Sequence[str],
+    validation: Sequence[str],
+    sizes: Mapping[str, Mapping[str, int]],
+    budget: Mapping[str, int],
+    budget_scale: float,
+    batch_size: int,
+    workers: int,
     num_steps: int,
     learning_rate: float,
     weight_decay: float,
@@ -48,8 +55,14 @@ def train(
 
     Args:
         model: The model, already on the device.
-        training: The training split, in batches.
-        validation: The validation split, in batches.
+        build: The build the tiles are read from.
+        training: The training tiles.
+        validation: The validation tiles.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
+        budget: How many patches of each instrument a tile keeps.
+        budget_scale: The most a training batch's budget is multiplied by.
+        batch_size: How many tiles one batch holds.
+        workers: How many processes read tiles beside the training.
         num_steps: How many steps the run takes.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
@@ -61,7 +74,7 @@ def train(
         temperature: What MIM divides every cosine by.
         measure: The reconstruction error, MSE or RMSE.
         checkpoints: Where checkpoints are written, relative to the repository.
-        seed: What fixes the masks.
+        seed: What fixes the masks, the order and the validation cuts.
         device: Where the model runs.
         run: The tracked run every metric is logged to.
         config: The run's whole config, saved beside the weights.
@@ -69,6 +82,12 @@ def train(
     Returns:
         last: The checkpoint the run ended on.
     """
+    training = tile_loader(
+        build, training, sizes, budget, budget_scale, seed, batch_size, workers, True
+    )
+    validation = tile_loader(
+        build, validation, sizes, budget, budget_scale, seed, batch_size, workers, False
+    )
     # Biases, norms and learned vectors are not decayed, as MAE leaves them
     decayed = [one for one in model.parameters() if one.ndim > 1]
     kept = [one for one in model.parameters() if one.ndim <= 1]

@@ -15,9 +15,8 @@ mask_ratio: 0.75
 # What UMR and CMR measure, MSE or RMSE.
 reconstruction_error: MSE
 
-# CSMAE's MIM between instruments, pooled by GAP or CLS.
+# CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.
 contrastive:
-  enabled: true
   pooling: GAP
   instruments: ${model.instruments}
   temperature: 0.5

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -36,7 +36,7 @@ def log_evaluation(
     attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     tokens: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-    files: Sequence[Path],
+    directory: Path,
 ) -> None:
     """Log every score, both class matrices, the rebuilt tiles and where CMR looked.
 
@@ -52,7 +52,7 @@ def log_evaluation(
             alike.
         tokens: Each tile's observations drawn whole with their shared tokens, keyed
             by what the tile shows.
-        files: What the evaluation wrote, logged as its artifact.
+        directory: Where the evaluation wrote its files, logged as its artifact.
     """
     measured = {}
     for pooling, by_view in vectors.items():
@@ -116,6 +116,5 @@ def log_evaluation(
         }
     )
     artifact = wandb.Artifact(artifact_name(EVALUATION, run_name), type=EVALUATION)
-    for path in files:
-        artifact.add_file(str(path))
+    artifact.add_dir(str(directory))
     run.log_artifact(artifact)

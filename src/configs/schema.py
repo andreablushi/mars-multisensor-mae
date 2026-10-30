@@ -12,19 +12,13 @@ class DatasetConfig:
     Attributes:
         build: The build to read, which is published as dataset-<build>.
         root: Where every build sits on this machine, under a directory of its own name.
-        clip: The low and high each instrument's normalised values are clipped to,
-            None leaving a side open.
-        sharad_atmosphere_cropping: Whether SHARAD is cropped to the rows below its
-            atmosphere before it is patched.
-        acquisition: The acquisition angles each instrument's encoder and decoder
-            read when the training turns them on, as the index names them.
-        patchsize: How far a patch runs along an axis holding each thing, by
-            instrument, an axis it omits taken whole.
-        budget: How many patches of each instrument a training or validation read
-            keeps, the ones nearest a centre drawn on the tile.
-        budget_scale: The most a training batch's budget is multiplied by, drawn
-            from 1 for each batch.
-        split: The share of the observations each split holds, in the code's order.
+        clip: The low and high each instrument's values are clipped to, None for open.
+        sharad_atmosphere_cropping: Whether SHARAD is cropped below its atmosphere.
+        acquisition: The acquisition angles of each instrument, as the index names them.
+        patchsize: A patch's extent per axis and instrument, an omitted axis whole.
+        budget: How many patches of each instrument a training or validation read keeps.
+        budget_scale: The most a training batch's budget is multiplied by.
+        split: The share of the tiles the training and the validation hold.
         seed: The number that fixes which split a tile falls in.
     """
 
@@ -70,13 +64,11 @@ class ContrastiveConfig:
     """Whether CSMAE's MIM aligns instruments across tiles, and over what.
 
     Attributes:
-        enabled: Whether the MIM term is added to the loss.
         pooling: What each instrument's tile vector is, its GAP or its CLS.
-        instruments: The instruments aligned, each pair its own term.
+        instruments: The instruments aligned, each pair its own term, none for no MIM.
         temperature: What every cosine is divided by.
     """
 
-    enabled: bool
     pooling: str
     instruments: list[str]
     temperature: float
@@ -96,8 +88,7 @@ class TrainingConfig:
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         reconstruction_error: What UMR and CMR measure, MSE or RMSE.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
-        acquisition: Whether the encoders and decoders read the acquisition angles
-            the dataset lists.
+        acquisition: Whether the encoders and decoders read the acquisition angles.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -120,10 +111,8 @@ class EvaluationConfig:
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
-        tiles: The tiles drawn as reconstructions and attention maps, by what they
-            show.
-        ranging: The two ranging instruments, each also rebuilt from the other
-            alone.
+        tiles: The tiles drawn as reconstructions and attention maps, by what they show.
+        ranging: The two ranging instruments, each also rebuilt from the other alone.
     """
 
     build: str

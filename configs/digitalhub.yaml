@@ -13,8 +13,8 @@ stages:
   training:
     function: train-mae
     profile: 1xa40-shared
-    resources: {cpu: "6", mem: 48Gi, disk: 350Gi}
+    resources: {cpu: "6", mem: 48Gi, disk: 250Gi}
   evaluation:
     function: evaluate-mae
     profile: 1xa40-shared
-    resources: {cpu: "4", mem: 16Gi, disk: 70Gi}
+    resources: {cpu: "4", mem: 16Gi, disk: 40Gi}
