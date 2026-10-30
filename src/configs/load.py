@@ -27,7 +27,8 @@ def load_config(overrides: Sequence[str] = ()) -> Config:
     }
     return OmegaConf.to_object(
         OmegaConf.merge(
-            OmegaConf.structured(Config), read, OmegaConf.from_dotlist(list(overrides))
+            OmegaConf.structured(Config),
+            OmegaConf.merge(read, OmegaConf.from_dotlist(list(overrides))),
         )
     )
 
