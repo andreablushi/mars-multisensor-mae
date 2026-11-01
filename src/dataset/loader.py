@@ -3,20 +3,132 @@
 from __future__ import annotations
 
 import gc
-from collections.abc import Iterable, Mapping
+import random
+from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 
+import numpy as np
 import torch
+from building.configs import sharad
+from common.disk.files import atomic_path
 from torch.utils.data import DataLoader
 
+from architecture.tokens import Tokens, padded_batch
 from configs.load import named_seed
+from configs.paths import ready_array_path
+from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
+
+
+def read_cached_tile(
+    build: DatasetBuild,
+    identity: str,
+    sizes: Mapping[str, Mapping[str, int]],
+    shapes: Mapping[str, tuple[int, ...]],
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return one tile's patch arrays from the run's cache, cut into it when missing.
+
+    Args:
+        build: The build the tile is read from.
+        identity: The tile.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
+
+    Returns:
+        sample: Each instrument's patch arrays, keyed as ODE names it.
+    """
+    paths = {
+        name: {
+            key: build.root
+            / ready_array_path(
+                identity,
+                name,
+                (
+                    sorted(size.items()),
+                    build.clips[name],
+                    build.acquisition[name],
+                    build.sharad_atmosphere_cropping
+                    and name == sharad.LAYOUT.instrument,
+                ),
+                key,
+            )
+            for key in Tokens._fields
+        }
+        for name, size in sizes.items()
+    }
+    if not all(path.is_file() for held in paths.values() for path in held.values()):
+        rows = build.read_observation_metadata()[identity]
+        for name, patches in cut_tile_patches(rows, build, sizes).items():
+            arrays = patch_arrays(
+                patches, name, shapes[name], rows[name][0].axes, build.acquisition[name]
+            )
+            for key, array in arrays.items():
+                with (
+                    atomic_path(paths[name][key]) as written,
+                    written.open("wb") as file,
+                ):
+                    np.save(file, array)
+    return {
+        name: {key: np.load(path, mmap_mode="c") for key, path in held.items()}
+        for name, held in paths.items()
+    }
+
+
+def read_cached_batch(
+    identities: Sequence[str],
+    build: DatasetBuild,
+    sizes: Mapping[str, Mapping[str, int]],
+    shapes: Mapping[str, tuple[int, ...]],
+    budget: Mapping[str, int] | None,
+    scale: float,
+    seed: int | None,
+) -> tuple[dict[str, Tokens], list[str]]:
+    """Return one batch of cached tiles, each cut to the budget around a centre.
+
+    Args:
+        identities: The tiles of the batch.
+        build: The build the tiles are read from.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
+        budget: How many patches of each instrument a tile keeps, or None to
+            read it whole.
+        scale: The most the budget is multiplied by, drawn once per batch from 1.
+        seed: What fixes each tile's centre, or None to draw a new one each read.
+
+    Returns:
+        batch: Each instrument's patches over the batch, keyed as ODE names it.
+        identities: The tile each read belongs to, in the batch's own order.
+    """
+    if budget is not None:
+        factor = random.uniform(1.0, scale)
+        budget = {name: round(count * factor) for name, count in budget.items()}
+    samples = []
+    for identity in identities:
+        sample = read_cached_tile(build, identity, sizes, shapes)
+        if budget is not None:
+            draw = random.Random(
+                random.random() if seed is None else f"{seed}/{identity}"
+            )
+            # Each ground spot once, whether a sounder's delay is cut or not
+            grounds = np.unique(
+                np.concatenate([held["position"][:, :2] for held in sample.values()]),
+                axis=0,
+            )
+            # One patch spot of any instrument is the centre all are cut around
+            centre = grounds[draw.randrange(len(grounds))]
+            for name, held in sample.items():
+                apart = np.linalg.norm(held["position"][:, :2] - centre, axis=1)
+                kept = np.argsort(apart, kind="stable")[: budget[name]]
+                sample[name] = {key: array[kept] for key, array in held.items()}
+        samples.append((sample, identity))
+    return padded_batch(samples)
 
 
 def tile_loader(
     build: DatasetBuild,
     tiles: Iterable[str],
     sizes: Mapping[str, Mapping[str, int]],
+    shapes: Mapping[str, tuple[int, ...]],
     budget: Mapping[str, int] | None,
     budget_scale: float,
     seed: int,
@@ -24,12 +136,13 @@ def tile_loader(
     workers: int,
     training: bool,
 ) -> DataLoader:
-    """Return some cached tiles of a build in batches.
+    """Return some tiles of a build in batches, each cut into the cache on first read.
 
     Args:
         build: The build the tiles are read from.
         tiles: The tiles.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
         budget: How many patches of each instrument a tile keeps, or None for all.
         budget_scale: The most a training batch's budget is multiplied by.
         seed: What fixes the order, the readers' own draws and each fixed cut.
@@ -52,38 +165,12 @@ def tile_loader(
             named_seed(seed, "loader/train" if training else "loader/validation")
         ),
         collate_fn=partial(
-            build.read_batch,
+            read_cached_batch,
+            build=build,
             sizes=sizes,
+            shapes=shapes,
             budget=budget,
             scale=budget_scale if training else 1.0,
             seed=None if training else seed,
         ),
     )
-
-
-def cache_tiles(
-    build: DatasetBuild,
-    sizes: Mapping[str, Mapping[str, int]],
-    shapes: Mapping[str, tuple[int, ...]],
-    workers: int,
-) -> None:
-    """Cut every tile of a build into the run's cache, before any of it is read.
-
-    Args:
-        build: The build whose tiles are cut.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
-        workers: How many processes cut tiles.
-    """
-    by_tile = build.read_observation_metadata()
-    # Its own generator leaves the training's shuffle as it would be without the fill
-    for _ in DataLoader(
-        list(by_tile),
-        batch_size=None,
-        num_workers=workers,
-        collate_fn=lambda identity: build.cache_tile(
-            identity, by_tile[identity], sizes, shapes
-        ),
-        generator=torch.Generator(),
-    ):
-        pass

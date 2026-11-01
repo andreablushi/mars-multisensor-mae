@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
 import torch
+from building.configs import sharad
 
 from architecture.mae import CrossSensorMAE
 from configs.schema import Config
+from dataset.patches import patch_shapes
 from dataset.store import DatasetBuild
 
 
@@ -32,12 +35,15 @@ def built_model(
         shapes: The shape of one patch of each instrument as the model reads it.
     """
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
-    shapes = build.read_patch_shapes(sizes)
+    shapes = patch_shapes(build.read_observation_metadata(), sizes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CrossSensorMAE(
         shapes,
-        {name: build.condition_width(name, shape) for name, shape in shapes.items()},
-        {name: len(build.acquired(name)) for name in shapes},
+        {
+            name: math.prod(shape) if name == sharad.LAYOUT.instrument else 0
+            for name, shape in shapes.items()
+        },
+        {name: len(build.acquisition[name]) for name in shapes},
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,

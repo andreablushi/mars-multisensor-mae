@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -14,7 +13,6 @@ from building.metadata.observation import ObservationMetadata
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
-from dataset.models.positioning import metres_from_centre
 
 if TYPE_CHECKING:
     from dataset.store import DatasetBuild
@@ -39,9 +37,9 @@ def cut_tile_patches(
     for name, size in sizes.items():
         held: list[Patch] = []
         for record in rows[name]:
-            observation = build.read_observation(record.path, build.conditions(name))
+            observation = build.read_observation(record.path)
             angles = np.array(
-                [getattr(record.acquisition, one) for one in build.acquired(name)],
+                [getattr(record.acquisition, one) for one in build.acquisition[name]],
                 np.float32,
             )
             shape = observation.values.shape
@@ -83,15 +81,10 @@ def cut_patch(
         slice(start, start + length)
         for start, length in zip(origin, lengths, strict=True)
     )
-    taken = tuple(window[at] for at in observation.ground_axes)
-    # A separable grid is regular, so its corners place the patch as all its samples do
-    corners = tuple(
-        slice(one.start, one.stop, one.stop - one.start - 1 or 1) for one in taken
+    taken = tuple(
+        one for one, holds in zip(window, axes, strict=True) if holds == Axis.GROUND
     )
-    north, east = metres_from_centre(
-        observation, corners if observation.described["separable"] else taken
-    )
-    north_m, east_m = float(np.mean(north)), float(np.mean(east))
+    north_m, east_m = observation.mean_metres_from_centre(taken)
     ground_shape = tuple(
         length if holds == Axis.GROUND else 1
         for length, holds in zip(lengths, axes, strict=True)
@@ -104,10 +97,10 @@ def cut_patch(
     else:
         # Every ground patch sits at the areoid row, so delay only places a sounder
         delay = float(sharad.AREOID_ROW)
+    clutter = observation.clutter
     # What the instrument is conditioned on, cut as its values and flattened
     condition = np.array(
-        [observation.beside[one][window] * measured for one in observation.beside],
-        np.float32,
+        [] if clutter is None else clutter[window] * measured, np.float32
     ).ravel()
     return Patch(
         values=observation.values[window].copy(),
@@ -141,21 +134,42 @@ def patch_lengths(
     )
 
 
+def patch_shapes(
+    by_tile: Mapping[str, Mapping[str, Sequence[ObservationMetadata]]],
+    sizes: Mapping[str, Mapping[str, int]],
+) -> dict[str, tuple[int, ...]]:
+    """Return the shape of one patch of each instrument as the model reads it.
+
+    Args:
+        by_tile: The index rows of each instrument of each tile.
+        sizes: How far a patch of each instrument runs along each axis it is cut on.
+
+    Returns:
+        shapes: The shape of one patch of each instrument, keyed as ODE names it.
+    """
+    shapes = {}
+    for name, size in sizes.items():
+        row = next(rows[name][0] for rows in by_tile.values() if name in rows)
+        shapes[name] = patch_lengths(row.shape, row.axes, size)
+    return shapes
+
+
 def patch_arrays(
     patches: Sequence[Patch],
+    name: str,
     shape: Sequence[int],
     axes: Sequence[str],
-    width: int,
-    acquired: int,
+    acquisition: Sequence[str],
 ) -> dict[str, np.ndarray]:
     """Return one instrument's read patches as the arrays a model is handed.
 
     Args:
         patches: The patches, all of one instrument.
+        name: The instrument, keyed as ODE names it.
         shape: The shape of one patch of it as the model reads it.
         axes: What each axis of its values holds.
-        width: How many values each patch is conditioned on.
-        acquired: How many acquisition angles each patch carries.
+        acquisition: The acquisition angles each patch carries, as the index names
+            them.
 
     Returns:
         arrays: The patches under "values", "measured", "condition", "acquisition"
@@ -165,6 +179,7 @@ def patch_arrays(
         held if holds == Axis.GROUND else 1
         for held, holds in zip(shape, axes, strict=True)
     )
+    width = math.prod(shape) if name == sharad.LAYOUT.instrument else 0
     return {
         "values": np.array([one.values for one in patches], np.float32).reshape(
             -1, *shape
@@ -177,38 +192,8 @@ def patch_arrays(
         ),
         "acquisition": np.array(
             [one.acquisition for one in patches], np.float32
-        ).reshape(len(patches), acquired),
+        ).reshape(len(patches), len(acquisition)),
         "position": np.array(
             [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
         ).reshape(-1, 3),
     }
-
-
-def cropped_patch_arrays(
-    sample: dict[str, dict[str, np.ndarray]],
-    budget: Mapping[str, int],
-    draw: random.Random,
-) -> dict[str, dict[str, np.ndarray]]:
-    """Return a tile's patch arrays, each instrument cut to the ones nearest a centre.
-
-    Args:
-        sample: Each instrument's patch arrays over the tile.
-        budget: How many patches of each instrument are kept.
-        draw: What picks the centre.
-
-    Returns:
-        sample: Each instrument's kept patch arrays, nearest the centre first.
-    """
-    # Each ground spot once, whether a sounder's delay is cut into patches or not
-    grounds = np.unique(
-        np.concatenate([arrays["position"][:, :2] for arrays in sample.values()]),
-        axis=0,
-    )
-    # One patch spot of any instrument is the centre every instrument is cut around
-    centre = grounds[draw.randrange(len(grounds))]
-    cropped = {}
-    for name, arrays in sample.items():
-        apart = np.linalg.norm(arrays["position"][:, :2] - centre, axis=1)
-        kept = np.argsort(apart, kind="stable")[: budget[name]]
-        cropped[name] = {key: array[kept] for key, array in arrays.items()}
-    return cropped

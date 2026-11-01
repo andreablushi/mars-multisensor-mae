@@ -11,7 +11,6 @@ from digitalhub_runtime_python import handler
 
 from configs.load import load_config
 from configs.model import built_model
-from dataset.loader import cache_tiles
 from evaluation.evaluate import evaluate
 from logs.console import console_logger
 from logs.evaluation import BASELINE, EVALUATION
@@ -33,7 +32,6 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     build = published_dataset_build(config, config.evaluation.build)
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(EVALUATION)
-    cache_tiles(build, sizes, shapes, workers)
     run = start_logging(asdict(config), run_name, EVALUATION, {"device": str(device)})
     if run_name.split("/")[-1] != BASELINE:
         held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")

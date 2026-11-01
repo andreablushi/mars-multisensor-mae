@@ -13,7 +13,6 @@ from torch.utils.data import random_split
 
 from configs.load import load_config, named_seed
 from configs.model import built_model
-from dataset.loader import cache_tiles
 from logs.console import console_logger
 from logs.tracker import TRAINING, log_checkpoint, start_logging
 from training.train import train
@@ -37,8 +36,6 @@ def run_training(
     build = published_dataset_build(config, config.dataset.build)
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(TRAINING)
-    # Cache the tiles to avoid reading them from disk every epoch
-    cache_tiles(build, sizes, shapes, workers)
     tiles = sorted(build.read_observation_metadata())
     generator = torch.Generator().manual_seed(named_seed(config.dataset.seed, "split"))
     training, validation = random_split(tiles, config.dataset.split, generator)
@@ -60,6 +57,7 @@ def run_training(
         training,
         validation,
         sizes,
+        shapes,
         config.dataset.budget,
         config.dataset.budget_scale,
         config.training.batch_size,

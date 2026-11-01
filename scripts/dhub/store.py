@@ -62,6 +62,8 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
         fetch=fetch,
         clips=config.dataset.clip,
         sharad_atmosphere_cropping=config.dataset.sharad_atmosphere_cropping,
-        acquiring=config.training.acquisition,
-        acquisition=config.dataset.acquisition,
+        acquisition={
+            name: tuple(fields) if config.training.acquisition else ()
+            for name, fields in config.dataset.acquisition.items()
+        },
     )

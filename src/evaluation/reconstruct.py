@@ -93,10 +93,10 @@ def reconstruction_and_attention(
         return (
             patch_arrays(
                 patches,
+                name,
                 shapes[name],
                 observations[0].axes,
-                build.condition_width(name, shapes[name]),
-                len(build.acquired(name)),
+                build.acquisition[name],
             )
             | {"cell": np.array([one.cell for one in patches])}
             | {"clip": np.array(build.clips[name], dtype=float)}

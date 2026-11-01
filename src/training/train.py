@@ -31,6 +31,7 @@ def train(
     training: Sequence[str],
     validation: Sequence[str],
     sizes: Mapping[str, Mapping[str, int]],
+    shapes: Mapping[str, tuple[int, ...]],
     budget: Mapping[str, int],
     budget_scale: float,
     batch_size: int,
@@ -59,6 +60,7 @@ def train(
         training: The training tiles.
         validation: The validation tiles.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
         budget: How many patches of each instrument a tile keeps.
         budget_scale: The most a training batch's budget is multiplied by.
         batch_size: How many tiles one batch holds.
@@ -82,11 +84,20 @@ def train(
     Returns:
         last: The checkpoint the run ended on.
     """
-    training = tile_loader(
-        build, training, sizes, budget, budget_scale, seed, batch_size, workers, True
-    )
-    validation = tile_loader(
-        build, validation, sizes, budget, budget_scale, seed, batch_size, workers, False
+    training, validation = (
+        tile_loader(
+            build,
+            tiles,
+            sizes,
+            shapes,
+            budget,
+            budget_scale,
+            seed,
+            batch_size,
+            workers,
+            shuffled,
+        )
+        for tiles, shuffled in ((training, True), (validation, False))
     )
     # Biases, norms and learned vectors are not decayed, as MAE leaves them
     decayed = [one for one in model.parameters() if one.ndim > 1]

@@ -63,7 +63,16 @@ def evaluate(
     """
     by_tile = build.read_observation_metadata()
     loader = tile_loader(
-        build, by_tile, sizes, None, 1.0, seed, EVALUATION_BATCH_SIZE, workers, False
+        build,
+        by_tile,
+        sizes,
+        shapes,
+        None,
+        1.0,
+        seed,
+        EVALUATION_BATCH_SIZE,
+        workers,
+        False,
     )
     vectors = tile_vectors(model, loader, device)
     classes = build.read_label_by_tile()
