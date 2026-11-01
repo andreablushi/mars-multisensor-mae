@@ -8,8 +8,6 @@ from torch.nn import functional
 
 from architecture.components.transformer import Transformer
 
-# B = batch, K = patches, S = tokens of every instrument, D = token channels.
-
 
 class CrossSensorEncoder(nn.Module):
     """Attend over each sensor's tokens on its own, on weights every sensor shares.

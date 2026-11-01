@@ -11,13 +11,41 @@ import numpy as np
 import torch
 from building.configs import sharad
 from common.disk.files import atomic_path
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
-from architecture.tokens import Tokens, padded_batch
+from architecture.models.tokens import Tokens
 from configs.load import named_seed
 from configs.paths import ready_array_path
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
+
+
+def padded_tokens(
+    samples: Sequence[Mapping[str, Mapping[str, np.ndarray]]],
+) -> dict[str, Tokens]:
+    """Return every instrument's patches over some tiles, padded to one count.
+
+    Args:
+        samples: Each tile's patch arrays of each instrument.
+
+    Returns:
+        batch: Each instrument's patches over the tiles, keyed as ODE names it.
+    """
+    batch = {}
+    # Pad each instrument's patches across the batch's tiles
+    for name in samples[0]:
+        # Every array a model reads padded with zeros to the most patches any tile has
+        batch[name] = Tokens(
+            **{
+                key: pad_sequence(
+                    [torch.as_tensor(one[name][key]) for one in samples],
+                    batch_first=True,
+                )
+                for key in Tokens._fields
+            }
+        )
+    return batch
 
 
 def read_cached_tile(
@@ -120,8 +148,8 @@ def read_cached_batch(
                 apart = np.linalg.norm(held["position"][:, :2] - centre, axis=1)
                 kept = np.argsort(apart, kind="stable")[: budget[name]]
                 sample[name] = {key: array[kept] for key, array in held.items()}
-        samples.append((sample, identity))
-    return padded_batch(samples)
+        samples.append(sample)
+    return padded_tokens(samples), list(identities)
 
 
 def tile_loader(

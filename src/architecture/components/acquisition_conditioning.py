@@ -5,8 +5,6 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
-# B = batch, K = patches, A = acquisition fields, D = token channels.
-
 
 class AcquisitionConditioning(nn.Module):
     """Add each patch's acquisition angles, mapped to the token width, to its token.

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from torch import Tensor, nn
 
-# B = batch, K = patches, C = condition values, D = token channels.
-
 
 class CluttergramConditioning(nn.Module):
     """Add each patch's cluttergram, mapped to the token width, to its token.

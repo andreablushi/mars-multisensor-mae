@@ -12,8 +12,7 @@ from torch.nn import functional
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
-from architecture.mae import CrossSensorMAE
-from architecture.tokens import CLS, GAP, Tokens, global_average_pooling
+from architecture.mae import CrossSensorMAE, global_average_pooling
 from configs.paths import (
     ATTENTION_FILE,
     RANGING_FILE,
@@ -138,25 +137,22 @@ def tile_vectors(
     vectors = defaultdict(lambda: defaultdict(dict))
     with torch.no_grad():
         for batch, identities in loader:
-            batch = {
-                name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
-                for name, tokens in batch.items()
-            }
+            batch = {name: tokens.to(device) for name, tokens in batch.items()}
             present = {name: tokens.present for name, tokens in batch.items()}
-            cls, tokens = model.shared_tokens(batch, present)  # (B, 1 + K, D) each
+            cls, contexts = model.embed_tokens(batch, present)
             pooled = {
-                CLS: {
-                    name: functional.normalize(held[:, 0], dim=-1)
-                    for name, held in tokens.items()
+                "CLS": {
+                    name: functional.normalize(held.tokens[:, 0], dim=-1)
+                    for name, held in contexts.items()
                 },
-                GAP: {
-                    name: global_average_pooling(held[:, 1:], present[name])
-                    for name, held in tokens.items()
+                "GAP": {
+                    name: global_average_pooling(held.tokens[:, 1:], present[name])
+                    for name, held in contexts.items()
                 },
             }
-            pooled[CLS][EVERY_INSTRUMENT] = functional.normalize(cls, dim=-1)
-            stacked = torch.stack(list(pooled[GAP].values()), dim=1)  # (B, M, D)
-            pooled[GAP][EVERY_INSTRUMENT] = global_average_pooling(
+            pooled["CLS"][EVERY_INSTRUMENT] = functional.normalize(cls, dim=-1)
+            stacked = torch.stack(list(pooled["GAP"].values()), dim=1)  # (B, M, D)
+            pooled["GAP"][EVERY_INSTRUMENT] = global_average_pooling(
                 stacked, torch.ones(stacked.shape[:2], dtype=torch.bool, device=device)
             )
             for pooling, by_view in pooled.items():

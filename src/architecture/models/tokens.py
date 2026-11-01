@@ -1,20 +1,12 @@
-"""What one stage hands the next: a sensor's patches, and the tokens a decoder reads."""
+"""One sensor's patches over a batch of tiles, as every stage reads them."""
 
 from __future__ import annotations
 
 from typing import NamedTuple
 
-import numpy as np
 import torch
 from torch import Tensor
 from torch.nn import functional
-from torch.nn.utils.rnn import pad_sequence
-
-# B = batch, K = patches, S = tokens read together, P = patch dimensions,
-# D = token channels.
-
-CLS = "CLS"
-GAP = "GAP"
 
 
 class Tokens(NamedTuple):
@@ -43,6 +35,17 @@ class Tokens(NamedTuple):
             present: True where any sample of the slot is a measurement. (B, K)
         """
         return self.measured.flatten(2).any(dim=-1)
+
+    def to(self, device: torch.device) -> Tokens:
+        """Return the same patches on one device.
+
+        Args:
+            device: Where they are moved.
+
+        Returns:
+            tokens: The patches, every array on the device.
+        """
+        return Tokens(*(one.to(device, non_blocking=True) for one in self))
 
     def readable_and_position_with_cls(self, readable: Tensor) -> tuple[Tensor, Tensor]:
         """Return which slots count and where they sit, a CLS slot leading them.
@@ -79,60 +82,3 @@ class Tokens(NamedTuple):
             for one in self
         )
         return Tokens(*taken), keep.gather(1, order)
-
-
-class Context(NamedTuple):
-    """Some instruments' tokens side by side, as a decoder reads them.
-
-    Attributes:
-        tokens: The tokens, in the space every instrument shares. (B, S, D)
-        position: Each one's patch centre, in metres or rows. (B, S, 3)
-        readable: Which of them count. (B, S)
-    """
-
-    tokens: Tensor
-    position: Tensor
-    readable: Tensor
-
-
-def padded_batch(
-    samples: list[tuple[dict[str, dict[str, np.ndarray]], str]],
-) -> tuple[dict[str, Tokens], list[str]]:
-    """Return one batch of every instrument's tokens, and whose.
-
-    Args:
-        samples: Each tile's patch arrays and its identity.
-
-    Returns:
-        batch: Each instrument's patches over the batch, keyed as ODE names it.
-        identities: The tile each read belongs to, in the batch's own order.
-    """
-    batch = {}
-    # Pad each instrument's patches across the batch's tiles
-    for name in samples[0][0]:
-        # This instrument's arrays in every tile
-        held = [sample[name] for sample, _ in samples]
-        # Every array a model reads padded with zeros to the most patches any tile has
-        padded = {
-            key: pad_sequence(
-                [torch.as_tensor(one[key]) for one in held], batch_first=True
-            )
-            for key in Tokens._fields
-        }
-        # The instrument's patches over the batch
-        batch[name] = Tokens(**padded)
-    # The patches and the tile names, in the batch's order
-    return batch, [identity for _, identity in samples]
-
-
-def global_average_pooling(tokens: Tensor, present: Tensor) -> Tensor:
-    """Return each row's present tokens summed, of unit length.
-
-    Args:
-        tokens: The tokens of every row. (B, K, D)
-        present: Which of them hold something rather than padding. (B, K)
-
-    Returns:
-        pooled: One unit vector per row. (B, D)
-    """
-    return functional.normalize((tokens * present.unsqueeze(-1)).sum(dim=1), dim=-1)

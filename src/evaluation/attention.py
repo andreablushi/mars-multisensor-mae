@@ -10,7 +10,7 @@ from torch.nn import functional
 
 from architecture.components.decoder import Decoder
 from architecture.components.transformer import Block
-from architecture.tokens import Context
+from architecture.models.context import Context
 
 # K = asked patches, S = context tokens, N = all tokens, D = token channels.
 
@@ -41,15 +41,8 @@ def rolled_attention(
         block: Block, keys: Tensor, mask: Tensor, placed: Tensor, fixed: int
     ) -> Tensor:
         """Return what each query of one block attends, its heads averaged."""
-        query, key, _ = (
-            block.qkv(block.attend_norm(keys))
-            .unflatten(-1, (3, block.heads, -1))
-            .permute(2, 0, 3, 1, 4)
-        )  # (B, H, N, D / H) each
-        scores = block.rotate(query[..., fixed:, :], placed[:, fixed:]) @ block.rotate(
-            key, placed
-        ).transpose(-2, -1)
-        scores = scores / math.sqrt(query.shape[-1])
+        query, key, _ = block.rotated_heads(keys, placed, fixed)
+        scores = query @ key.transpose(-2, -1) / math.sqrt(query.shape[-1])
         return scores.masked_fill(~mask, -torch.inf).softmax(-1).mean(1)
 
     # Record each block's attention while the pass runs

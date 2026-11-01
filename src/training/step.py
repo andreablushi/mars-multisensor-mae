@@ -8,7 +8,7 @@ import torch
 from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import Tokens
+from architecture.models.tokens import Tokens
 from configs.load import named_seed
 from training.loss import cmr, mim, total, umr
 
@@ -93,10 +93,7 @@ def step_terms(
     Returns:
         terms: Every loss term over the batch, and the loss.
     """
-    batch = {
-        name: Tokens(*(one.to(device, non_blocking=True) for one in tokens))
-        for name, tokens in batch.items()
-    }
+    batch = {name: tokens.to(device) for name, tokens in batch.items()}
     visible, hidden = drawn_masks(batch, mask_ratio, generators)
     with torch.autocast(device.type, dtype=torch.bfloat16):
         predictions, pooled = model(batch, visible, hidden, pooling)

@@ -9,7 +9,7 @@ import torch
 from torch import Tensor
 from torch.nn import functional
 
-from architecture.tokens import Tokens
+from architecture.models.tokens import Tokens
 
 RMSE = "RMSE"
 

@@ -10,7 +10,9 @@ from building.common.layout import Axis
 from building.metadata.observation import ObservationMetadata
 
 from architecture.mae import CrossSensorMAE
-from architecture.tokens import GAP, Context, Tokens, padded_batch
+from architecture.models.context import Context
+from architecture.models.tokens import Tokens
+from dataset.loader import padded_tokens
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
 from evaluation.attention import rolled_attention
@@ -115,11 +117,7 @@ def reconstruction_and_attention(
 
     def on_device(sample: Mapping[str, Mapping[str, np.ndarray]]) -> dict[str, Tokens]:
         """Return one tile's arrays as a batch of one, on the device."""
-        batch, _ = padded_batch([(sample, "")])
-        return {
-            name: Tokens(*(one.to(device) for one in tokens))
-            for name, tokens in batch.items()
-        }
+        return {name: one.to(device) for name, one in padded_tokens([sample]).items()}
 
     model.eval()
     # Every shown observation, a share of its patches hidden and rebuilt
@@ -129,7 +127,7 @@ def reconstruction_and_attention(
         batch, mask_ratio, mask_generators(batch, seed, device)
     )
     with torch.no_grad():
-        predictions, _ = model(batch, visible, hidden, GAP)
+        predictions, _ = model(batch, visible, hidden, "GAP")
     reconstruction = {
         name: one
         | {"hidden": hidden[name][0].cpu().numpy()}
@@ -140,11 +138,11 @@ def reconstruction_and_attention(
     sample = {name: arrays(name, kept) for name, kept in whole.items()}
     batch = on_device(sample)
     with torch.no_grad():
-        _, tokens = model.shared_tokens(
+        _, contexts = model.embed_tokens(
             batch, {name: one.present for name, one in batch.items()}
         )
     tokens = {
-        name: one | {"token": tokens[name][0, 1:].cpu().numpy()}
+        name: one | {"token": contexts[name].tokens[0, 1:].cpu().numpy()}
         for name, one in sample.items()
     }
 
@@ -160,10 +158,9 @@ def reconstruction_and_attention(
         batch = on_device(sample)
         present = {name: one.present for name, one in batch.items()}
         with torch.no_grad():
-            cls, tokens = model.shared_tokens(batch, present)
-            context = model.context(cls, tokens, batch, present, list(sources))
+            _, contexts = model.embed_tokens(batch, present)
         # CMR reads the others without the CLS of every instrument
-        context = Context(*(one[:, 1:] for one in context))
+        context = Context.joined([contexts[name] for name in sources])
         cmr, drawn = rolled_attention(
             model.decoders[query],
             context,

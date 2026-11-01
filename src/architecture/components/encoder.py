@@ -11,9 +11,7 @@ from torch.utils.checkpoint import checkpoint
 from architecture.components.acquisition_conditioning import AcquisitionConditioning
 from architecture.components.cluttergram_conditioning import CluttergramConditioning
 from architecture.components.transformer import Transformer
-from architecture.tokens import Tokens
-
-# B = batch, K = patches, D = token channels, P = patch dimensions.
+from architecture.models.tokens import Tokens
 
 
 class Encoder(nn.Module):

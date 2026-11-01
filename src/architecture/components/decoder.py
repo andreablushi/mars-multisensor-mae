@@ -10,10 +10,7 @@ from torch.utils.checkpoint import checkpoint
 
 from architecture.components.acquisition_conditioning import AcquisitionConditioning
 from architecture.components.transformer import Transformer
-from architecture.tokens import Context
-
-# B = batch, S = context tokens, K = target patches, D = token channels,
-# P = patch dimensions.
+from architecture.models.context import Context
 
 
 class Decoder(nn.Module):

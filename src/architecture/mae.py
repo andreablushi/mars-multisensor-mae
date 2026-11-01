@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
@@ -11,11 +9,22 @@ from torch.nn import functional
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.tokens import CLS, Context, Tokens, global_average_pooling
-from configs.load import named_seed
+from architecture.models.context import Context
+from architecture.models.tokens import Tokens
+from configs.load import named_rng
 
-# B = batch, K = patches, S = tokens read together, D = token channels,
-# P = patch dimensions.
+
+def global_average_pooling(tokens: Tensor, present: Tensor) -> Tensor:
+    """Return each row's present tokens summed, of unit length.
+
+    Args:
+        tokens: The tokens of every row. (B, K, D)
+        present: Which of them hold something rather than padding. (B, K)
+
+    Returns:
+        pooled: One unit vector per row. (B, D)
+    """
+    return functional.normalize((tokens * present.unsqueeze(-1)).sum(dim=1), dim=-1)
 
 
 class CrossSensorMAE(nn.Module):
@@ -58,56 +67,38 @@ class CrossSensorMAE(nn.Module):
                 starts the same in every setup that has it.
         """
         super().__init__()
-
-        def seeded(name: str, build: Callable[[], nn.Module]) -> nn.Module:
-            """Return one part built on its own stream of the seed."""
-            with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(named_seed(seed, name))
-                return build()
-
         # One encoder per instrument, each from its patches to tokens
-        self.encoders = nn.ModuleDict(
-            {
-                name: seeded(
-                    f"encoders.{name}",
-                    lambda: Encoder(
-                        shape,
-                        conditions[name],
-                        acquired[name],
-                        encoder_dim,
-                        encoder_heads,
-                        encoder_depth,
-                    ),
-                )
-                for name, shape in shapes.items()
-            }
-        )
+        self.encoders = nn.ModuleDict()
         # One stack the instruments read together pass through, on shared weights
-        self.crossencoder = seeded(
-            "crossencoder",
-            lambda: CrossSensorEncoder(encoder_dim, encoder_heads, crossencoder_depth),
-        )
+        with named_rng(seed, "crossencoder"):
+            self.crossencoder = CrossSensorEncoder(
+                encoder_dim, encoder_heads, crossencoder_depth
+            )
         # One decoder per instrument, each writing its patches back from the tokens
-        self.decoders = nn.ModuleDict(
-            {
-                name: seeded(
-                    f"decoders.{name}",
-                    lambda: Decoder(
-                        shape,
-                        acquired[name],
-                        encoder_dim,
-                        decoder_dim,
-                        decoder_heads,
-                        decoder_depth,
-                    ),
+        self.decoders = nn.ModuleDict()
+        for name, shape in shapes.items():
+            with named_rng(seed, f"encoders.{name}"):
+                self.encoders[name] = Encoder(
+                    shape,
+                    conditions[name],
+                    acquired[name],
+                    encoder_dim,
+                    encoder_heads,
+                    encoder_depth,
                 )
-                for name, shape in shapes.items()
-            }
-        )
+            with named_rng(seed, f"decoders.{name}"):
+                self.decoders[name] = Decoder(
+                    shape,
+                    acquired[name],
+                    encoder_dim,
+                    decoder_dim,
+                    decoder_heads,
+                    decoder_depth,
+                )
 
-    def shared_tokens(
+    def embed_tokens(
         self, batch: dict[str, Tokens], readable: dict[str, Tensor]
-    ) -> tuple[Tensor, dict[str, Tensor]]:
+    ) -> tuple[Tensor, dict[str, Context]]:
         """Return the CLS of every instrument, and each one's tokens in shared space.
 
         Args:
@@ -116,52 +107,24 @@ class CrossSensorMAE(nn.Module):
 
         Returns:
             cls: The token read over every instrument together. (B, D)
-            tokens: Each instrument's CLS token, then its tokens, meaningful where
-                readable. (B, 1 + K, D)
+            contexts: Each instrument's CLS token, then its tokens, meaningful where
+                readable, with their centres and which of them count. (B, 1 + K, D)
         """
-        with_cls = [
-            one.readable_and_position_with_cls(readable[name])
+        with_cls = {
+            name: one.readable_and_position_with_cls(readable[name])
             for name, one in batch.items()
-        ]
+        }
         cls, tokens = self.crossencoder(
             [self.encoders[name](one, readable[name]) for name, one in batch.items()],
-            [counted for counted, _ in with_cls],
-            [position for _, position in with_cls],
+            [counted for counted, _ in with_cls.values()],
+            [position for _, position in with_cls.values()],
         )
-        return cls, dict(zip(batch, tokens, strict=True))
-
-    @staticmethod
-    def context(
-        cls: Tensor,
-        tokens: dict[str, Tensor],
-        batch: dict[str, Tokens],
-        readable: dict[str, Tensor],
-        read: list[str],
-    ) -> Context:
-        """Return some instruments' tokens side by side, as a decoder reads them.
-
-        Args:
-            cls: The token read over every instrument together. (B, D)
-            tokens: Each instrument's CLS token and tokens in the shared space.
-                (B, 1 + K, D)
-            batch: Each instrument's patches over the batch, which place the tokens.
-            readable: Which of each instrument's patch tokens count. (B, K)
-            read: Which instruments are put side by side.
-
-        Returns:
-            context: Their tokens, centres and which of them count, led by the CLS
-                of every instrument at the tile centre, their own CLS tokens too.
-        """
-        with_cls = [
-            batch[name].readable_and_position_with_cls(readable[name]) for name in read
-        ]
-        return Context(
-            torch.cat([cls.unsqueeze(1), *(tokens[name] for name in read)], 1),
-            functional.pad(torch.cat([at for _, at in with_cls], 1), (0, 0, 1, 0)),
-            functional.pad(
-                torch.cat([on for on, _ in with_cls], 1), (1, 0), value=True
-            ),  # (B, S)
-        )
+        return cls, {
+            name: Context(token, position, counted)
+            for (name, (counted, position)), token in zip(
+                with_cls.items(), tokens, strict=True
+            )
+        }
 
     def forward(
         self,
@@ -188,22 +151,25 @@ class CrossSensorMAE(nn.Module):
         read = {name: one.kept(visible[name]) for name, one in batch.items()}
         seen = {name: kept for name, (kept, _) in read.items()}
         readable = {name: counted for name, (_, counted) in read.items()}
-        cls, tokens = self.shared_tokens(seen, readable)
+        cls, contexts = self.embed_tokens(seen, readable)
+        lead = Context(
+            cls.unsqueeze(1),
+            cls.new_zeros(len(cls), 1, 3),
+            cls.new_ones(len(cls), 1, dtype=torch.bool),
+        )
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
-            others = [other for other in batch if other != name]
-            sources = self.context(cls, tokens, seen, readable, others)
             predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
-                self.context(cls, tokens, seen, readable, [name]),
-                Context(*(one[:, 1:] for one in sources)),
+                Context.joined([lead, contexts[name]]),
+                Context.joined([contexts[other] for other in batch if other != name]),
                 one.position,
                 one.acquisition,
                 hidden[name],
             )  # (B, K, *P) each
         pooled = {
-            name: functional.normalize(tokens[name][:, 0].float(), dim=-1)
-            if pooling == CLS
-            else global_average_pooling(tokens[name][:, 1:].float(), readable[name])
-            for name in batch
+            name: functional.normalize(held.tokens[:, 0].float(), dim=-1)
+            if pooling == "CLS"
+            else global_average_pooling(held.tokens[:, 1:].float(), readable[name])
+            for name, held in contexts.items()
         }
         return predictions, pooled

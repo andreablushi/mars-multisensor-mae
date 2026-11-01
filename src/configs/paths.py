@@ -30,56 +30,22 @@ TOKENS_FILE = "tokens-{}.npz"
 
 
 def build_root(build: str, root: str) -> Path:
-    """Return where one build of the dataset sits on this machine.
-
-    Args:
-        build: The build's own name, which is the directory it owns.
-        root: Where every build sits, relative to the repository.
-
-    Returns:
-        path: That build's own directory, which need not exist yet.
-    """
+    """Return where one build of the dataset sits on this machine."""
     return REPO_ROOT / root / build
 
 
 def ready_array_path(
     identity: str, name: str, setup: Sequence[object], key: str
 ) -> str:
-    """Return where one array of one tile's patches is kept, under its build's root.
-
-    Args:
-        identity: The tile.
-        name: The instrument.
-        setup: What the patches were cut with, so another setup keeps its own.
-        key: Which of its patch arrays.
-
-    Returns:
-        path: That array's file, relative to the build root.
-    """
+    """Return where one array of one tile's patches is kept, under its build's root."""
     return f"ready/{identity}/{name}-{zlib.crc32(repr(setup).encode()):08x}/{key}.npy"
 
 
 def checkpoint_path(checkpoints: str, name: str) -> Path:
-    """Return where one checkpoint is written on this machine.
-
-    Args:
-        checkpoints: Where checkpoints land, relative to the repository.
-        name: What the checkpoint is called.
-
-    Returns:
-        path: That checkpoint's file.
-    """
+    """Return where one checkpoint is written on this machine."""
     return REPO_ROOT / checkpoints / f"{name}.pt"
 
 
 def results_path(run_name: str, name: str = RESULTS_FILE) -> Path:
-    """Return where one of a run's evaluation files is written on this machine.
-
-    Args:
-        run_name: What the run is called.
-        name: Which file, its results by default.
-
-    Returns:
-        path: That run's file.
-    """
+    """Return where one of a run's evaluation files is written on this machine."""
     return RESULTS_ROOT / run_name / name

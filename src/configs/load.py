@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import zlib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import fields
 
+import torch
 from omegaconf import OmegaConf
 
 from configs.paths import CONFIGS_ROOT
@@ -44,3 +46,16 @@ def named_seed(seed: int, name: str) -> int:
         seed: That draw's own seed.
     """
     return zlib.crc32(f"{seed}/{name}".encode())
+
+
+@contextmanager
+def named_rng(seed: int, name: str) -> Iterator[None]:
+    """Seed torch with one named draw, its state restored on the way out.
+
+    Args:
+        seed: The run's seed.
+        name: What is drawn, such as `encoders.CTX`.
+    """
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(named_seed(seed, name))
+        yield
