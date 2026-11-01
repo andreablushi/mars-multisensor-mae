@@ -11,8 +11,6 @@ from torch.nn import functional
 
 from architecture.models.tokens import Tokens
 
-RMSE = "RMSE"
-
 
 def reconstruction_error(
     prediction: Tensor, target: Tokens, scored: Tensor, measure: str
@@ -35,7 +33,7 @@ def reconstruction_error(
     error = ((prediction - target.values) ** 2 * measured).sum(dim=samples)
     error = error / measured.sum(dim=samples).clamp(min=1)  # (B, K)
     error = error[scored].mean()  # ()
-    return error.sqrt() if measure == RMSE else error
+    return error.sqrt() if measure == "RMSE" else error
 
 
 def umr(

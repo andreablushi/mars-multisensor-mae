@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
 from architecture.models.tokens import Tokens
-from configs.load import named_seed
+from configs.load import named_generator
 from configs.paths import ready_array_path
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
@@ -189,8 +189,8 @@ def tile_loader(
         num_workers=workers,
         persistent_workers=workers > 0,
         pin_memory=True,
-        generator=torch.Generator().manual_seed(
-            named_seed(seed, "loader/train" if training else "loader/validation")
+        generator=named_generator(
+            seed, "loader/train" if training else "loader/validation"
         ),
         collate_fn=partial(
             read_cached_batch,

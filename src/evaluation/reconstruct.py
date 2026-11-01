@@ -12,11 +12,12 @@ from building.metadata.observation import ObservationMetadata
 from architecture.mae import CrossSensorMAE
 from architecture.models.context import Context
 from architecture.models.tokens import Tokens
+from configs.load import mask_generators
 from dataset.loader import padded_tokens
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
 from evaluation.attention import rolled_attention
-from training.step import drawn_masks, mask_generators
+from training.step import drawn_masks
 
 SOUNDER_INCIDENCE_DEG = 140.0
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Mapping, Sequence
+from functools import partial
 from itertools import chain, repeat
 from pathlib import Path
 
@@ -14,12 +15,13 @@ from torch.optim.lr_scheduler import LambdaLR
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
+from configs.load import mask_generators
 from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from logs.console import console_logger
 from logs.tracker import TRAIN, VALIDATION, log_terms
-from training.step import mask_generators, step_terms
+from training.step import batch_step
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -112,12 +114,23 @@ def train(
     torch.set_float32_matmul_precision("high")
 
     def lambda_lr_schedule(step: int) -> float:
+        """Return the share of the peak rate one step runs at."""
         if step < warmup_steps:
             return (step + 1) / warmup_steps
         progress = (step - warmup_steps) / max(num_steps - warmup_steps, 1)
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
+    step_terms = partial(
+        batch_step,
+        model,
+        mask_ratio=mask_ratio,
+        aligned=aligned,
+        pooling=pooling,
+        temperature=temperature,
+        measure=measure,
+        device=device,
+    )
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
@@ -125,17 +138,7 @@ def train(
     for step in range(1, num_steps + 1):
         batch, identities = next(batches)
         optimizer.zero_grad()
-        terms = step_terms(
-            model,
-            batch,
-            mask_ratio,
-            aligned,
-            pooling,
-            temperature,
-            measure,
-            generators,
-            device,
-        )
+        terms = step_terms(batch, generators=generators)
         terms["loss"].backward()
         # Stabilize training against exploding gradients
         norm = clip_grad_norm_(model.parameters(), 1.0)
@@ -150,17 +153,8 @@ def train(
         if step % validate_every and step < num_steps:
             continue
         metrics = validation_terms(
-            model,
-            validation,
-            mask_ratio,
-            aligned,
-            pooling,
-            temperature,
-            measure,
-            seed,
-            device,
+            model, validation, step_terms, mask_generators(model.encoders, seed, device)
         )
-        model.train()  # Validating switched it to evaluation
         log_terms(run, step, VALIDATION, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
     last = checkpoint_path(checkpoints, "last")

@@ -7,16 +7,16 @@ from pathlib import Path
 
 import numpy as np
 import wandb
+from building.configs import sharad
 from wandb.sdk.wandb_run import Run
 
 from evaluation.metrics import compute_metrics, cosine_similarity
 from logs.attention import attention_image, sounder_read_image
-from logs.reconstruction import PANELS, SOUNDER, reconstruction_images
+from logs.reconstruction import PANELS, reconstruction_images
 from logs.tokens import token_image
 from logs.tracker import artifact_name
 
 EVALUATION = "evaluation"
-BASELINE = "random"
 SCORES = f"{EVALUATION}/scores"
 CONFUSION = f"{EVALUATION}/confusion"
 DISTANCES = f"{EVALUATION}/distances"
@@ -90,7 +90,9 @@ def log_evaluation(
         image, caption = attention_image(attention, query)
         media[f"{ATTENTION}/{query}/{place}"] = wandb.Image(image, caption=caption)
     for (place, query), attention in rangings.items():
-        drawn = attention_image if query == SOUNDER else sounder_read_image
+        drawn = (
+            attention_image if query == sharad.LAYOUT.instrument else sounder_read_image
+        )
         image, caption = drawn(attention, query)
         media[f"{RANGING}/{query}/{place}"] = wandb.Image(image, caption=caption)
     run.log(

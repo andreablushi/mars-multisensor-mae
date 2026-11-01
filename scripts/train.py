@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-import torch
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from evaluate import run_evaluation
 from torch.utils.data import random_split
 
-from configs.load import load_config, named_seed
+from configs.load import load_config, named_generator
 from configs.model import built_model
 from logs.console import console_logger
 from logs.tracker import TRAINING, log_checkpoint, start_logging
@@ -37,8 +36,9 @@ def run_training(
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(TRAINING)
     tiles = sorted(build.read_observation_metadata())
-    generator = torch.Generator().manual_seed(named_seed(config.dataset.seed, "split"))
-    training, validation = random_split(tiles, config.dataset.split, generator)
+    training, validation = random_split(
+        tiles, config.dataset.split, named_generator(config.dataset.seed, "split")
+    )
     log.info("training on %s", device)
     run = start_logging(
         asdict(config),

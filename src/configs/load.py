@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import zlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import fields
 
@@ -59,3 +59,36 @@ def named_rng(seed: int, name: str) -> Iterator[None]:
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(named_seed(seed, name))
         yield
+
+
+def named_generator(
+    seed: int, name: str, device: torch.device | str = "cpu"
+) -> torch.Generator:
+    """Return a generator on one named draw of the seed.
+
+    Args:
+        seed: The run's seed.
+        name: What is drawn, such as `split`.
+        device: Where the generator draws.
+
+    Returns:
+        generator: The generator, seeded by that draw.
+    """
+    return torch.Generator(device=device).manual_seed(named_seed(seed, name))
+
+
+def mask_generators(
+    names: Iterable[str], seed: int, device: torch.device
+) -> dict[str, torch.Generator]:
+    """Return one mask generator per instrument, each on its own stream of the seed.
+
+    Args:
+        names: The instruments.
+        seed: The run's seed.
+        device: Where the masks are drawn.
+
+    Returns:
+        generators: Each instrument's generator, so its masks stay put whatever
+            other instruments a setup reads.
+    """
+    return {name: named_generator(seed, f"masks/{name}", device) for name in names}

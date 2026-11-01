@@ -26,7 +26,6 @@ from evaluation.reconstruct import reconstruction_and_attention
 from evaluation.results import write_tile_arrays, write_tile_vectors
 from logs.evaluation import log_evaluation
 
-EVERY_INSTRUMENT = "all"
 EVALUATION_BATCH_SIZE = 1
 
 
@@ -130,7 +129,7 @@ def tile_vectors(
 
     Returns:
         vectors: Each tile's unit vector, keyed by CLS or GAP, then by instrument or
-            EVERY_INSTRUMENT, then by tile, CLS of every instrument being the
+            "all", then by tile, CLS of every instrument being the
             model's own and GAP's the mean of the instruments'. (D,)
     """
     model.eval()
@@ -150,9 +149,9 @@ def tile_vectors(
                     for name, held in contexts.items()
                 },
             }
-            pooled["CLS"][EVERY_INSTRUMENT] = functional.normalize(cls, dim=-1)
+            pooled["CLS"]["all"] = functional.normalize(cls, dim=-1)
             stacked = torch.stack(list(pooled["GAP"].values()), dim=1)  # (B, M, D)
-            pooled["GAP"][EVERY_INSTRUMENT] = global_average_pooling(
+            pooled["GAP"]["all"] = global_average_pooling(
                 stacked, torch.ones(stacked.shape[:2], dtype=torch.bool, device=device)
             )
             for pooling, by_view in pooled.items():

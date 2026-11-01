@@ -2,37 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 import torch
 from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
 from architecture.models.tokens import Tokens
-from configs.load import named_seed
 from training.loss import cmr, mim, total, umr
-
-
-def mask_generators(
-    names: Iterable[str], seed: int, device: torch.device
-) -> dict[str, torch.Generator]:
-    """Return one mask generator per instrument, each on its own stream of the seed.
-
-    Args:
-        names: The instruments.
-        seed: The run's seed.
-        device: Where the masks are drawn.
-
-    Returns:
-        generators: Each instrument's generator, so its masks stay put whatever
-            other instruments a setup reads.
-    """
-    return {
-        name: torch.Generator(device=device).manual_seed(
-            named_seed(seed, f"masks/{name}")
-        )
-        for name in names
-    }
 
 
 def drawn_masks(
@@ -66,7 +43,7 @@ def drawn_masks(
     return visible, hidden
 
 
-def step_terms(
+def batch_step(
     model: CrossSensorMAE,
     batch: dict[str, Tokens],
     mask_ratio: float,

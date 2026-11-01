@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import numpy as np
+from building.configs import sharad
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
 PANELS = ("original", "input", "UMR", "CMR")
@@ -12,7 +13,6 @@ COMPOSITES_NM = {
     "albedo_770nm": (770.0, 770.0, 770.0),
     "false_colour_2529_1506_1080nm": (2529.0, 1506.0, 1080.0),
 }
-SOUNDER = "SHARAD"
 EMPTY_RGB = (255, 255, 255)
 HIDDEN_RGB = (150, 175, 215)
 SOUNDER_ROWS = 1024
@@ -155,7 +155,11 @@ def instrument_panels(
         drawn: The panels side by side, keyed by what they show. (H, W, 3)
     """
     if images.ndim == 3:
-        return {name: panel_image(images[..., None], arrays["clip"], name == SOUNDER)}
+        return {
+            name: panel_image(
+                images[..., None], arrays["clip"], name == sharad.LAYOUT.instrument
+            )
+        }
     # A spectrum is drawn as stored, over the original's own range
     stored = images * arrays["std"] + arrays["mean"]
     return {

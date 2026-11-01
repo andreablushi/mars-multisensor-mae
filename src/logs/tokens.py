@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import numpy as np
+from building.configs import sharad
 
 from logs.attention import ROW_HEIGHT, centred_rows, laid_patches, map_frame
 from logs.reconstruction import (
     EMPTY_RGB,
-    SOUNDER,
     patch_mosaic,
     sounder_resampled,
     spaced_row,
@@ -43,13 +43,15 @@ def token_image(
     low, high = np.percentile(projected, SPREAD_PERCENT, axis=0)
     colours = np.clip((projected - low) / (high - low), 0, 1)
     explained = spread[:COMPONENTS] ** 2 / (spread**2).sum()
-    grounds = [held for name, held in tokens.items() if name != SOUNDER]
+    grounds = [
+        held for name, held in tokens.items() if name != sharad.LAYOUT.instrument
+    ]
     frame = map_frame(grounds)
     panels, start = [], 0
     for name, held in tokens.items():
         mine = colours[start : start + len(held["token"])]  # (K, 3)
         start += len(held["token"])
-        if name == SOUNDER:
+        if name == sharad.LAYOUT.instrument:
             shape = held["values"].shape
             # Each patch's colour over its measured samples, along its pass
             rgb = sounder_resampled(

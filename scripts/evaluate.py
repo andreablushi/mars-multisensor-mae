@@ -13,7 +13,7 @@ from configs.load import load_config
 from configs.model import built_model
 from evaluation.evaluate import evaluate
 from logs.console import console_logger
-from logs.evaluation import BASELINE, EVALUATION
+from logs.evaluation import EVALUATION
 from logs.tracker import logged_checkpoint, start_logging
 
 log = console_logger(__name__)
@@ -33,7 +33,7 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(EVALUATION)
     run = start_logging(asdict(config), run_name, EVALUATION, {"device": str(device)})
-    if run_name.split("/")[-1] != BASELINE:
+    if run_name.split("/")[-1] != "random":
         held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")
         model.load_state_dict(held["model"])
         log.info("%s trained for %d steps", run_name, held["step"])

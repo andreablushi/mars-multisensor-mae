@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 
 import numpy as np
+from building.configs import sharad
 from PIL import Image
 from scipy.ndimage import binary_dilation
 
 from logs.reconstruction import (
     COMPOSITES_NM,
     EMPTY_RGB,
-    SOUNDER,
     SPACE,
     instrument_panels,
     nearest_bands,
@@ -315,24 +315,27 @@ def attention_image(
         )
     )
     sources = {name: held for name, held in attention.items() if name != query}
-    grounds = [held for name, held in sources.items() if name != SOUNDER]
+    grounds = [
+        held for name, held in sources.items() if name != sharad.LAYOUT.instrument
+    ]
+    sounded = query == sharad.LAYOUT.instrument
     # One frame for every map: each ground patch, a ground query's too
-    frame = map_frame(grounds if query == SOUNDER else [*grounds, arrays])
-    trace = observation_trace(arrays, frame, query == SOUNDER)
+    frame = map_frame(grounds if sounded else [*grounds, arrays])
+    trace = observation_trace(arrays, frame, sounded)
     panels, drew = [], []
     total = sum(held["attention"].mean() for held in sources.values())
     for name, held in sources.items():
         drew.append(f"{name} {held['attention'].mean() / total:.0%}")
-        if name == SOUNDER:
+        if name == sharad.LAYOUT.instrument:
             ((_, grey, ratio, identifier, share),) = sounder_passes(held, 1)
             drew[-1] += f" (pass {identifier} {share:.0%})"
         else:
             grey, ratio = ground_map(held, frame)
         # Where it looked within the instrument, its share being in the caption
         panel = overlaid(grey, ratio / held["attention"].mean())
-        if name != SOUNDER:
+        if name != sharad.LAYOUT.instrument:
             # A track is drawn over what was measured alone
-            panel[trace & ~np.isnan(grey) if query == SOUNDER else trace] = TRACE_RGB
+            panel[trace & ~np.isnan(grey) if sounded else trace] = TRACE_RGB
         panels.append(panel)
     caption = f"{query} from {', '.join(sources)}: " + ", ".join(drew)
     return centred_rows([top, spaced_row(panels)]), caption
@@ -352,7 +355,7 @@ def sounder_read_image(
             passes' radargrams, each row centred. (H, W, 3)
         caption: What is rebuilt from what, and each pass's share per token.
     """
-    arrays, held = attention[query], attention[SOUNDER]
+    arrays, held = attention[query], attention[sharad.LAYOUT.instrument]
     frame = map_frame([arrays])
     laid = []
     for one in (arrays["values"], arrays["cmr"]):
@@ -377,7 +380,7 @@ def sounder_read_image(
         overlaid(grey, ratio / held["attention"].mean())
         for _, grey, ratio, *_ in passes
     ]
-    caption = f"{query} from {SOUNDER}: " + ", ".join(
+    caption = f"{query} from {sharad.LAYOUT.instrument}: " + ", ".join(
         f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
     )
     return centred_rows([spaced_row(top), spaced_row(radargrams)]), caption
