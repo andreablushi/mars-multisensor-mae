@@ -14,17 +14,28 @@ from architecture.models.tokens import Tokens
 from configs.load import named_rng
 
 
-def global_average_pooling(tokens: Tensor, present: Tensor) -> Tensor:
-    """Return each row's present tokens summed, of unit length.
+def pooled_tokens(
+    contexts: dict[str, Context], readable: dict[str, Tensor], pooling: str
+) -> dict[str, Tensor]:
+    """Return each instrument's tile vector, its CLS or the GAP of its readable tokens.
 
     Args:
-        tokens: The tokens of every row. (B, K, D)
-        present: Which of them hold something rather than padding. (B, K)
+        contexts: Each instrument's CLS token, then its tokens. (B, 1 + K, D)
+        readable: Which of each instrument's tokens hold something. (B, K)
+        pooling: What a tile vector is, "CLS" or "GAP".
 
     Returns:
-        pooled: One unit vector per row. (B, D)
+        pooled: Each instrument's tile vector as one unit vector, in float. (B, D)
     """
-    return functional.normalize((tokens * present.unsqueeze(-1)).sum(dim=1), dim=-1)
+    return {
+        name: functional.normalize(
+            held.tokens[:, 0].float()
+            if pooling == "CLS"
+            else (held.tokens[:, 1:].float() * readable[name].unsqueeze(-1)).sum(1),
+            dim=-1,
+        )
+        for name, held in contexts.items()
+    }
 
 
 class CrossSensorMAE(nn.Module):
@@ -166,10 +177,4 @@ class CrossSensorMAE(nn.Module):
                 one.acquisition,
                 hidden[name],
             )  # (B, K, *P) each
-        pooled = {
-            name: functional.normalize(held.tokens[:, 0].float(), dim=-1)
-            if pooling == "CLS"
-            else global_average_pooling(held.tokens[:, 1:].float(), readable[name])
-            for name, held in contexts.items()
-        }
-        return predictions, pooled
+        return predictions, pooled_tokens(contexts, readable, pooling)

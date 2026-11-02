@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
@@ -12,21 +11,14 @@ from torch.nn import functional
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
-from architecture.mae import CrossSensorMAE, global_average_pooling
-from configs.paths import (
-    ATTENTION_FILE,
-    RANGING_FILE,
-    RECONSTRUCTION_FILE,
-    TOKENS_FILE,
-    results_path,
-)
+from architecture.mae import CrossSensorMAE, pooled_tokens
+from configs.schema import DrawnTile
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
+from evaluation.metrics import metrics_by_view
 from evaluation.reconstruct import reconstruction_and_attention
-from evaluation.results import write_tile_arrays, write_tile_vectors
+from evaluation.results import write_results
 from logs.evaluation import log_evaluation
-
-EVALUATION_BATCH_SIZE = 1
 
 
 def evaluate(
@@ -34,7 +26,9 @@ def evaluate(
     build: DatasetBuild,
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
-    tiles: Mapping[str, str],
+    batch_size: int,
+    neighbours: int,
+    tiles: Mapping[str, DrawnTile],
     mask_ratio: float,
     ranging: Sequence[str],
     seed: int,
@@ -50,7 +44,10 @@ def evaluate(
         build: The build the labelled tiles are read from.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        tiles: The tiles drawn as reconstructions and attention maps, by what they show.
+        batch_size: How many tiles one batch of the vector pass holds.
+        neighbours: How many neighbours the kNN vote reads.
+        tiles: The tiles drawn as reconstructions and attention maps, by what they
+            show, with each instrument's observation shown.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
         seed: What fixes the masks.
@@ -61,29 +58,18 @@ def evaluate(
     """
     by_tile = build.read_observation_metadata()
     loader = tile_loader(
-        build,
-        by_tile,
-        sizes,
-        shapes,
-        None,
-        1.0,
-        seed,
-        EVALUATION_BATCH_SIZE,
-        workers,
-        False,
+        build, by_tile, sizes, shapes, None, 1.0, seed, batch_size, workers, False
     )
     vectors = tile_vectors(model, loader, device)
     classes = build.read_label_by_tile()
-    directory = results_path(run_name).parent
-    shutil.rmtree(directory, ignore_errors=True)
-    write_tile_vectors(results_path(run_name), classes, vectors)
     reconstructions, attentions, rangings, tokens = {}, {}, {}, {}
-    for place, tile in tiles.items():
+    for place, drawn in tiles.items():
         reconstructions[place], by_query, ranged, tokens[place] = (
             reconstruction_and_attention(
                 model,
                 build,
-                by_tile[tile],
+                by_tile[drawn.tile],
+                drawn.shown,
                 sizes,
                 shapes,
                 mask_ratio,
@@ -94,21 +80,13 @@ def evaluate(
         )
         attentions |= {(place, query): one for query, one in by_query.items()}
         rangings |= {(place, query): one for query, one in ranged.items()}
-    arrays = {
-        **{
-            RECONSTRUCTION_FILE.format(key): one for key, one in reconstructions.items()
-        },
-        **{TOKENS_FILE.format(key): one for key, one in tokens.items()},
-        **{ATTENTION_FILE.format(*key): one for key, one in attentions.items()},
-        **{RANGING_FILE.format(*key): one for key, one in rangings.items()},
-    }
-    for name, held in arrays.items():
-        write_tile_arrays(results_path(run_name, name), held)
+    directory = write_results(
+        run_name, classes, vectors, reconstructions, attentions, rangings, tokens
+    )
     log_evaluation(
         run,
         run_name,
-        vectors,
-        classes,
+        metrics_by_view(vectors, classes, neighbours),
         reconstructions,
         attentions,
         rangings,
@@ -140,19 +118,12 @@ def tile_vectors(
             present = {name: tokens.present for name, tokens in batch.items()}
             cls, contexts = model.embed_tokens(batch, present)
             pooled = {
-                "CLS": {
-                    name: functional.normalize(held.tokens[:, 0], dim=-1)
-                    for name, held in contexts.items()
-                },
-                "GAP": {
-                    name: global_average_pooling(held.tokens[:, 1:], present[name])
-                    for name, held in contexts.items()
-                },
+                pooling: pooled_tokens(contexts, present, pooling)
+                for pooling in ("CLS", "GAP")
             }
             pooled["CLS"]["all"] = functional.normalize(cls, dim=-1)
-            stacked = torch.stack(list(pooled["GAP"].values()), dim=1)  # (B, M, D)
-            pooled["GAP"]["all"] = global_average_pooling(
-                stacked, torch.ones(stacked.shape[:2], dtype=torch.bool, device=device)
+            pooled["GAP"]["all"] = functional.normalize(
+                torch.stack(list(pooled["GAP"].values()), dim=1).sum(1), dim=-1
             )
             for pooling, by_view in pooled.items():
                 for view, held in by_view.items():

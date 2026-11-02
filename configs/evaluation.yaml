@@ -1,10 +1,29 @@
 # Labelled build the evaluation reads.
 build: evaluation
 
-# Tiles drawn as reconstructions and attention maps.
+# Tiles per batch of the vector pass, each read whole.
+batch_size: 1
+
+# Neighbours the kNN vote reads.
+neighbours: 5
+
+# Tiles drawn as reconstructions and attention maps, and each instrument's
+# observation shown.
 tiles:
-  crater: b209_c0352
-  ice_rich: b327_c0013
+  crater:
+    tile: b209_c0352
+    shown:
+      CTX: p03_002158_2034_xi_23n152w
+      CRISM: msp000055e9_03_if214_trr3
+      MOLA: megdr128
+      SHARAD: s_02228601
+  ice_rich:
+    tile: b327_c0013
+    shown:
+      CTX: g18_025260_2652_xn_85n195w
+      CRISM: msp000241c1_01_if214_trr3
+      MOLA: megdr128
+      SHARAD: s_01356201
 
 # The two ranging instruments, each also rebuilt from the other alone.
 ranging: [MOLA, SHARAD]

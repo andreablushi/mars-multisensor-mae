@@ -1,4 +1,4 @@
-"""Logging what one evaluation comes to: scores, matrices, the rebuilt tiles."""
+"""Logging what one evaluation comes to: scores, matrices, the drawn tiles."""
 
 from __future__ import annotations
 
@@ -7,31 +7,22 @@ from pathlib import Path
 
 import numpy as np
 import wandb
-from building.configs import sharad
 from wandb.sdk.wandb_run import Run
 
-from evaluation.metrics import compute_metrics, cosine_similarity
-from logs.attention import attention_image, sounder_read_image
-from logs.reconstruction import PANELS, reconstruction_images
-from logs.tokens import token_image
+from evaluation.metrics import Metrics
+from logs.images.attention import attention_image
+from logs.images.ranging import ranging_image
+from logs.images.reconstruction import reconstruction_images
+from logs.images.tokens import token_image
 from logs.tracker import artifact_name
 
 EVALUATION = "evaluation"
-SCORES = f"{EVALUATION}/scores"
-CONFUSION = f"{EVALUATION}/confusion"
-DISTANCES = f"{EVALUATION}/distances"
-RECONSTRUCTION = f"{EVALUATION}/reconstruction"
-ATTENTION = f"{EVALUATION}/attention"
-RANGING = f"{EVALUATION}/ranging"
-TOKENS = f"{EVALUATION}/tokens"
-NEIGHBOURS = 5
 
 
 def log_evaluation(
     run: Run,
     run_name: str,
-    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-    classes: Mapping[str, str],
+    metrics: Mapping[tuple[str, str], Metrics],
     reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
@@ -43,8 +34,7 @@ def log_evaluation(
     Args:
         run: The tracked run.
         run_name: What the run is called, which names its artifact.
-        vectors: Each tile's vector, keyed by pooling, then view, then tile.
-        classes: The class each tile earned, keyed by the tile.
+        metrics: Each view's metrics, keyed by its pooling and view.
         reconstructions: Each rebuilt tile's arrays, keyed by what it shows.
         attentions: Each tile's instrument rebuilt from the others whole, keyed by
             what the tile shows and the instrument.
@@ -54,17 +44,9 @@ def log_evaluation(
             by what the tile shows.
         directory: Where the evaluation wrote its files, logged as its artifact.
     """
-    measured = {}
-    for pooling, by_view in vectors.items():
-        for view, by_tile in by_view.items():
-            tiles = sorted(by_tile)
-            held = np.array([by_tile[tile] for tile in tiles], np.float64)
-            measured[pooling, view] = compute_metrics(
-                cosine_similarity(held), [classes[tile] for tile in tiles], NEIGHBOURS
-            )
     scores = [
         [pooling, view, name, value]
-        for (pooling, view), one in measured.items()
+        for (pooling, view), one in metrics.items()
         for name, value in {
             "mAP": float(one.retrieval["mAP"].mean()),
             **one.knn,
@@ -80,39 +62,39 @@ def log_evaluation(
     media = {}
     for place, reconstruction in reconstructions.items():
         for title, image in reconstruction_images(reconstruction).items():
-            media[f"{RECONSTRUCTION}/{place}/{title}"] = wandb.Image(
-                image, caption=" | ".join(PANELS)
+            media[f"{EVALUATION}/reconstruction/{place}/{title}"] = wandb.Image(
+                image, caption="original | input | UMR | CMR"
             )
     for place, held in tokens.items():
         image, caption = token_image(held)
-        media[f"{TOKENS}/{place}"] = wandb.Image(image, caption=caption)
-    for (place, query), attention in attentions.items():
-        image, caption = attention_image(attention, query)
-        media[f"{ATTENTION}/{query}/{place}"] = wandb.Image(image, caption=caption)
-    for (place, query), attention in rangings.items():
-        drawn = (
-            attention_image if query == sharad.LAYOUT.instrument else sounder_read_image
-        )
-        image, caption = drawn(attention, query)
-        media[f"{RANGING}/{query}/{place}"] = wandb.Image(image, caption=caption)
+        media[f"{EVALUATION}/tokens/{place}"] = wandb.Image(image, caption=caption)
+    for section, drawn, by_query in (
+        ("attention", attention_image, attentions),
+        ("ranging", ranging_image, rangings),
+    ):
+        for (place, query), attention in by_query.items():
+            image, caption = drawn(attention, query)
+            media[f"{EVALUATION}/{section}/{query}/{place}"] = wandb.Image(
+                image, caption=caption
+            )
     run.log(
         {
-            SCORES: wandb.Table(
+            f"{EVALUATION}/scores": wandb.Table(
                 columns=["pooling", "view", "metric", "value"], data=scores
             ),
             **{
-                key: wandb.Table(
+                f"{EVALUATION}/{field}": wandb.Table(
                     columns=["pooling", "view", "row", "column", "value"],
                     data=[
                         [pooling, view, row, column, float(value)]
-                        for (pooling, view), one in measured.items()
+                        for (pooling, view), one in metrics.items()
                         for row, held in zip(
                             one.classes, getattr(one, field), strict=True
                         )
                         for column, value in zip(one.classes, held, strict=True)
                     ],
                 )
-                for key, field in ((CONFUSION, "confusion"), (DISTANCES, "distances"))
+                for field in ("confusion", "distances")
             },
             **media,
         }

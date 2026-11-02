@@ -7,16 +7,13 @@ from collections.abc import Mapping
 import numpy as np
 from building.configs import sharad
 
-from logs.attention import ROW_HEIGHT, centred_rows, laid_patches, map_frame
-from logs.reconstruction import (
+from logs.images.attention import ROW_HEIGHT, centred_rows, laid_patches, map_frame
+from logs.images.reconstruction import (
     EMPTY_RGB,
     patch_mosaic,
     sounder_resampled,
     spaced_row,
 )
-
-COMPONENTS = 3
-SPREAD_PERCENT = (1.0, 99.0)
 
 
 def token_image(
@@ -39,10 +36,10 @@ def token_image(
         [held["token"] - held["token"].mean(axis=0) for held in tokens.values()]
     )
     _, spread, directions = np.linalg.svd(centred, full_matrices=False)
-    projected = centred @ directions[:COMPONENTS].T  # (N, 3)
-    low, high = np.percentile(projected, SPREAD_PERCENT, axis=0)
+    projected = centred @ directions[:3].T  # (N, 3)
+    low, high = np.percentile(projected, (1.0, 99.0), axis=0)
     colours = np.clip((projected - low) / (high - low), 0, 1)
-    explained = spread[:COMPONENTS] ** 2 / (spread**2).sum()
+    explained = spread[:3] ** 2 / (spread**2).sum()
     grounds = [
         held for name, held in tokens.items() if name != sharad.LAYOUT.instrument
     ]

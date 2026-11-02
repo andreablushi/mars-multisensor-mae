@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
@@ -67,6 +69,24 @@ class Block(nn.Module):
             self.rotate(key, position),
             value,
         )
+
+    def attention_weights(
+        self, keys: Tensor, mask: Tensor, position: Tensor, fixed: int
+    ) -> Tensor:
+        """Return what each query attends to, its heads averaged.
+
+        Args:
+            keys: Every token, those past the fixed also asking as queries. (B, N, D)
+            mask: Which key each query may attend to. (B, 1, N - fixed, N)
+            position: Each token's patch centre, in metres or rows. (B, N, 3)
+            fixed: How many leading tokens are keys alone, never queries.
+
+        Returns:
+            weights: Each query's attention over every key. (B, N - fixed, N)
+        """
+        query, key, _ = self.rotated_heads(keys, position, fixed)
+        scores = query @ key.transpose(-2, -1) / math.sqrt(query.shape[-1])
+        return scores.masked_fill(~mask, -torch.inf).softmax(-1).mean(1)
 
     def forward(
         self, keys: Tensor, mask: Tensor, position: Tensor, fixed: int

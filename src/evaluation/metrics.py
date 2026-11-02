@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from sklearn.metrics import (
@@ -13,43 +14,61 @@ from sklearn.metrics import (
     silhouette_samples,
 )
 
-from evaluation.results import Metrics
 
+@dataclass(frozen=True, slots=True)
+class Metrics:
+    """Everything one view of the tiles comes to.
 
-def cosine_similarity(vectors: np.ndarray) -> np.ndarray:
-    """Return the cosine between every pair of tiles' vectors.
-
-    Args:
-        vectors: One unit vector per tile. (T, D)
-
-    Returns:
-        similarities: The cosine of every pair. (T, T)
+    Attributes:
+        retrieval: Every tile's retrieval and ranking scores. (T,)
+        knn: Accuracy and balanced accuracy of the kNN vote.
+        classes: The classes, in the order both matrices hold them.
+        confusion: Tiles of the row's class voted into the column's. (C, C)
+        distances: The mean cosine distance between the tiles of two classes. (C, C)
+        silhouette: How much nearer each tile sits to its class than to the next. (T,)
     """
-    return vectors @ vectors.T
+
+    retrieval: dict[str, np.ndarray]
+    knn: dict[str, float]
+    classes: list[str]
+    confusion: np.ndarray
+    distances: np.ndarray
+    silhouette: np.ndarray
 
 
-def compute_metrics(similarities: np.ndarray, labels: Sequence[str], k: int) -> Metrics:
-    """Return every metric of one view.
+def metrics_by_view(
+    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    classes: Mapping[str, str],
+    k: int,
+) -> dict[tuple[str, str], Metrics]:
+    """Return the metrics of every pooling and view.
 
     Args:
-        similarities: The cosine of every pair of tiles. (T, T)
-        labels: The class of each tile, in the same order.
+        vectors: Each tile's vector, keyed by pooling, then view, then tile.
+        classes: The class each tile earned, keyed by the tile.
         k: How many neighbours the kNN vote reads.
 
     Returns:
-        metrics: The view's metrics.
+        metrics: Each view's metrics, keyed by its pooling and view.
     """
-    classes = sorted(set(labels))
-    knn, confusion = knn_metrics(similarities, labels, classes, k)
-    return Metrics(
-        labels=list(labels),
-        retrieval=retrieval_metrics(similarities, labels),
-        knn=knn,
-        classes=classes,
-        confusion=confusion,
-        distances=class_distance_metrics(similarities, labels, classes),
-        silhouette=silhouette_scores(similarities, labels),
-    )
+    metrics = {}
+    for pooling, by_view in vectors.items():
+        for view, by_tile in by_view.items():
+            tiles = sorted(by_tile)
+            held = np.array([by_tile[tile] for tile in tiles], np.float64)
+            similarities = held @ held.T
+            labels = [classes[tile] for tile in tiles]
+            classed = sorted(set(labels))
+            knn, confusion = knn_metrics(similarities, labels, classed, k)
+            metrics[pooling, view] = Metrics(
+                retrieval=retrieval_metrics(similarities, labels),
+                knn=knn,
+                classes=classed,
+                confusion=confusion,
+                distances=class_distance_metrics(similarities, labels, classed),
+                silhouette=silhouette_scores(similarities, labels),
+            )
+    return metrics
 
 
 def ranked_neighbours(similarities: np.ndarray) -> np.ndarray:

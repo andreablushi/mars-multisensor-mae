@@ -12,8 +12,7 @@ from torch.utils.data import random_split
 
 from configs.load import load_config, named_generator
 from configs.model import built_model
-from logs.console import console_logger
-from logs.tracker import TRAINING, log_checkpoint, start_logging
+from logs.tracker import TRAINING, console_logger, log_checkpoint, start_logging
 from training.train import train
 
 log = console_logger(__name__)

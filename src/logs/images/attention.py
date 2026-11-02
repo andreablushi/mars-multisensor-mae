@@ -9,7 +9,7 @@ from building.configs import sharad
 from PIL import Image
 from scipy.ndimage import binary_dilation
 
-from logs.reconstruction import (
+from logs.images.reconstruction import (
     COMPOSITES_NM,
     EMPTY_RGB,
     SPACE,
@@ -22,16 +22,7 @@ from logs.reconstruction import (
 )
 
 ROW_HEIGHT = 512
-ABOVE_RGB = (215, 48, 39)
-BELOW_RGB = (69, 117, 180)
-OPACITY = 0.9
-FULL_RATIO = 2.0
 TRACE_RGB = (255, 140, 0)
-OUTLINE = 3
-SQUARE = np.ones((3, 3), bool)
-QUERY_COMPOSITE = "false_colour_2529_1506_1080nm"
-GREY_COMPOSITE = "albedo_770nm"
-TOP_PASSES = 3
 
 
 def map_frame(framed: Sequence[Mapping[str, np.ndarray]]) -> np.ndarray:
@@ -125,12 +116,12 @@ def grey_patches(
         patches: What is drawn of them, as z-scores. (K, *P)
 
     Returns:
-        grey: The same, a spectrum's GREY_COMPOSITE band as stored. (K, *ground)
+        grey: The same, a spectrum's 770 nm albedo band as stored. (K, *ground)
         clip: The low and high to scale them by, NaN for an open side.
     """
     if patches.ndim < 4:
         return patches, arrays["clip"]
-    band = nearest_bands(COMPOSITES_NM[GREY_COMPOSITE])[0]
+    band = nearest_bands(COMPOSITES_NM["albedo_770nm"])[0]
     return patches[..., band] * arrays["std"][band] + arrays["mean"][band], np.full(
         2, np.nan
     )
@@ -168,7 +159,7 @@ def ground_map(
 
     Returns:
         grey: Its values from 0 to 1, NaN where none is measured, a spectrum's
-            GREY_COMPOSITE band as stored. (ROW_HEIGHT, W)
+            770 nm albedo band as stored. (ROW_HEIGHT, W)
         ratio: The attention the tokens there drew on average, relative to uniform.
             (ROW_HEIGHT, W)
     """
@@ -200,7 +191,7 @@ def observation_trace(
         area = np.zeros(places.shape[:2], bool)
         for shown, _, _ in ground_samples(arrays, places):
             area |= shown
-        return area & binary_dilation(~area, SQUARE, OUTLINE)
+        return area & binary_dilation(~area, np.ones((3, 3), bool), 3)
     # The track through its patch centres, one per trace pair, densely sampled
     _, first = np.unique(arrays["cell"][:, -1], return_index=True)
     track = arrays["position"][first, :2]
@@ -215,7 +206,7 @@ def observation_trace(
     inside = ((pixels >= 0) & (pixels < places.shape[:2])).all(axis=-1)
     line = np.zeros(places.shape[:2], bool)
     line[tuple(pixels[inside].T)] = True
-    return binary_dilation(line, SQUARE, OUTLINE // 2)
+    return binary_dilation(line, np.ones((3, 3), bool), 1)
 
 
 def sounder_passes(
@@ -270,16 +261,14 @@ def overlaid(grey: np.ndarray, ratio: np.ndarray) -> np.ndarray:
     Args:
         grey: The image from 0 to 1, NaN where nothing is shown. (H, W)
         ratio: The attention there, relative to the instrument's mean, full colour
-            at FULL_RATIO or its inverse. (H, W)
+            at twice or half of it. (H, W)
 
     Returns:
         image: The image. (H, W, 3)
     """
-    lift = np.clip(
-        np.log(np.maximum(np.nan_to_num(ratio), 1e-12)) / np.log(FULL_RATIO), -1, 1
-    )
-    alpha = OPACITY * np.abs(lift)[..., None]
-    colour = np.where(lift[..., None] > 0, ABOVE_RGB, BELOW_RGB)
+    lift = np.clip(np.log(np.maximum(np.nan_to_num(ratio), 1e-12)) / np.log(2.0), -1, 1)
+    alpha = 0.9 * np.abs(lift)[..., None]
+    colour = np.where(lift[..., None] > 0, (215, 48, 39), (69, 117, 180))
     rgb = (1 - alpha) * grey[..., None] * 255 + alpha * colour
     rgb[np.isnan(grey)] = EMPTY_RGB
     return rgb.astype(np.uint8)
@@ -305,8 +294,9 @@ def attention_image(
             for one in (arrays["values"], arrays["cmr"])
         ]
     )  # (2, *image)
+    composite = "false_colour_2529_1506_1080nm"
     (top,) = instrument_panels(
-        query, images, arrays, {QUERY_COMPOSITE: COMPOSITES_NM[QUERY_COMPOSITE]}
+        query, images, arrays, {composite: COMPOSITES_NM[composite]}
     ).values()
     top = np.array(
         Image.fromarray(top).resize(
@@ -339,51 +329,6 @@ def attention_image(
         panels.append(panel)
     caption = f"{query} from {', '.join(sources)}: " + ", ".join(drew)
     return centred_rows([top, spaced_row(panels)]), caption
-
-
-def sounder_read_image(
-    attention: Mapping[str, Mapping[str, np.ndarray]], query: str
-) -> tuple[np.ndarray, str]:
-    """Return a ground query's original and CMR from the sounder alone, and its passes.
-
-    Args:
-        attention: The query's and the sounder's patches, as the evaluation drew them.
-        query: The ground instrument rebuilt.
-
-    Returns:
-        image: The query's two panels with the most attended tracks, above those
-            passes' radargrams, each row centred. (H, W, 3)
-        caption: What is rebuilt from what, and each pass's share per token.
-    """
-    arrays, held = attention[query], attention[sharad.LAYOUT.instrument]
-    frame = map_frame([arrays])
-    laid = []
-    for one in (arrays["values"], arrays["cmr"]):
-        grey, clip = grey_patches(arrays, one)
-        laid.append(laid_patches(arrays, grey, frame))
-    passes = sounder_passes(held, TOP_PASSES)
-    track = np.any(
-        [
-            observation_trace(
-                {key: held[key][mine] for key in ("cell", "position")}, frame, True
-            )
-            for mine, *_ in passes
-        ],
-        axis=0,
-    )
-    top = []
-    for grey in scaled_values(np.stack(laid), clip):
-        panel = overlaid(grey, np.ones_like(grey))
-        panel[track & ~np.isnan(grey)] = TRACE_RGB
-        top.append(panel)
-    radargrams = [
-        overlaid(grey, ratio / held["attention"].mean())
-        for _, grey, ratio, *_ in passes
-    ]
-    caption = f"{query} from {sharad.LAYOUT.instrument}: " + ", ".join(
-        f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
-    )
-    return centred_rows([spaced_row(top), spaced_row(radargrams)]), caption
 
 
 def centred_rows(rows: list[np.ndarray]) -> np.ndarray:

@@ -1,7 +1,8 @@
-"""Tracking a run on Weights & Biases: its stage, its training curves and its model."""
+"""Writing what a run does to the terminal, and tracking it on Weights & Biases."""
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -13,10 +14,24 @@ from wandb.sdk.wandb_run import Run
 
 from configs.paths import ARTIFACTS_ROOT, ENV_PATH
 
-MODEL = "model"
 TRAINING = "training"
 TRAIN = f"{TRAINING}/train"
 VALIDATION = f"{TRAINING}/validation"
+
+
+def console_logger(name: str) -> logging.Logger:
+    """Return a logger writing to the console.
+
+    Args:
+        name: Whose logger, which is the module's own name.
+
+    Returns:
+        log: The logger.
+    """
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
+    )
+    return logging.getLogger(name)
 
 
 def start_logging(
@@ -88,7 +103,7 @@ def log_checkpoint(run: Run, path: Path, run_name: str) -> None:
         path: The checkpoint, on this machine.
         run_name: What the run is called, which names the model.
     """
-    model = wandb.Artifact(artifact_name(MODEL, run_name), type=MODEL)
+    model = wandb.Artifact(artifact_name("model", run_name), type="model")
     model.add_file(str(path))
     run.log_artifact(model).wait()
 
@@ -103,5 +118,5 @@ def logged_checkpoint(run: Run, run_name: str) -> Path:
     Returns:
         path: The checkpoint, on this machine.
     """
-    model = run.use_artifact(f"{artifact_name(MODEL, run_name)}:latest")
+    model = run.use_artifact(f"{artifact_name('model', run_name)}:latest")
     return Path(model.file(str(ARTIFACTS_ROOT / model.name)))

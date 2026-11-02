@@ -19,8 +19,7 @@ from configs.load import mask_generators
 from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
-from logs.console import console_logger
-from logs.tracker import TRAIN, VALIDATION, log_terms
+from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
 from training.step import batch_step
 from training.validate import validation_terms
 

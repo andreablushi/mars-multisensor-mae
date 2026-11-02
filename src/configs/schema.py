@@ -106,17 +106,34 @@ class TrainingConfig:
 
 
 @dataclass
+class DrawnTile:
+    """One tile drawn as reconstructions and attention maps.
+
+    Attributes:
+        tile: The tile.
+        shown: The observation of each instrument shown, by its identifier.
+    """
+
+    tile: str
+    shown: dict[str, str]
+
+
+@dataclass
 class EvaluationConfig:
     """What a trained model's latent space is measured over, and how.
 
     Attributes:
         build: The build the labelled tiles are read from, published as dataset-<build>.
+        batch_size: How many tiles one batch of the vector pass holds, each read whole.
+        neighbours: How many neighbours the kNN vote reads.
         tiles: The tiles drawn as reconstructions and attention maps, by what they show.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
     """
 
     build: str
-    tiles: dict[str, str]
+    batch_size: int
+    neighbours: int
+    tiles: dict[str, DrawnTile]
     ranging: list[str]
 
 

@@ -1,13 +1,22 @@
-"""What an evaluation keeps, one vector per tile and view, and what it comes to."""
+"""What an evaluation writes: one vector per tile and view, and the drawn tiles."""
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from common.disk import parquet
+
+from configs.paths import (
+    ATTENTION_FILE,
+    RANGING_FILE,
+    RECONSTRUCTION_FILE,
+    TOKENS_FILE,
+    results_path,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,41 +41,34 @@ class TileVector:
 RESULTS_SCHEMA = parquet.schema_of(TileVector)
 
 
-@dataclass(frozen=True, slots=True)
-class Metrics:
-    """Everything one view of the tiles comes to.
-
-    Attributes:
-        labels: The class of each tile.
-        retrieval: Every tile's retrieval and ranking scores. (T,)
-        knn: Accuracy and balanced accuracy of the kNN vote.
-        classes: The classes, in the order both matrices hold them.
-        confusion: Tiles of the row's class voted into the column's. (C, C)
-        distances: The mean cosine distance between the tiles of two classes. (C, C)
-        silhouette: How much nearer each tile sits to its class than to the next. (T,)
-    """
-
-    labels: list[str]
-    retrieval: dict[str, np.ndarray]
-    knn: dict[str, float]
-    classes: list[str]
-    confusion: np.ndarray
-    distances: np.ndarray
-    silhouette: np.ndarray
-
-
-def write_tile_vectors(
-    path: Path,
+def write_results(
+    run_name: str,
     classes: Mapping[str, str],
     vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-) -> None:
-    """Write one row per pooling, view and tile: its class and its vector.
+    reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    tokens: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+) -> Path:
+    """Return where one run's evaluation was written, its vectors and drawn tiles.
 
     Args:
-        path: The parquet file to write, whose directory is made if missing.
+        run_name: What the run is called, which names its results.
         classes: The class each tile earned, keyed by the tile.
         vectors: Each tile's vector, keyed by pooling, then view, then tile.
+        reconstructions: Each rebuilt tile's arrays, keyed by what it shows.
+        attentions: Each tile's instrument rebuilt from the others whole, keyed by
+            what the tile shows and the instrument.
+        rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
+            alike.
+        tokens: Each tile's observations drawn whole with their shared tokens, keyed
+            by what the tile shows.
+
+    Returns:
+        directory: The run's results, emptied of any earlier evaluation first.
     """
+    directory = results_path(run_name).parent
+    shutil.rmtree(directory, ignore_errors=True)
     parquet.write_rows(
         [
             TileVector(tile, classes[tile], pooling, view, tuple(vector.tolist()))
@@ -75,26 +77,24 @@ def write_tile_vectors(
             for tile, vector in sorted(by_tile.items())
         ],
         RESULTS_SCHEMA,
-        path,
+        results_path(run_name),
     )
-
-
-def write_tile_arrays(
-    path: Path, by_instrument: Mapping[str, Mapping[str, np.ndarray]]
-) -> None:
-    """Write one tile's arrays, every one under <instrument>/<key>.
-
-    Args:
-        path: The npz file to write, whose directory is made if missing.
-        by_instrument: Each instrument's arrays, keyed as
-            reconstruction_and_attention names them.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        path,
+    drawn = {
         **{
-            f"{name}/{key}": array
-            for name, arrays in by_instrument.items()
-            for key, array in arrays.items()
+            RECONSTRUCTION_FILE.format(place): one
+            for place, one in reconstructions.items()
         },
-    )
+        **{TOKENS_FILE.format(place): one for place, one in tokens.items()},
+        **{ATTENTION_FILE.format(*key): one for key, one in attentions.items()},
+        **{RANGING_FILE.format(*key): one for key, one in rangings.items()},
+    }
+    for name, by_instrument in drawn.items():
+        np.savez(
+            results_path(run_name, name),
+            **{
+                f"{instrument}/{key}": array
+                for instrument, arrays in by_instrument.items()
+                for key, array in arrays.items()
+            },
+        )
+    return directory

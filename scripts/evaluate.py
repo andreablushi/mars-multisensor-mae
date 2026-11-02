@@ -12,9 +12,8 @@ from digitalhub_runtime_python import handler
 from configs.load import load_config
 from configs.model import built_model
 from evaluation.evaluate import evaluate
-from logs.console import console_logger
 from logs.evaluation import EVALUATION
-from logs.tracker import logged_checkpoint, start_logging
+from logs.tracker import console_logger, logged_checkpoint, start_logging
 
 log = console_logger(__name__)
 
@@ -43,6 +42,8 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         build,
         sizes,
         shapes,
+        config.evaluation.batch_size,
+        config.evaluation.neighbours,
         config.evaluation.tiles,
         config.training.mask_ratio,
         config.evaluation.ranging,

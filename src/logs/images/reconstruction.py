@@ -8,14 +8,11 @@ import numpy as np
 from building.configs import sharad
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
 
-PANELS = ("original", "input", "UMR", "CMR")
 COMPOSITES_NM = {
     "albedo_770nm": (770.0, 770.0, 770.0),
     "false_colour_2529_1506_1080nm": (2529.0, 1506.0, 1080.0),
 }
 EMPTY_RGB = (255, 255, 255)
-HIDDEN_RGB = (150, 175, 215)
-SOUNDER_ROWS = 1024
 SPACE = 12
 
 
@@ -106,7 +103,7 @@ def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.nda
             one channel or three. (N, H, W, C)
         clip: The low and high the z-scores were clipped to, NaN for an open side,
             which the original's own extreme takes.
-        stretched: Whether each panel is resampled to SOUNDER_ROWS rows and half as
+        stretched: Whether each panel is resampled to 1024 rows and half as
             many columns, so it stands twice as high as wide.
 
     Returns:
@@ -118,9 +115,9 @@ def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.nda
     empty = np.isnan(images[..., 0])  # (N, H, W)
     rgb[empty] = EMPTY_RGB
     # The input's hidden patches are the empty ones the original holds
-    rgb[1][empty[1] & ~empty[0]] = HIDDEN_RGB
+    rgb[1][empty[1] & ~empty[0]] = (150, 175, 215)
     if stretched:
-        rgb = sounder_resampled(rgb, SOUNDER_ROWS)
+        rgb = sounder_resampled(rgb, 1024)
     return spaced_row(list(rgb))
 
 
