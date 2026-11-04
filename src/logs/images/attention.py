@@ -6,22 +6,23 @@ from collections.abc import Iterator, Mapping, Sequence
 
 import numpy as np
 from building.configs import sharad
-from PIL import Image
 from scipy.ndimage import binary_dilation
 
 from logs.images.reconstruction import (
     COMPOSITES_NM,
     EMPTY_RGB,
+    ROW_HEIGHT,
     SPACE,
+    colour_bar,
     instrument_panels,
     nearest_bands,
     patch_mosaic,
     scaled_values,
     sounder_resampled,
     spaced_row,
+    value_bar,
 )
 
-ROW_HEIGHT = 512
 TRACE_RGB = (255, 140, 0)
 
 
@@ -150,7 +151,7 @@ def laid_patches(
 
 def ground_map(
     arrays: Mapping[str, np.ndarray], frame: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return one ground instrument's observations laid on a map, and its attention.
 
     Args:
@@ -160,6 +161,7 @@ def ground_map(
     Returns:
         grey: Its values from 0 to 1, NaN where none is measured, a spectrum's
             770 nm albedo band as stored. (ROW_HEIGHT, W)
+        bar: The bar of those values. (ROW_HEIGHT, W', 3)
         ratio: The attention the tokens there drew on average, relative to uniform.
             (ROW_HEIGHT, W)
     """
@@ -169,7 +171,11 @@ def ground_map(
     for shown, patch, _ in ground_samples(arrays, map_places(frame)):
         total[shown] += arrays["attention"][patch]
         count[shown] += 1
-    return scaled_values(grey[None], clip)[0], total / np.maximum(count, 1)
+    return (
+        scaled_values(grey[None], clip)[0],
+        value_bar(grey[None], clip, ROW_HEIGHT),
+        total / np.maximum(count, 1),
+    )
 
 
 def observation_trace(
@@ -211,7 +217,7 @@ def observation_trace(
 
 def sounder_passes(
     arrays: Mapping[str, np.ndarray], count: int
-) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, str, float]]:
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str, float]]:
     """Return the sounder's passes whose tokens drew the most attention each.
 
     Args:
@@ -220,9 +226,10 @@ def sounder_passes(
 
     Returns:
         passes: For each, which patches are its own (K,), its radargram from 0 to 1,
-            NaN where none is measured, and the attention its tokens drew relative
-            to uniform, both resampled to ROW_HEIGHT rows (ROW_HEIGHT, ROW_HEIGHT /
-            2), the pass, and its share of the passes' attention per token.
+            NaN where none is measured, the bar of its values (ROW_HEIGHT, W, 3),
+            and the attention its tokens drew relative to uniform, both maps
+            resampled to ROW_HEIGHT rows (ROW_HEIGHT, ROW_HEIGHT / 2), the pass, and
+            its share of the passes' attention per token.
     """
     by_pass = np.bincount(arrays["observation"], weights=arrays["attention"])
     by_pass /= np.bincount(arrays["observation"])
@@ -247,6 +254,7 @@ def sounder_passes(
             (
                 mine,
                 scaled_values(grey[None], arrays["clip"])[0],
+                value_bar(grey[None], arrays["clip"], ROW_HEIGHT),
                 ratio,
                 str(arrays["identifier"][chosen]),
                 by_pass[chosen] / by_pass.sum(),
@@ -274,6 +282,19 @@ def overlaid(grey: np.ndarray, ratio: np.ndarray) -> np.ndarray:
     return rgb.astype(np.uint8)
 
 
+def ratio_bar() -> np.ndarray:
+    """Return the bar of the colours overlaid gives attention, on white.
+
+    Returns:
+        bar: The bar, twice the mean at the top, half of it at the bottom.
+            (ROW_HEIGHT, W, 3)
+    """
+    ratio = 2.0 ** np.linspace(1, -1, 256)[:, None]
+    return colour_bar(
+        overlaid(np.ones_like(ratio), ratio)[:, 0], ["2x", "1x", "0.5x"], ROW_HEIGHT
+    )
+
+
 def attention_image(
     attention: Mapping[str, Mapping[str, np.ndarray]], query: str
 ) -> tuple[np.ndarray, str]:
@@ -296,14 +317,8 @@ def attention_image(
     )  # (2, *image)
     composite = "false_colour_2529_1506_1080nm"
     (top,) = instrument_panels(
-        query, images, arrays, {composite: COMPOSITES_NM[composite]}
+        query, images, arrays, {composite: COMPOSITES_NM[composite]}, ROW_HEIGHT
     ).values()
-    top = np.array(
-        Image.fromarray(top).resize(
-            (round(top.shape[1] * ROW_HEIGHT / top.shape[0]), ROW_HEIGHT),
-            Image.Resampling.NEAREST,
-        )
-    )
     sources = {name: held for name, held in attention.items() if name != query}
     grounds = [
         held for name, held in sources.items() if name != sharad.LAYOUT.instrument
@@ -317,18 +332,18 @@ def attention_image(
     for name, held in sources.items():
         drew.append(f"{name} {held['attention'].mean() / total:.0%}")
         if name == sharad.LAYOUT.instrument:
-            ((_, grey, ratio, identifier, share),) = sounder_passes(held, 1)
+            ((_, grey, bar, ratio, identifier, share),) = sounder_passes(held, 1)
             drew[-1] += f" (pass {identifier} {share:.0%})"
         else:
-            grey, ratio = ground_map(held, frame)
+            grey, bar, ratio = ground_map(held, frame)
         # Where it looked within the instrument, its share being in the caption
         panel = overlaid(grey, ratio / held["attention"].mean())
         if name != sharad.LAYOUT.instrument:
             # A track is drawn over what was measured alone
             panel[trace & ~np.isnan(grey) if sounded else trace] = TRACE_RGB
-        panels.append(panel)
+        panels.append(np.concatenate([panel, bar], axis=1))
     caption = f"{query} from {', '.join(sources)}: " + ", ".join(drew)
-    return centred_rows([top, spaced_row(panels)]), caption
+    return centred_rows([top, spaced_row([*panels, ratio_bar()])]), caption
 
 
 def centred_rows(rows: list[np.ndarray]) -> np.ndarray:

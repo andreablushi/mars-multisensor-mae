@@ -16,9 +16,10 @@ from logs.images.attention import (
     map_frame,
     observation_trace,
     overlaid,
+    ratio_bar,
     sounder_passes,
 )
-from logs.images.reconstruction import scaled_values, spaced_row
+from logs.images.reconstruction import ROW_HEIGHT, scaled_values, spaced_row, value_bar
 
 
 def ranging_image(
@@ -59,10 +60,12 @@ def ranging_image(
         panel = overlaid(grey, np.ones_like(grey))
         panel[track & ~np.isnan(grey)] = TRACE_RGB
         top.append(panel)
+    top.append(value_bar(np.stack(laid), clip, ROW_HEIGHT))
     radargrams = [
-        overlaid(grey, ratio / held["attention"].mean())
-        for _, grey, ratio, *_ in passes
+        np.concatenate([overlaid(grey, ratio / held["attention"].mean()), bar], axis=1)
+        for _, grey, bar, ratio, *_ in passes
     ]
+    radargrams.append(ratio_bar())
     caption = f"{query} from {sharad.LAYOUT.instrument}: " + ", ".join(
         f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
     )

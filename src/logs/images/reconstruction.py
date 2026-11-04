@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 from building.configs import sharad
 from building.preprocessing.crism.correction.centre_wavelengths import LAYOUT
+from PIL import Image, ImageDraw, ImageFont
 
 COMPOSITES_NM = {
     "albedo_770nm": (770.0, 770.0, 770.0),
@@ -14,6 +15,7 @@ COMPOSITES_NM = {
 }
 EMPTY_RGB = (255, 255, 255)
 SPACE = 12
+ROW_HEIGHT = 512
 
 
 def patch_mosaic(
@@ -43,6 +45,20 @@ def patch_mosaic(
     return mosaic
 
 
+def value_range(images: np.ndarray, clip: np.ndarray) -> np.ndarray:
+    """Return the range images are drawn over, black at its low and white at its high.
+
+    Args:
+        images: The images, the original first. (N, ...)
+        clip: The low and high the z-scores were clipped to, NaN for an open side,
+            which the original's own extreme takes.
+
+    Returns:
+        range: The low and high. (2,)
+    """
+    return np.where(np.isnan(clip), (np.nanmin(images[0]), np.nanmax(images[0])), clip)
+
+
 def scaled_values(images: np.ndarray, clip: np.ndarray) -> np.ndarray:
     """Return images over one range from 0 to 1, NaN kept where nothing is shown.
 
@@ -54,10 +70,57 @@ def scaled_values(images: np.ndarray, clip: np.ndarray) -> np.ndarray:
     Returns:
         scaled: The same images, clipped to that range and scaled to it. (N, ...)
     """
-    low, high = np.where(
-        np.isnan(clip), (np.nanmin(images[0]), np.nanmax(images[0])), clip
-    )
+    low, high = value_range(images, clip)
     return np.clip((images - low) / np.maximum(high - low, 1e-12), 0, 1)
+
+
+def colour_bar(colours: np.ndarray, labels: Sequence[str], rows: int) -> np.ndarray:
+    """Return a vertical colour bar labelled at its top, middle and bottom.
+
+    Args:
+        colours: The bar's colours from top to bottom. (N, 3)
+        labels: What its top, middle and bottom stand for.
+        rows: How high the bar is drawn.
+
+    Returns:
+        bar: The bar and its labels on white, a margin to its left. (rows, W, 3)
+    """
+    size = rows // 24
+    font = ImageFont.load_default(size=size)
+    top, bottom, left = size // 2 + 1, rows - size // 2 - 1, size // 2
+    text = left + size + size // 2
+    width = text + round(max(font.getlength(label) for label in labels)) + left
+    image = Image.new("RGB", (width, rows), EMPTY_RGB)
+    strip = Image.fromarray(np.asarray(colours, np.uint8)[:, None])
+    image.paste(
+        strip.resize((size, bottom - top), Image.Resampling.NEAREST), (left, top)
+    )
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((left, top, left + size, bottom), outline=(0, 0, 0))
+    for label, y in zip(labels, (top, (top + bottom) // 2, bottom), strict=True):
+        draw.line((left + size, y, left + size + size // 3, y), fill=(0, 0, 0))
+        draw.text((text, y), label, fill=(0, 0, 0), font=font, anchor="lm")
+    return np.array(image)
+
+
+def value_bar(images: np.ndarray, clip: np.ndarray, rows: int) -> np.ndarray:
+    """Return the grey bar of images drawn by scaled_values, labelled with their values.
+
+    Args:
+        images: The images, the original first. (N, ...)
+        clip: The low and high the z-scores were clipped to, NaN for an open side,
+            which the original's own extreme takes.
+        rows: How high the bar is drawn.
+
+    Returns:
+        bar: The bar, white at the top. (rows, W, 3)
+    """
+    low, high = value_range(images, clip)
+    return colour_bar(
+        np.repeat(np.linspace(255, 0, 256)[:, None], 3, axis=1),
+        [f"{value:.3g}" for value in (high, (low + high) / 2, low)],
+        rows,
+    )
 
 
 def sounder_resampled(images: np.ndarray, rows: int) -> np.ndarray:
@@ -94,7 +157,9 @@ def spaced_row(panels: list[np.ndarray]) -> np.ndarray:
     ).astype(np.uint8)
 
 
-def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.ndarray:
+def panel_image(
+    images: np.ndarray, clip: np.ndarray, stretched: bool, rows: int
+) -> np.ndarray:
     """Return the panels of one image side by side, every band over one range.
 
     Args:
@@ -103,12 +168,13 @@ def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.nda
             one channel or three. (N, H, W, C)
         clip: The low and high the z-scores were clipped to, NaN for an open side,
             which the original's own extreme takes.
-        stretched: Whether each panel is resampled to 1024 rows and half as
-            many columns, so it stands twice as high as wide.
+        stretched: Whether each panel is resampled to half as many columns as rows,
+            so it stands twice as high as wide.
+        rows: How many rows each panel is resampled to.
 
     Returns:
-        image: The panels from left to right, white a twelfth of one around each.
-            (H', W', 3)
+        image: The panels from left to right and the bar of their values, white a
+            twelfth of one around each. (rows, W', 3)
     """
     scaled = scaled_values(images, clip) * 255
     rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (N, H, W, 3)
@@ -116,9 +182,18 @@ def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.nda
     rgb[empty] = EMPTY_RGB
     # The input's hidden patches are the empty ones the original holds
     rgb[1][empty[1] & ~empty[0]] = (150, 175, 215)
+    rgb = rgb.astype(np.uint8)
     if stretched:
-        rgb = sounder_resampled(rgb, 1024)
-    return spaced_row(list(rgb))
+        panels = list(sounder_resampled(rgb, rows))
+    else:
+        width = round(rgb.shape[2] * rows / rgb.shape[1])
+        panels = [
+            np.array(
+                Image.fromarray(one).resize((width, rows), Image.Resampling.NEAREST)
+            )
+            for one in rgb
+        ]
+    return spaced_row([*panels, value_bar(images, clip, rows)])
 
 
 def nearest_bands(wanted: tuple[float, ...]) -> np.ndarray:
@@ -139,6 +214,7 @@ def instrument_panels(
     images: np.ndarray,
     arrays: Mapping[str, np.ndarray],
     composites: Mapping[str, tuple[float, ...]],
+    rows: int,
 ) -> dict[str, np.ndarray]:
     """Return one instrument's panels side by side, a spectrum's as stored composites.
 
@@ -147,21 +223,25 @@ def instrument_panels(
         images: The original, then what is drawn beside it. (N, *image)
         arrays: Its patches as the run read them, with their "clip", "mean" and "std".
         composites: The wavelengths of each composite a spectrum is drawn as.
+        rows: How many rows each panel is resampled to.
 
     Returns:
-        drawn: The panels side by side, keyed by what they show. (H, W, 3)
+        drawn: The panels side by side, keyed by what they show. (rows, W, 3)
     """
     if images.ndim == 3:
         return {
             name: panel_image(
-                images[..., None], arrays["clip"], name == sharad.LAYOUT.instrument
+                images[..., None],
+                arrays["clip"],
+                name == sharad.LAYOUT.instrument,
+                rows,
             )
         }
     # A spectrum is drawn as stored, over the original's own range
     stored = images * arrays["std"] + arrays["mean"]
     return {
         f"{name}_{label}": panel_image(
-            stored[..., nearest_bands(wanted)], np.full(2, np.nan), False
+            stored[..., nearest_bands(wanted)], np.full(2, np.nan), False, rows
         )
         for label, wanted in composites.items()
     }
@@ -193,5 +273,11 @@ def reconstruction_images(
                 )
             ]
         )  # (4, *image)
-        drawn |= instrument_panels(name, images, arrays, COMPOSITES_NM)
+        height = images.shape[1]
+        rows = (
+            2 * ROW_HEIGHT
+            if name == sharad.LAYOUT.instrument
+            else -(-ROW_HEIGHT // height) * height
+        )
+        drawn |= instrument_panels(name, images, arrays, COMPOSITES_NM, rows)
     return drawn

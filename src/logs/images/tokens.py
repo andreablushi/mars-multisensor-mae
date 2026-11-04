@@ -7,9 +7,10 @@ from collections.abc import Mapping
 import numpy as np
 from building.configs import sharad
 
-from logs.images.attention import ROW_HEIGHT, centred_rows, laid_patches, map_frame
+from logs.images.attention import centred_rows, laid_patches, map_frame
 from logs.images.reconstruction import (
     EMPTY_RGB,
+    ROW_HEIGHT,
     patch_mosaic,
     sounder_resampled,
     spaced_row,
