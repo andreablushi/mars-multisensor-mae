@@ -89,6 +89,9 @@ class TrainingConfig:
         reconstruction_error: What UMR and CMR measure, MSE, RMSE or RMSE+GRADIENT.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the encoders and decoders read the acquisition angles.
+        stage: What the run trains: joint, every term at once; unimodal, UMR alone;
+            crossmodal, every term on the frozen encoders of unimodal_run.
+        unimodal_run: The unimodal run a crossmodal run starts from.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -102,6 +105,8 @@ class TrainingConfig:
     reconstruction_error: str
     contrastive: ContrastiveConfig
     acquisition: bool
+    stage: str
+    unimodal_run: str | None
     checkpoints: str
 
 

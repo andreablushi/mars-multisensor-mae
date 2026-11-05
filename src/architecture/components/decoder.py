@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 import torch
 from torch import Tensor, nn
@@ -101,40 +102,32 @@ class Decoder(nn.Module):
 
     def forward(
         self,
-        own: Context,
-        others: Context,
+        contexts: Sequence[Context],
         position: Tensor,
         acquisition: Tensor,
         hidden: Tensor,
-    ) -> tuple[Tensor, Tensor]:
-        """Return the instrument's hidden patches, from its own tokens and the others'.
+    ) -> list[Tensor]:
+        """Return the instrument's hidden patches, read from each context in turn.
 
         Args:
-            own: The instrument's own tokens.
-            others: Every other instrument's tokens.
+            contexts: What each prediction reads, the instrument's own tokens first,
+                then every other instrument's when CMR is asked.
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
             acquisition: Each asked patch's acquisition angles, in degrees. (B, K, A)
             hidden: Which of them to predict. (B, K)
 
         Returns:
-            umr: The patches read from the instrument's own tokens. (B, K, *P)
-            cmr: The same patches read from every other instrument's. (B, K, *P)
+            predictions: The patches read from each context. (B, K, *P)
         """
         # Each pass is recomputed on the way back, so only one is held at once
-        umr = checkpoint(
-            self.reconstructed_patches,
-            *own,
-            position,
-            acquisition,
-            hidden,
-            use_reentrant=False,
-        )
-        cmr = checkpoint(
-            self.reconstructed_patches,
-            *others,
-            position,
-            acquisition,
-            hidden,
-            use_reentrant=False,
-        )
-        return umr, cmr
+        return [
+            checkpoint(
+                self.reconstructed_patches,
+                *context,
+                position,
+                acquisition,
+                hidden,
+                use_reentrant=False,
+            )
+            for context in contexts
+        ]

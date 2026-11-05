@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+import torch
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
@@ -12,7 +13,13 @@ from torch.utils.data import random_split
 
 from configs.load import load_config, named_generator
 from configs.model import built_model
-from logs.tracker import TRAINING, console_logger, log_checkpoint, start_logging
+from logs.tracker import (
+    TRAINING,
+    console_logger,
+    log_checkpoint,
+    logged_checkpoint,
+    start_logging,
+)
 from training.train import train
 
 log = console_logger(__name__)
@@ -50,6 +57,10 @@ def run_training(
             "tiles": {"training": len(training), "validation": len(validation)},
         },
     )
+    if config.training.stage == "crossmodal":
+        held = logged_checkpoint(run, config.training.unimodal_run)
+        model.load_state_dict(torch.load(held, map_location=device)["model"])
+        model.encoders.requires_grad_(False)
     last = train(
         model,
         build,
@@ -67,7 +78,9 @@ def run_training(
         config.training.warmup_steps,
         config.training.validate_every,
         config.training.mask_ratio,
-        config.training.contrastive.instruments,
+        config.training.contrastive.instruments
+        if config.training.stage != "unimodal"
+        else [],
         config.training.contrastive.pooling,
         config.training.contrastive.temperature,
         config.training.reconstruction_error,

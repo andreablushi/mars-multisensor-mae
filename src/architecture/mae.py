@@ -42,7 +42,7 @@ class CrossSensorMAE(nn.Module):
     """An encoder and a decoder per sensor, one shared encoder aligning them between.
 
     The shared encoder also hands back one CLS of every sensor, which every decoder
-    reads beside its own tokens, so the UMR loss trains it.
+    reads beside its own tokens unless unimodal, so the UMR loss trains it.
     """
 
     def __init__(
@@ -57,6 +57,7 @@ class CrossSensorMAE(nn.Module):
         decoder_dim: int,
         decoder_heads: int,
         decoder_depth: int,
+        unimodal: bool,
         seed: int,
     ) -> None:
         """Build every part for the instruments the model reads, each from its own seed.
@@ -74,10 +75,13 @@ class CrossSensorMAE(nn.Module):
             decoder_dim: How wide a token is in the decoders.
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
+            unimodal: Whether each decoder reads its own tokens alone, with neither
+                the CLS of every instrument nor the others' tokens.
             seed: What every part's starting weights are drawn from, so a part
                 starts the same in every setup that has it.
         """
         super().__init__()
+        self.unimodal = unimodal
         # One encoder per instrument, each from its patches to tokens
         self.encoders = nn.ModuleDict()
         # One stack the instruments read together pass through, on shared weights
@@ -155,7 +159,8 @@ class CrossSensorMAE(nn.Module):
         Returns:
             predictions: Under "umr" each instrument's patches read from its own
                 tokens with the CLS of every instrument, under "cmr" from every
-                other instrument's without it. (B, K, *P)
+                other instrument's without it; unimodal, "umr" from its own tokens
+                alone and "cmr" empty. (B, K, *P)
             pooled: Each instrument's tile vector as one unit vector, in float.
                 (B, D)
         """
@@ -170,11 +175,19 @@ class CrossSensorMAE(nn.Module):
         )
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
-            predictions["umr"][name], predictions["cmr"][name] = self.decoders[name](
-                Context.joined([lead, contexts[name]]),
-                Context.joined([contexts[other] for other in batch if other != name]),
-                one.position,
-                one.acquisition,
-                hidden[name],
+            read = (
+                [contexts[name]]
+                if self.unimodal
+                else [
+                    Context.joined([lead, contexts[name]]),
+                    Context.joined(
+                        [contexts[other] for other in batch if other != name]
+                    ),
+                ]
+            )
+            written = self.decoders[name](
+                read, one.position, one.acquisition, hidden[name]
             )  # (B, K, *P) each
+            for term, prediction in zip(predictions, written, strict=False):
+                predictions[term][name] = prediction
         return predictions, pooled_tokens(contexts, readable, pooling)

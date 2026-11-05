@@ -51,6 +51,7 @@ def built_model(
         config.model.decoder_dim,
         config.model.decoder_heads,
         config.model.decoder_depth,
+        config.training.stage == "unimodal",
         config.dataset.seed,
     ).to(device)
     return model, device, sizes, shapes

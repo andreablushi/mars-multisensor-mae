@@ -72,7 +72,7 @@ def umr(
         name: reconstruction_error(
             predictions[name], batch[name], hidden[name], measure
         )
-        for name in batch
+        for name in predictions
     }
 
 
@@ -92,13 +92,13 @@ def cmr(
         measure: MSE, RMSE or RMSE+GRADIENT.
 
     Returns:
-        errors: Each instrument's error over its hidden patches. ()
+        errors: Each instrument's error over its hidden patches, none unimodal. ()
     """
     return {
         name: reconstruction_error(
             predictions[name], batch[name], hidden[name], measure
         )
-        for name in batch
+        for name in predictions
     }
 
 
