@@ -1,4 +1,4 @@
-"""Logging what one evaluation comes to: scores, matrices, the drawn tiles."""
+"""Logging what one evaluation comes to: scores, class distances, the drawn tiles."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from wandb.sdk.wandb_run import Run
 from evaluation.metrics import Metrics
 from logs.images.attention import attention_image
 from logs.images.ranging import ranging_image
-from logs.images.reconstruction import reconstruction_images
-from logs.images.tokens import token_image
 from logs.tracker import artifact_name
 
 EVALUATION = "evaluation"
@@ -23,25 +21,20 @@ def log_evaluation(
     run: Run,
     run_name: str,
     metrics: Mapping[tuple[str, str], Metrics],
-    reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-    attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    reconstructions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
-    tokens: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     directory: Path,
 ) -> None:
-    """Log every score, both class matrices, the rebuilt tiles and where CMR looked.
+    """Log every score, the class distances, the rebuilt tiles and where CMR looked.
 
     Args:
         run: The tracked run.
         run_name: What the run is called, which names its artifact.
         metrics: Each view's metrics, keyed by its pooling and view.
-        reconstructions: Each rebuilt tile's arrays, keyed by what it shows.
-        attentions: Each tile's instrument rebuilt from the others whole, keyed by
-            what the tile shows and the instrument.
+        reconstructions: Each tile's instrument masked and rebuilt from the others
+            whole, keyed by what the tile shows and the instrument.
         rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
             alike.
-        tokens: Each tile's observations drawn whole with their shared tokens, keyed
-            by what the tile shows.
         directory: Where the evaluation wrote its files, logged as its artifact.
     """
     scores = [
@@ -60,16 +53,8 @@ def log_evaluation(
         }
     )
     media = {}
-    for place, reconstruction in reconstructions.items():
-        for title, image in reconstruction_images(reconstruction).items():
-            media[f"{EVALUATION}/reconstruction/{place}/{title}"] = wandb.Image(
-                image, caption="original | input | UMR | CMR"
-            )
-    for place, held in tokens.items():
-        image, caption = token_image(held)
-        media[f"{EVALUATION}/tokens/{place}"] = wandb.Image(image, caption=caption)
     for section, drawn, by_query in (
-        ("attention", attention_image, attentions),
+        ("reconstruction", attention_image, reconstructions),
         ("ranging", ranging_image, rangings),
     ):
         for (place, query), attention in by_query.items():
@@ -82,20 +67,15 @@ def log_evaluation(
             f"{EVALUATION}/scores": wandb.Table(
                 columns=["pooling", "view", "metric", "value"], data=scores
             ),
-            **{
-                f"{EVALUATION}/{field}": wandb.Table(
-                    columns=["pooling", "view", "row", "column", "value"],
-                    data=[
-                        [pooling, view, row, column, float(value)]
-                        for (pooling, view), one in metrics.items()
-                        for row, held in zip(
-                            one.classes, getattr(one, field), strict=True
-                        )
-                        for column, value in zip(one.classes, held, strict=True)
-                    ],
-                )
-                for field in ("confusion", "distances")
-            },
+            f"{EVALUATION}/distances": wandb.Table(
+                columns=["pooling", "view", "row", "column", "value"],
+                data=[
+                    [pooling, view, row, column, float(value)]
+                    for (pooling, view), one in metrics.items()
+                    for row, held in zip(one.classes, one.distances, strict=True)
+                    for column, value in zip(one.classes, held, strict=True)
+                ],
+            ),
             **media,
         }
     )

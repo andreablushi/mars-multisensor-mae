@@ -173,7 +173,7 @@ def ground_map(
         count[shown] += 1
     return (
         scaled_values(grey[None], clip)[0],
-        value_bar(grey[None], clip, ROW_HEIGHT),
+        value_bar(grey[None], clip),
         total / np.maximum(count, 1),
     )
 
@@ -248,13 +248,12 @@ def sounder_passes(
                     for one in (values, attention)
                 ]
             ),
-            ROW_HEIGHT,
         )
         passes.append(
             (
                 mine,
                 scaled_values(grey[None], arrays["clip"])[0],
-                value_bar(grey[None], arrays["clip"], ROW_HEIGHT),
+                value_bar(grey[None], arrays["clip"]),
                 ratio,
                 str(arrays["identifier"][chosen]),
                 by_pass[chosen] / by_pass.sum(),
@@ -290,35 +289,42 @@ def ratio_bar() -> np.ndarray:
             (ROW_HEIGHT, W, 3)
     """
     ratio = 2.0 ** np.linspace(1, -1, 256)[:, None]
-    return colour_bar(
-        overlaid(np.ones_like(ratio), ratio)[:, 0], ["2x", "1x", "0.5x"], ROW_HEIGHT
-    )
+    return colour_bar(overlaid(np.ones_like(ratio), ratio)[:, 0], ["2x", "1x", "0.5x"])
 
 
 def attention_image(
     attention: Mapping[str, Mapping[str, np.ndarray]], query: str
 ) -> tuple[np.ndarray, str]:
-    """Return the query's original and CMR above every other instrument's attention.
+    """Return the query's original, masked, UMR and CMR above every other's attention.
 
     Args:
-        attention: Each instrument's patches, as the evaluation drew them.
+        attention: Each instrument's patches, as the evaluation drew them, the
+            query's masked ones drawn only where it holds them.
         query: The instrument rebuilt.
 
     Returns:
-        image: The two rows, each centred. (H, W, 3)
-        caption: What is rebuilt from what, and each instrument's share per token.
+        image: The query's rows, a spectrum's one per composite, above the
+            attention row, each centred. (H, W, 3)
+        caption: What the panels are, what is rebuilt from what, and each
+            instrument's share per token.
     """
     arrays = attention[query]
+    values = arrays["values"]
+    shown = {"original": values}
+    if "umr" in arrays:
+        hidden = arrays["hidden"].reshape(-1, *[1] * (values.ndim - 1))
+        shown |= {
+            "input": np.where(hidden, np.nan, values),
+            "UMR": np.where(hidden, arrays["umr"], values),
+        }
+    shown["CMR"] = arrays["cmr"]
     images = np.stack(
         [
             patch_mosaic(one, arrays["measured"], arrays["cell"])
-            for one in (arrays["values"], arrays["cmr"])
+            for one in shown.values()
         ]
-    )  # (2, *image)
-    composite = "false_colour_2529_1506_1080nm"
-    (top,) = instrument_panels(
-        query, images, arrays, {composite: COMPOSITES_NM[composite]}, ROW_HEIGHT
-    ).values()
+    )  # (N, *image)
+    tops = instrument_panels(query, images, arrays)
     sources = {name: held for name, held in attention.items() if name != query}
     grounds = [
         held for name, held in sources.items() if name != sharad.LAYOUT.instrument
@@ -342,8 +348,10 @@ def attention_image(
             # A track is drawn over what was measured alone
             panel[trace & ~np.isnan(grey) if sounded else trace] = TRACE_RGB
         panels.append(np.concatenate([panel, bar], axis=1))
-    caption = f"{query} from {', '.join(sources)}: " + ", ".join(drew)
-    return centred_rows([top, spaced_row([*panels, ratio_bar()])]), caption
+    caption = f"{' | '.join(shown)}, {query} from {', '.join(sources)}: " + ", ".join(
+        drew
+    )
+    return centred_rows([*tops.values(), spaced_row([*panels, ratio_bar()])]), caption
 
 
 def centred_rows(rows: list[np.ndarray]) -> np.ndarray:

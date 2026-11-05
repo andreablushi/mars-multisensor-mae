@@ -6,7 +6,6 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 import torch
-from building.configs import sharad
 from building.metadata.observation import ObservationMetadata
 from torch import Tensor
 from torch.nn import functional
@@ -34,12 +33,10 @@ def reconstruction_and_attention(
     seed: int,
     device: torch.device,
 ) -> tuple[
-    dict[str, dict[str, np.ndarray]],
     dict[str, dict[str, dict[str, np.ndarray]]],
     dict[str, dict[str, dict[str, np.ndarray]]],
-    dict[str, dict[str, np.ndarray]],
 ]:
-    """Return each instrument's shown observation rebuilt, and rebuilt from others.
+    """Return each instrument's shown observation rebuilt from the others, and masked.
 
     Args:
         model: The model, on the device.
@@ -54,14 +51,11 @@ def reconstruction_and_attention(
         device: Where the model runs.
 
     Returns:
-        reconstruction: Each instrument's shown observation as drawn_arrays names
-            it, the "hidden" patches, and those rebuilt under "umr" and "cmr".
         attention: For each instrument rebuilt from every other whole, keyed by it,
-            what cmr_attention hands back.
-        ranged: The same for each ranging instrument, rebuilt from the other alone.
-        tokens: Every observation of each ground instrument and the sounder's shown
-            pass, alike, with their tokens in the shared space, every patch read,
-            under "token".
+            what cmr_attention hands back, the query's arrays also holding what
+            masked_reconstruction hands back.
+        ranged: The same for each ranging instrument, rebuilt from the other alone,
+            without the masked patches.
     """
     alone, every = {}, {}
     for name in sizes:
@@ -71,9 +65,12 @@ def reconstruction_and_attention(
         held = sorted(rows[name], key=lambda one: one.valid_count)
         every[name] = drawn_arrays(build, name, held, sizes[name], shapes[name])
     model.eval()
+    masked = masked_reconstruction(model, alone, mask_ratio, seed, device)
     # The query's shown observation hidden whole, every source's all read whole
-    passes = {
-        query: cmr_attention(model, every | {query: alone[query]}, query, device)
+    attention = {
+        query: cmr_attention(
+            model, every | {query: alone[query] | masked[query]}, query, device
+        )
         for query in sizes
     }
     ranged = {
@@ -86,16 +83,10 @@ def reconstruction_and_attention(
             },
             query,
             device,
-        )[0]
+        )
         for query, other in zip(ranging, ranging[::-1], strict=True)
     }
-    return (
-        masked_reconstruction(model, alone, mask_ratio, seed, device),
-        {query: attended for query, (attended, _) in passes.items()},
-        ranged,
-        # A sounder's passes cross, so its query pass reads one alone whole
-        passes[sharad.LAYOUT.instrument][1],
-    )
+    return attention, ranged
 
 
 def drawn_arrays(
@@ -166,8 +157,7 @@ def masked_reconstruction(
         device: Where the model runs.
 
     Returns:
-        reconstruction: Each instrument's arrays, the "hidden" patches, and those
-            rebuilt under "umr" and "cmr".
+        masked: Each instrument's "hidden" patches, and those rebuilt under "umr".
     """
     batch = batch_on_device(sample, device)
     visible, hidden = drawn_masks(
@@ -176,10 +166,11 @@ def masked_reconstruction(
     with torch.no_grad():
         predictions, _ = model(batch, visible, hidden, "GAP")
     return {
-        name: one
-        | {"hidden": hidden[name][0].cpu().numpy()}
-        | {term: predictions[term][name][0].cpu().numpy() for term in ("umr", "cmr")}
-        for name, one in sample.items()
+        name: {
+            "hidden": hidden[name][0].cpu().numpy(),
+            "umr": predictions["umr"][name][0].cpu().numpy(),
+        }
+        for name in sample
     }
 
 
@@ -188,8 +179,8 @@ def cmr_attention(
     sample: Mapping[str, Mapping[str, np.ndarray]],
     query: str,
     device: torch.device,
-) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, np.ndarray]]]:
-    """Return the query rebuilt from every other instrument of a tile, and their tokens.
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return the query rebuilt from every other instrument of a tile.
 
     Args:
         model: The model, in evaluation on the device.
@@ -203,8 +194,6 @@ def cmr_attention(
             other's with their tokens' rolled out attention relative to uniform
             under "attention", the share all their tokens drew under "share" and
             their CLS under "cls".
-        tokens: Every instrument's arrays with its tokens in the shared space under
-            "token".
     """
     batch = batch_on_device(sample, device)
     present = {name: one.present for name, one in batch.items()}
@@ -224,16 +213,11 @@ def cmr_attention(
     # Each instrument's CLS, then its tokens
     lengths = [contexts[name].tokens.shape[1] for name in sources]
     split = np.split(drawn.cpu().numpy(), np.cumsum(lengths)[:-1])
-    attended = {query: sample[query] | {"cmr": cmr[0].cpu().numpy()}} | {
+    return {query: sample[query] | {"cmr": cmr[0].cpu().numpy()}} | {
         name: sample[name]
         | {"attention": taken[1:] * readable, "share": taken.sum(), "cls": taken[0]}
         for name, taken in zip(sources, split, strict=True)
     }
-    tokens = {
-        name: one | {"token": contexts[name].tokens[0, 1:].cpu().numpy()}
-        for name, one in sample.items()
-    }
-    return attended, tokens
 
 
 def rolled_attention(

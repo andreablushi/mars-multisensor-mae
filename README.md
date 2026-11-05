@@ -51,26 +51,27 @@ uv run --group digitalhub python scripts/evaluate.py --dh --ref main default/mae
 ```
 
 - It reads the run's latest W&B model and logs an evaluation run of the same name:
-  every score by pooling and view, the kNN confusion and class distance matrices,
-  the tiles `evaluation.tiles` names rebuilt, and the vectors and reconstructions as
-  the artifact `evaluation-<run name>`.
-- A reconstruction shows each instrument's most measured observation, SHARAD's
-  pass nearest 140° solar incidence, drawn over the configured clip or, on an
-  open side, the original's own extreme.
-- On the same two tiles each instrument is also rebuilt by CMR from every other
-  instrument read whole, beside where it looked: the decoder's attention rolled
-  out over its blocks (Abnar and Zuidema, 2020), its heads averaged, red where a
-  place drew more than its instrument's mean and blue where less, each
-  instrument's share in the caption. SHARAD shows its most attended pass. The
-  rebuilt observation is outlined in orange on every map, a SHARAD pass as its
-  track.
+  every score by pooling and view, the class distance matrices, the tiles
+  `evaluation.tiles` names rebuilt, and the vectors and reconstructions as the
+  artifact `evaluation-<run name>`.
+- A reconstruction shows the observation `evaluation.tiles` names for each
+  instrument: the original, the input with its hidden patches in blue, UMR with
+  the visible patches kept, and CMR from every other instrument read whole. CRISM
+  gets two rows, its 770 nm albedo and a false colour composite. Values are drawn
+  over the configured clip or, on an open side, the original's own extreme.
+- Below them is where CMR looked: the decoder's attention rolled out over its
+  blocks (Abnar and Zuidema, 2020), its heads averaged, red where a place drew
+  more than its instrument's mean and blue where less, each instrument's share in
+  the caption. SHARAD shows its most attended pass. The rebuilt observation is
+  outlined in orange on every map, a SHARAD pass as its track.
+- MOLA and SHARAD are also rebuilt from each other alone.
 - `random` is the baseline every score is coloured against.
 
 ## Comparison views
 
 The W&B project holds two saved views. Training shows the curves of every training
-run; Evaluation shows the score tables, the confusion and class distance matrices
-and the reconstructions of every evaluation run, coloured against `random`. Its
+run; Evaluation shows the score tables, the class distance matrices and the
+reconstructions of every evaluation run, coloured against `random`. Its
 tables and matrices are the W&B charts `scores` and `matrix` of the entity. Change
 either view in the W&B page.
 

@@ -10,13 +10,7 @@ from pathlib import Path
 import numpy as np
 from common.disk import parquet
 
-from configs.paths import (
-    ATTENTION_FILE,
-    RANGING_FILE,
-    RECONSTRUCTION_FILE,
-    TOKENS_FILE,
-    results_path,
-)
+from configs.paths import RANGING_FILE, RECONSTRUCTION_FILE, results_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,10 +39,8 @@ def write_results(
     run_name: str,
     classes: Mapping[str, str],
     vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-    reconstructions: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-    attentions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    reconstructions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
-    tokens: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
 ) -> Path:
     """Return where one run's evaluation was written, its vectors and drawn tiles.
 
@@ -56,13 +48,10 @@ def write_results(
         run_name: What the run is called, which names its results.
         classes: The class each tile earned, keyed by the tile.
         vectors: Each tile's vector, keyed by pooling, then view, then tile.
-        reconstructions: Each rebuilt tile's arrays, keyed by what it shows.
-        attentions: Each tile's instrument rebuilt from the others whole, keyed by
-            what the tile shows and the instrument.
+        reconstructions: Each tile's instrument masked and rebuilt from the others
+            whole, keyed by what the tile shows and the instrument.
         rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
             alike.
-        tokens: Each tile's observations drawn whole with their shared tokens, keyed
-            by what the tile shows.
 
     Returns:
         directory: The run's results, emptied of any earlier evaluation first.
@@ -81,11 +70,9 @@ def write_results(
     )
     drawn = {
         **{
-            RECONSTRUCTION_FILE.format(place): one
-            for place, one in reconstructions.items()
+            RECONSTRUCTION_FILE.format(*key): one
+            for key, one in reconstructions.items()
         },
-        **{TOKENS_FILE.format(place): one for place, one in tokens.items()},
-        **{ATTENTION_FILE.format(*key): one for key, one in attentions.items()},
         **{RANGING_FILE.format(*key): one for key, one in rangings.items()},
     }
     for name, by_instrument in drawn.items():

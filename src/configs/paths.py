@@ -20,13 +20,9 @@ RESULTS_ROOT = REPO_ROOT / "results"
 
 RESULTS_FILE = "results.parquet"
 
-RECONSTRUCTION_FILE = "reconstruction-{}.npz"
-
-ATTENTION_FILE = "attention-{}-{}.npz"
+RECONSTRUCTION_FILE = "reconstruction-{}-{}.npz"
 
 RANGING_FILE = "ranging-{}-{}.npz"
-
-TOKENS_FILE = "tokens-{}.npz"
 
 
 def build_root(build: str, root: str) -> Path:

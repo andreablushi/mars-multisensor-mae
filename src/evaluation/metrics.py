@@ -10,7 +10,6 @@ import numpy as np
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
-    confusion_matrix,
     silhouette_samples,
 )
 
@@ -22,8 +21,7 @@ class Metrics:
     Attributes:
         retrieval: Every tile's retrieval and ranking scores. (T,)
         knn: Accuracy and balanced accuracy of the kNN vote.
-        classes: The classes, in the order both matrices hold them.
-        confusion: Tiles of the row's class voted into the column's. (C, C)
+        classes: The classes, in the order the matrix holds them.
         distances: The mean cosine distance between the tiles of two classes. (C, C)
         silhouette: How much nearer each tile sits to its class than to the next. (T,)
     """
@@ -31,7 +29,6 @@ class Metrics:
     retrieval: dict[str, np.ndarray]
     knn: dict[str, float]
     classes: list[str]
-    confusion: np.ndarray
     distances: np.ndarray
     silhouette: np.ndarray
 
@@ -59,12 +56,10 @@ def metrics_by_view(
             similarities = held @ held.T
             labels = [classes[tile] for tile in tiles]
             classed = sorted(set(labels))
-            knn, confusion = knn_metrics(similarities, labels, classed, k)
             metrics[pooling, view] = Metrics(
                 retrieval=retrieval_metrics(similarities, labels),
-                knn=knn,
+                knn=knn_metrics(similarities, labels, k),
                 classes=classed,
-                confusion=confusion,
                 distances=class_distance_metrics(similarities, labels, classed),
                 silhouette=silhouette_scores(similarities, labels),
             )
@@ -108,20 +103,17 @@ def retrieval_metrics(
 
 
 def knn_metrics(
-    similarities: np.ndarray, labels: Sequence[str], classes: Sequence[str], k: int
-) -> tuple[dict[str, float], np.ndarray]:
+    similarities: np.ndarray, labels: Sequence[str], k: int
+) -> dict[str, float]:
     """Return how well the class each tile's k nearest tiles vote for matches its own.
 
     Args:
         similarities: The cosine of every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
-        classes: The classes, in the order the matrix holds them.
-        k: How many neighbours vote.
+        k: How many neighbours vote, a tie going to the nearest.
 
     Returns:
         scores: Accuracy and balanced accuracy.
-        confusion: Tiles of the row's class voted into the column's, a tie going to
-            the nearest. (C, C)
     """
     votes = np.asarray(labels)[ranked_neighbours(similarities)[:, :k]]  # (T, k)
     predicted = []
@@ -129,11 +121,10 @@ def knn_metrics(
         counts = Counter(row)
         most = max(counts.values())
         predicted.append(next(one for one in row if counts[one] == most))
-    scores = {
+    return {
         "accuracy": float(accuracy_score(labels, predicted)),
         "balanced accuracy": float(balanced_accuracy_score(labels, predicted)),
     }
-    return scores, confusion_matrix(labels, predicted, labels=classes)
 
 
 def class_distance_metrics(

@@ -62,35 +62,29 @@ def evaluate(
     )
     vectors = tile_vectors(model, loader, device)
     classes = build.read_label_by_tile()
-    reconstructions, attentions, rangings, tokens = {}, {}, {}, {}
+    reconstructions, rangings = {}, {}
     for place, drawn in tiles.items():
-        reconstructions[place], by_query, ranged, tokens[place] = (
-            reconstruction_and_attention(
-                model,
-                build,
-                by_tile[drawn.tile],
-                drawn.shown,
-                sizes,
-                shapes,
-                mask_ratio,
-                ranging,
-                seed,
-                device,
-            )
+        by_query, ranged = reconstruction_and_attention(
+            model,
+            build,
+            by_tile[drawn.tile],
+            drawn.shown,
+            sizes,
+            shapes,
+            mask_ratio,
+            ranging,
+            seed,
+            device,
         )
-        attentions |= {(place, query): one for query, one in by_query.items()}
+        reconstructions |= {(place, query): one for query, one in by_query.items()}
         rangings |= {(place, query): one for query, one in ranged.items()}
-    directory = write_results(
-        run_name, classes, vectors, reconstructions, attentions, rangings, tokens
-    )
+    directory = write_results(run_name, classes, vectors, reconstructions, rangings)
     log_evaluation(
         run,
         run_name,
         metrics_by_view(vectors, classes, neighbours),
         reconstructions,
-        attentions,
         rangings,
-        tokens,
         directory,
     )
 

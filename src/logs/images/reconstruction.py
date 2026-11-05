@@ -1,4 +1,4 @@
-"""One observation's patches beside what UMR and CMR rebuilt of the hidden ones."""
+"""One observation's patches beside what UMR and CMR rebuilt of them."""
 
 from __future__ import annotations
 
@@ -74,23 +74,22 @@ def scaled_values(images: np.ndarray, clip: np.ndarray) -> np.ndarray:
     return np.clip((images - low) / np.maximum(high - low, 1e-12), 0, 1)
 
 
-def colour_bar(colours: np.ndarray, labels: Sequence[str], rows: int) -> np.ndarray:
+def colour_bar(colours: np.ndarray, labels: Sequence[str]) -> np.ndarray:
     """Return a vertical colour bar labelled at its top, middle and bottom.
 
     Args:
         colours: The bar's colours from top to bottom. (N, 3)
         labels: What its top, middle and bottom stand for.
-        rows: How high the bar is drawn.
 
     Returns:
-        bar: The bar and its labels on white, a margin to its left. (rows, W, 3)
+        bar: The bar and its labels on white, a margin to its left. (ROW_HEIGHT, W, 3)
     """
-    size = rows // 24
+    size = ROW_HEIGHT // 24
     font = ImageFont.load_default(size=size)
-    top, bottom, left = size // 2 + 1, rows - size // 2 - 1, size // 2
+    top, bottom, left = size // 2 + 1, ROW_HEIGHT - size // 2 - 1, size // 2
     text = left + size + size // 2
     width = text + round(max(font.getlength(label) for label in labels)) + left
-    image = Image.new("RGB", (width, rows), EMPTY_RGB)
+    image = Image.new("RGB", (width, ROW_HEIGHT), EMPTY_RGB)
     strip = Image.fromarray(np.asarray(colours, np.uint8)[:, None])
     image.paste(
         strip.resize((size, bottom - top), Image.Resampling.NEAREST), (left, top)
@@ -103,39 +102,39 @@ def colour_bar(colours: np.ndarray, labels: Sequence[str], rows: int) -> np.ndar
     return np.array(image)
 
 
-def value_bar(images: np.ndarray, clip: np.ndarray, rows: int) -> np.ndarray:
+def value_bar(images: np.ndarray, clip: np.ndarray) -> np.ndarray:
     """Return the grey bar of images drawn by scaled_values, labelled with their values.
 
     Args:
         images: The images, the original first. (N, ...)
         clip: The low and high the z-scores were clipped to, NaN for an open side,
             which the original's own extreme takes.
-        rows: How high the bar is drawn.
 
     Returns:
-        bar: The bar, white at the top. (rows, W, 3)
+        bar: The bar, white at the top. (ROW_HEIGHT, W, 3)
     """
     low, high = value_range(images, clip)
     return colour_bar(
         np.repeat(np.linspace(255, 0, 256)[:, None], 3, axis=1),
         [f"{value:.3g}" for value in (high, (low + high) / 2, low)],
-        rows,
     )
 
 
-def sounder_resampled(images: np.ndarray, rows: int) -> np.ndarray:
-    """Return images resampled to some rows and half as many columns.
+def sounder_resampled(images: np.ndarray) -> np.ndarray:
+    """Return images resampled to ROW_HEIGHT rows and half as many columns.
 
     Args:
         images: The images. (N, H, W, ...)
-        rows: How many rows each is resampled to.
 
     Returns:
-        resampled: The same images, each twice as high as wide. (N, rows, rows / 2, ...)
+        resampled: The same images, each twice as high as wide.
+            (N, ROW_HEIGHT, ROW_HEIGHT / 2, ...)
     """
     taken, columns = (
         np.linspace(0, size - 1, wanted).round().astype(int)
-        for size, wanted in zip(images.shape[1:3], (rows, rows // 2), strict=True)
+        for size, wanted in zip(
+            images.shape[1:3], (ROW_HEIGHT, ROW_HEIGHT // 2), strict=True
+        )
     )
     return images[:, taken][:, :, columns]
 
@@ -157,9 +156,7 @@ def spaced_row(panels: list[np.ndarray]) -> np.ndarray:
     ).astype(np.uint8)
 
 
-def panel_image(
-    images: np.ndarray, clip: np.ndarray, stretched: bool, rows: int
-) -> np.ndarray:
+def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.ndarray:
     """Return the panels of one image side by side, every band over one range.
 
     Args:
@@ -170,11 +167,10 @@ def panel_image(
             which the original's own extreme takes.
         stretched: Whether each panel is resampled to half as many columns as rows,
             so it stands twice as high as wide.
-        rows: How many rows each panel is resampled to.
 
     Returns:
         image: The panels from left to right and the bar of their values, white a
-            twelfth of one around each. (rows, W', 3)
+            twelfth of one around each. (ROW_HEIGHT, W', 3)
     """
     scaled = scaled_values(images, clip) * 255
     rgb = np.repeat(scaled, 3 // images.shape[-1], axis=-1)  # (N, H, W, 3)
@@ -184,16 +180,18 @@ def panel_image(
     rgb[1][empty[1] & ~empty[0]] = (150, 175, 215)
     rgb = rgb.astype(np.uint8)
     if stretched:
-        panels = list(sounder_resampled(rgb, rows))
+        panels = list(sounder_resampled(rgb))
     else:
-        width = round(rgb.shape[2] * rows / rgb.shape[1])
+        width = round(rgb.shape[2] * ROW_HEIGHT / rgb.shape[1])
         panels = [
             np.array(
-                Image.fromarray(one).resize((width, rows), Image.Resampling.NEAREST)
+                Image.fromarray(one).resize(
+                    (width, ROW_HEIGHT), Image.Resampling.NEAREST
+                )
             )
             for one in rgb
         ]
-    return spaced_row([*panels, value_bar(images, clip, rows)])
+    return spaced_row([*panels, value_bar(images, clip)])
 
 
 def nearest_bands(wanted: tuple[float, ...]) -> np.ndarray:
@@ -213,8 +211,6 @@ def instrument_panels(
     name: str,
     images: np.ndarray,
     arrays: Mapping[str, np.ndarray],
-    composites: Mapping[str, tuple[float, ...]],
-    rows: int,
 ) -> dict[str, np.ndarray]:
     """Return one instrument's panels side by side, a spectrum's as stored composites.
 
@@ -222,11 +218,9 @@ def instrument_panels(
         name: The instrument, as ODE names it.
         images: The original, then what is drawn beside it. (N, *image)
         arrays: Its patches as the run read them, with their "clip", "mean" and "std".
-        composites: The wavelengths of each composite a spectrum is drawn as.
-        rows: How many rows each panel is resampled to.
 
     Returns:
-        drawn: The panels side by side, keyed by what they show. (rows, W, 3)
+        drawn: The panels side by side, keyed by what they show. (ROW_HEIGHT, W, 3)
     """
     if images.ndim == 3:
         return {
@@ -234,50 +228,13 @@ def instrument_panels(
                 images[..., None],
                 arrays["clip"],
                 name == sharad.LAYOUT.instrument,
-                rows,
             )
         }
     # A spectrum is drawn as stored, over the original's own range
     stored = images * arrays["std"] + arrays["mean"]
     return {
         f"{name}_{label}": panel_image(
-            stored[..., nearest_bands(wanted)], np.full(2, np.nan), False, rows
+            stored[..., nearest_bands(wanted)], np.full(2, np.nan), False
         )
-        for label, wanted in composites.items()
+        for label, wanted in COMPOSITES_NM.items()
     }
-
-
-def reconstruction_images(
-    reconstruction: Mapping[str, Mapping[str, np.ndarray]],
-) -> dict[str, np.ndarray]:
-    """Return every instrument's image as the run read it, CRISM's as stored composites.
-
-    Args:
-        reconstruction: Each instrument's patches, as the run read and rebuilt them.
-
-    Returns:
-        drawn: Each image's panels side by side, keyed by what it shows. (H, W, 3)
-    """
-    drawn = {}
-    for name, arrays in reconstruction.items():
-        values = arrays["values"]
-        hidden = arrays["hidden"].reshape(-1, *[1] * (values.ndim - 1))
-        images = np.stack(
-            [
-                patch_mosaic(one, arrays["measured"], arrays["cell"])
-                for one in (
-                    values,
-                    np.where(hidden, np.nan, values),
-                    np.where(hidden, arrays["umr"], values),
-                    np.where(hidden, arrays["cmr"], values),
-                )
-            ]
-        )  # (4, *image)
-        height = images.shape[1]
-        rows = (
-            2 * ROW_HEIGHT
-            if name == sharad.LAYOUT.instrument
-            else -(-ROW_HEIGHT // height) * height
-        )
-        drawn |= instrument_panels(name, images, arrays, COMPOSITES_NM, rows)
-    return drawn
