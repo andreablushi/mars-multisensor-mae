@@ -15,25 +15,40 @@ from architecture.models.tokens import Tokens
 def reconstruction_error(
     prediction: Tensor, target: Tokens, scored: Tensor, measure: str
 ) -> Tensor:
-    """Return the mean squared error over the scored patches, or its root.
+    """Return the scored patches' squared error, its root, or the root plus gradients.
 
     Args:
         prediction: The predicted patches. (B, K, *P)
         target: The instrument's patches over the batch.
         scored: Which patches are scored. (B, K)
-        measure: MSE, or RMSE for its root.
+        measure: MSE, RMSE for its root, or RMSE+GRADIENT adding the mean
+            absolute error of the differences between neighbouring samples.
 
     Returns:
         error: Each scored patch's squared error over its measured samples,
-            averaged over the patches, rooted for RMSE. ()
+            averaged over the patches, rooted for RMSE, with the gradient error
+            added for RMSE+GRADIENT. ()
     """
     measured = target.measured.to(target.values.dtype).expand_as(target.values)
     samples = tuple(range(2, target.values.dim()))
+    residual = prediction - target.values
     # Each patch's squared error, averaged over its measured samples
-    error = ((prediction - target.values) ** 2 * measured).sum(dim=samples)
+    error = (residual**2 * measured).sum(dim=samples)
     error = error / measured.sum(dim=samples).clamp(min=1)  # (B, K)
     error = error[scored].mean()  # ()
-    return error.sqrt() if measure == "RMSE" else error
+    if measure == "MSE":
+        return error
+    if measure == "RMSE":
+        return error.sqrt()
+    # Each patch's gradient error along every axis, where both neighbours are measured
+    gradient, pairs = 0, 0
+    for axis in samples:
+        length = target.values.size(axis) - 1
+        pair = measured.narrow(axis, 0, length) * measured.narrow(axis, 1, length)
+        gradient = gradient + (residual.diff(dim=axis).abs() * pair).sum(dim=samples)
+        pairs = pairs + pair.sum(dim=samples)
+    gradient = (gradient / pairs.clamp(min=1))[scored].mean()  # ()
+    return error.sqrt() + gradient
 
 
 def umr(
@@ -48,7 +63,7 @@ def umr(
         predictions: Each instrument's patches read from its own tokens. (B, K, *P)
         batch: Each instrument's patches over the batch.
         hidden: Which patches are predicted. (B, K)
-        measure: MSE, or RMSE for its root.
+        measure: MSE, RMSE or RMSE+GRADIENT.
 
     Returns:
         errors: Each instrument's error over its hidden patches. ()
@@ -74,7 +89,7 @@ def cmr(
             (B, K, *P)
         batch: Each instrument's patches over the batch.
         hidden: Which patches are predicted. (B, K)
-        measure: MSE, or RMSE for its root.
+        measure: MSE, RMSE or RMSE+GRADIENT.
 
     Returns:
         errors: Each instrument's error over its hidden patches. ()

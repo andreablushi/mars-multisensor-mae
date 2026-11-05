@@ -8,6 +8,6 @@ encoder_depth: 4
 crossencoder_depth: 2
 
 # Decoders.
-decoder_dim: 384
-decoder_heads: 6
-decoder_depth: 4
+decoder_dim: 512
+decoder_heads: 8
+decoder_depth: 8

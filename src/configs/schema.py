@@ -86,7 +86,7 @@ class TrainingConfig:
         warmup_steps: How many steps the rate climbs before the cosine decay.
         validate_every: How many steps between two validations.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
-        reconstruction_error: What UMR and CMR measure, MSE or RMSE.
+        reconstruction_error: What UMR and CMR measure, MSE, RMSE or RMSE+GRADIENT.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the encoders and decoders read the acquisition angles.
         checkpoints: Where checkpoints are written, relative to the repository.

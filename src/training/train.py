@@ -75,7 +75,7 @@ def train(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
-        measure: The reconstruction error, MSE or RMSE.
+        measure: The reconstruction error, MSE, RMSE or RMSE+GRADIENT.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
         device: Where the model runs.
