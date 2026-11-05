@@ -41,6 +41,6 @@ budget:
 budget_scale: 4
 
 # Train and validation shares.
-split: [0.98, 0.02]
+split: [0.995, 0.005]
 
 seed: 42

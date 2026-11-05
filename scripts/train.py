@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-import torch
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
@@ -17,7 +16,6 @@ from logs.tracker import (
     TRAINING,
     console_logger,
     log_checkpoint,
-    logged_checkpoint,
     start_logging,
 )
 from training.train import train
@@ -57,40 +55,41 @@ def run_training(
             "tiles": {"training": len(training), "validation": len(validation)},
         },
     )
-    if config.training.stage == "crossmodal":
-        held = logged_checkpoint(run, config.training.unimodal_run)
-        model.load_state_dict(torch.load(held, map_location=device)["model"])
-        model.encoders.requires_grad_(False)
-    last = train(
-        model,
-        build,
-        training,
-        validation,
-        sizes,
-        shapes,
-        config.dataset.budget,
-        config.dataset.budget_scale,
-        config.training.batch_size,
-        workers,
-        config.training.num_steps,
-        config.training.learning_rate,
-        config.training.weight_decay,
-        config.training.warmup_steps,
-        config.training.validate_every,
-        config.training.mask_ratio,
-        config.training.contrastive.instruments
-        if config.training.stage != "unimodal"
-        else [],
-        config.training.contrastive.pooling,
-        config.training.contrastive.temperature,
-        config.training.reconstruction_error,
-        config.training.checkpoints,
-        config.dataset.seed,
-        device,
-        run,
-        asdict(config),
-    )
-    log_checkpoint(run, last, run_name)
+    stages = [True, False] if config.training.stage == "staged" else [False]
+    for stage, unimodal in enumerate(stages):
+        model.unimodal = unimodal
+        # A staged run's second stage keeps the encoders its first one trained
+        model.encoders.requires_grad_(stage == 0)
+        last = train(
+            model,
+            build,
+            training,
+            validation,
+            sizes,
+            shapes,
+            config.dataset.budget,
+            config.dataset.budget_scale,
+            config.training.batch_size,
+            workers,
+            config.training.num_steps,
+            config.training.learning_rate,
+            config.training.weight_decay,
+            config.training.warmup_steps,
+            config.training.validate_every,
+            config.training.mask_ratio,
+            [] if unimodal else config.training.contrastive.instruments,
+            config.training.contrastive.pooling,
+            config.training.contrastive.temperature,
+            config.training.reconstruction_error,
+            config.training.checkpoints,
+            config.dataset.seed,
+            stage * config.training.num_steps,
+            device,
+            run,
+            asdict(config),
+        )
+        # The first stage's model is kept apart, under its own name
+        log_checkpoint(run, last, f"{run_name}/unimodal" if unimodal else run_name)
     run.finish()
     if evaluate:
         run_evaluation.__wrapped__(run_name, overrides)

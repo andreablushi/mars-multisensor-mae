@@ -57,7 +57,6 @@ class CrossSensorMAE(nn.Module):
         decoder_dim: int,
         decoder_heads: int,
         decoder_depth: int,
-        unimodal: bool,
         seed: int,
     ) -> None:
         """Build every part for the instruments the model reads, each from its own seed.
@@ -75,13 +74,12 @@ class CrossSensorMAE(nn.Module):
             decoder_dim: How wide a token is in the decoders.
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
-            unimodal: Whether each decoder reads its own tokens alone, with neither
-                the CLS of every instrument nor the others' tokens.
             seed: What every part's starting weights are drawn from, so a part
                 starts the same in every setup that has it.
         """
         super().__init__()
-        self.unimodal = unimodal
+        # Whether each decoder reads its own tokens alone, as a staged run's first stage
+        self.unimodal = False
         # One encoder per instrument, each from its patches to tokens
         self.encoders = nn.ModuleDict()
         # One stack the instruments read together pass through, on shared weights

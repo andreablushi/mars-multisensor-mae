@@ -24,11 +24,10 @@ contrastive:
 # Whether the encoders and decoders read the acquisition angles the dataset lists.
 acquisition: true
 
-# What the run trains: joint, every term at once; unimodal, UMR alone, with no CMR, no
-# MIM and no CLS of every instrument; crossmodal, every term from the model of
-# unimodal_run, its encoders frozen.
+# What the run trains: joint, every term at once; staged, num_steps of UMR alone, with
+# no CMR, no MIM and no CLS of every instrument, then num_steps of every term on the
+# encoders it trained, frozen, each stage logging its model.
 stage: joint
-unimodal_run: null
 
 # Checkpoint folder.
 checkpoints: checkpoints

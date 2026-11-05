@@ -49,6 +49,7 @@ def train(
     measure: str,
     checkpoints: str,
     seed: int,
+    steps_before: int,
     device: torch.device,
     run: Run,
     config: Mapping[str, object],
@@ -78,6 +79,7 @@ def train(
         measure: The reconstruction error, MSE, RMSE or RMSE+GRADIENT.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
+        steps_before: How many steps the run logged before this training.
         device: Where the model runs.
         run: The tracked run every metric is logged to.
         config: The run's whole config, saved beside the weights.
@@ -147,14 +149,14 @@ def train(
             )
         optimizer.step()
         scheduler.step()
-        log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
+        log_terms(run, steps_before + step, TRAIN, terms | {"grad_norm": norm})
         # The last step is validated too, so every run ends on a measured loss
         if step % validate_every and step < num_steps:
             continue
         metrics = validation_terms(
             model, validation, step_terms, mask_generators(model.encoders, seed, device)
         )
-        log_terms(run, step, VALIDATION, metrics)
+        log_terms(run, steps_before + step, VALIDATION, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])
     last = checkpoint_path(checkpoints, "last")
     last.parent.mkdir(parents=True, exist_ok=True)
@@ -162,12 +164,15 @@ def train(
         {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
-            "step": num_steps,
+            "step": steps_before + num_steps,
             "config": dict(config),
         },
         last,
     )
     run.summary.update(
-        {"steps": num_steps, "run_seconds": time.perf_counter() - started}
+        {
+            "steps": steps_before + num_steps,
+            "run_seconds": time.perf_counter() - started,
+        }
     )
     return last
