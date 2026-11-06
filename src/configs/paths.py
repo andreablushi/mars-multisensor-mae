@@ -24,6 +24,10 @@ RECONSTRUCTION_FILE = "reconstruction-{}-{}.npz"
 
 RANGING_FILE = "ranging-{}-{}.npz"
 
+BENCHMARKS_ROOT = REPO_ROOT / "benchmarks"
+
+PREDICTIONS_FILE = "predictions.parquet"
+
 
 def build_root(build: str, root: str) -> Path:
     """Return where one build of the dataset sits on this machine."""
@@ -45,3 +49,8 @@ def checkpoint_path(checkpoints: str, name: str) -> Path:
 def results_path(run_name: str, name: str = RESULTS_FILE) -> Path:
     """Return where one of a run's evaluation files is written on this machine."""
     return RESULTS_ROOT / run_name / name
+
+
+def predictions_path(run_name: str) -> Path:
+    """Return where a run's benchmark predictions are written on this machine."""
+    return BENCHMARKS_ROOT / run_name / PREDICTIONS_FILE
