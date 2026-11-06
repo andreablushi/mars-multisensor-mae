@@ -1,11 +1,16 @@
-"""What a run reads from DigitalHub: the published builds of the dataset."""
+"""What a run reads from DigitalHub: the published builds and SWIM's ice labels."""
 
 from __future__ import annotations
 
+import io
 from urllib.parse import urlparse
 
 import digitalhub as dh
+from analysis import paths as labelled
+from analysis.ground_truth.swim.labels import ICE_LABELS
+from analysis.ground_truth.swim.models import IceLabel
 from botocore.exceptions import ClientError, ResponseStreamingError
+from common.disk import parquet
 from urllib3.exceptions import SSLError
 
 from configs.paths import build_root
@@ -67,3 +72,17 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
             for name, fields in config.dataset.acquisition.items()
         },
     )
+
+
+def published_ice_labels() -> dict[str, IceLabel]:
+    """Return the ice SWIM finds under every tile it covers, read straight into memory.
+
+    Returns:
+        labels: Each tile's ice at both depths, keyed by the tile.
+    """
+    project = dh.get_or_create_project(load_platform()["project"])
+    published = urlparse(project.get_artifact("swim").spec.path)
+    key = f"{published.path.strip('/')}/{labelled.ICE_LABELS_NAME}"
+    held = dh.get_s3_client().get_object(Bucket=published.netloc, Key=key)
+    rows = parquet.read_rows(IceLabel, ICE_LABELS, io.BytesIO(held["Body"].read()))
+    return {one.tile: one for one in rows}
