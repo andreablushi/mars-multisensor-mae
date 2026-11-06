@@ -132,6 +132,15 @@ def train(
         measure=measure,
         device=device,
     )
+    # A unimodal stage clips each instrument alone, as if trained apart
+    clipped = (
+        [
+            [*model.encoders[name].parameters(), *model.decoders[name].parameters()]
+            for name in model.encoders
+        ]
+        if model.unimodal
+        else [list(model.parameters())]
+    )
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
@@ -142,7 +151,7 @@ def train(
         terms = step_terms(batch, generators=generators)
         terms["loss"].backward()
         # Stabilize training against exploding gradients
-        norm = clip_grad_norm_(model.parameters(), 1.0)
+        norm = torch.stack([clip_grad_norm_(group, 1.0) for group in clipped]).max()
         if not torch.isfinite(norm):
             raise FloatingPointError(
                 f"step {step} has a non-finite gradient: {identities}"

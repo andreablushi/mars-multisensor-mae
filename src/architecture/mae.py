@@ -78,7 +78,7 @@ class CrossSensorMAE(nn.Module):
                 starts the same in every setup that has it.
         """
         super().__init__()
-        # Whether each decoder reads its own tokens alone, as a staged run's first stage
+        # Whether each instrument runs apart, as a staged run's first stage
         self.unimodal = False
         # One encoder per instrument, each from its patches to tokens
         self.encoders = nn.ModuleDict()
@@ -111,7 +111,7 @@ class CrossSensorMAE(nn.Module):
 
     def embed_tokens(
         self, batch: dict[str, Tokens], readable: dict[str, Tensor]
-    ) -> tuple[Tensor, dict[str, Context]]:
+    ) -> tuple[Tensor | None, dict[str, Context]]:
         """Return the CLS of every instrument, and each one's tokens in shared space.
 
         Args:
@@ -119,18 +119,27 @@ class CrossSensorMAE(nn.Module):
             readable: Which patches each encoder may read. (B, K)
 
         Returns:
-            cls: The token read over every instrument together. (B, D)
+            cls: The token read over every instrument together, none unimodal. (B, D)
             contexts: Each instrument's CLS token, then its tokens, meaningful where
-                readable, with their centres and which of them count. (B, 1 + K, D)
+                readable, with their centres and which of them count; unimodal,
+                straight from its encoder. (B, 1 + K, D)
         """
         with_cls = {
             name: one.readable_and_position_with_cls(readable[name])
             for name, one in batch.items()
         }
-        cls, tokens = self.crossencoder(
-            [self.encoders[name](one, readable[name]) for name, one in batch.items()],
-            [counted for counted, _ in with_cls.values()],
-            [position for _, position in with_cls.values()],
+        encoded = [
+            self.encoders[name](one, readable[name]) for name, one in batch.items()
+        ]
+        # A unimodal stage shares nothing between the instruments
+        cls, tokens = (
+            (None, encoded)
+            if self.unimodal
+            else self.crossencoder(
+                encoded,
+                [counted for counted, _ in with_cls.values()],
+                [position for _, position in with_cls.values()],
+            )
         )
         return cls, {
             name: Context(token, position, counted)
@@ -166,16 +175,20 @@ class CrossSensorMAE(nn.Module):
         seen = {name: kept for name, (kept, _) in read.items()}
         readable = {name: counted for name, (_, counted) in read.items()}
         cls, contexts = self.embed_tokens(seen, readable)
-        lead = Context(
-            cls.unsqueeze(1),
-            cls.new_zeros(len(cls), 1, 3),
-            cls.new_ones(len(cls), 1, dtype=torch.bool),
+        lead = (
+            None
+            if cls is None
+            else Context(
+                cls.unsqueeze(1),
+                cls.new_zeros(len(cls), 1, 3),
+                cls.new_ones(len(cls), 1, dtype=torch.bool),
+            )
         )
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
             read = (
                 [contexts[name]]
-                if self.unimodal
+                if lead is None
                 else [
                     Context.joined([lead, contexts[name]]),
                     Context.joined(
