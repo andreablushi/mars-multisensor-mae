@@ -1,0 +1,45 @@
+# Build whose tiles SWIM labels, read with every label it has.
+build: training
+
+# Instruments the heads read.
+instruments: ${model.instruments}
+
+# Equal folds the labelled tiles are dealt into, by squares of block_deg degrees
+# each dealt whole: the first tests, the second validates, the rest train.
+folds: 10
+block_deg: 10.0
+
+# What the classifier reads of a tile, the GAP of its tokens or its CLS.
+pooling: GAP
+
+# How every head is trained, as a linear probe and fine-tuned.
+finetune:
+  # Tiles per batch, each cut to the training budget.
+  batch_size: 32
+  budget: ${dataset.budget}
+  budget_scale: ${dataset.budget_scale}
+  # Most epochs, and epochs without a better validation AUPRC that stop it.
+  epochs: 30
+  patience: 5
+  # Epochs of warmup before the cosine decay.
+  warmup_epochs: 5
+  # Peak learning rates of the head, and of the encoders when fine-tuned.
+  head_learning_rate: 0.001
+  encoder_learning_rate: 0.00001
+  weight_decay: 0.05
+
+# How every head is measured on the validation and test tiles.
+evaluation:
+  # Tiles per batch, each read whole.
+  batch_size: 1
+  # Test tiles drawn as SWIM's grids beside the predicted ones, over the
+  # observation shown.
+  tiles:
+    boundary:
+      tile: b222_c0148
+      shown:
+        CTX: b08_012592_2105_xn_30n266w
+    shallow:
+      tile: b259_c0414
+      shown:
+        CTX: b04_011277_2283_xn_48n008w

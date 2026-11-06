@@ -138,6 +138,70 @@ class EvaluationConfig:
 
 
 @dataclass
+class FinetuneConfig:
+    """How every benchmark head is trained, as a linear probe and fine-tuned.
+
+    Attributes:
+        batch_size: How many tiles one batch holds.
+        budget: How many patches of each instrument a tile keeps.
+        budget_scale: The most a batch's budget is multiplied by.
+        epochs: The most epochs a head trains for.
+        patience: How many epochs without a better validation AUPRC stop it.
+        warmup_epochs: How many epochs the rate climbs before the cosine decay.
+        head_learning_rate: The head's peak learning rate.
+        encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
+        weight_decay: The AdamW weight decay.
+    """
+
+    batch_size: int
+    budget: dict[str, int]
+    budget_scale: float
+    epochs: int
+    patience: int
+    warmup_epochs: int
+    head_learning_rate: float
+    encoder_learning_rate: float
+    weight_decay: float
+
+
+@dataclass
+class BenchmarkEvaluationConfig:
+    """How every benchmark head is measured on the validation and test tiles.
+
+    Attributes:
+        batch_size: How many tiles one batch holds, each read whole.
+        tiles: The test tiles drawn as SWIM's grids beside the predicted ones.
+    """
+
+    batch_size: int
+    tiles: dict[str, DrawnTile]
+
+
+@dataclass
+class BenchmarkConfig:
+    """What a trained model is probed and fine-tuned on: SWIM's ice under each tile.
+
+    Attributes:
+        build: The build whose labelled tiles are read, published as dataset-<build>.
+        instruments: The instruments the heads read.
+        folds: How many equal folds the labelled tiles are dealt into, the first
+            testing, the second validating and the rest training.
+        block_deg: How wide a square of the map is, in degrees, each one dealt whole.
+        pooling: What the classifier reads of a tile, the GAP of its tokens or its CLS.
+        finetune: How every head is trained.
+        evaluation: How every head is measured.
+    """
+
+    build: str
+    instruments: list[str]
+    folds: int
+    block_deg: float
+    pooling: str
+    finetune: FinetuneConfig
+    evaluation: BenchmarkEvaluationConfig
+
+
+@dataclass
 class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
@@ -146,9 +210,11 @@ class Config:
         model: What it trains.
         training: How it trains.
         evaluation: How what it trained is measured.
+        benchmark: How what it trained is probed and fine-tuned on SWIM's ice.
     """
 
     dataset: DatasetConfig
     model: ModelConfig
     training: TrainingConfig
     evaluation: EvaluationConfig
+    benchmark: BenchmarkConfig
