@@ -1,21 +1,24 @@
-"""The loaders reading a build's tiles in batches, and the cache they read."""
+"""The loaders reading a build's tiles in batches, the cache they read, and splits."""
 
 from __future__ import annotations
 
 import gc
+import math
 import random
 from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 
 import numpy as np
 import torch
+from analysis.ground_truth.swim.models import IceLabel
 from building.configs import sharad
 from common.disk.files import atomic_path
+from sklearn.model_selection import StratifiedGroupKFold
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
 from architecture.models.tokens import Tokens
-from configs.load import named_generator
+from configs.load import named_generator, named_seed
 from configs.paths import ready_array_path
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
@@ -201,4 +204,40 @@ def tile_loader(
             scale=budget_scale if training else 1.0,
             seed=None if training else seed,
         ),
+    )
+
+
+def ice_split(
+    labels: Mapping[str, IceLabel], folds: int, block_deg: float, seed: int
+) -> tuple[list[str], list[str], list[str]]:
+    """Return the labelled tiles split by place into training, validation and test.
+
+    Args:
+        labels: Each tile's ice at both depths, keyed by the tile.
+        folds: How many equal folds the tiles are dealt into, the first testing, the
+            second validating and the rest training.
+        block_deg: How wide a square of the map is, in degrees, each one dealt whole.
+        seed: The run's seed, which fixes the deal.
+
+    Returns:
+        training: The training tiles.
+        validation: The validation tiles.
+        test: The test tiles.
+    """
+    tiles = sorted(labels)
+    squares = [
+        (
+            math.floor(labels[tile].centre_lat / block_deg),
+            math.floor(labels[tile].centre_lon / block_deg),
+        )
+        for tile in tiles
+    ]
+    strata = [(labels[tile].ice_1_5m, labels[tile].ice_5m) for tile in tiles]
+    dealt = StratifiedGroupKFold(
+        folds, shuffle=True, random_state=named_seed(seed, "benchmark/split")
+    ).split(tiles, [str(one) for one in strata], [str(one) for one in squares])
+    test, validation, *rest = (held for _, held in dealt)
+    return tuple(
+        [tiles[at] for at in sorted(held)]
+        for held in (np.concatenate(rest), validation, test)
     )
