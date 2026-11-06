@@ -67,6 +67,19 @@ uv run --group digitalhub python scripts/evaluate.py --dh --ref main default/mae
 - MOLA and SHARAD are also rebuilt from each other alone.
 - `random` is the baseline every score is coloured against.
 
+## Benchmark
+
+```bash
+uv run python scripts/benchmark.py default/mae-small
+uv run --group digitalhub python scripts/benchmark.py --dh --ref main default/mae-small
+```
+
+- It probes and fine-tunes a classifier and a segmenter on SWIM's subsurface ice
+  over the run's latest W&B model, and logs a benchmark run of the same name.
+- Fewer `benchmark.instruments` than the model reads name the run for those left
+  out, such as `default/mae-small-no-sharad`.
+- `--evaluate` on `scripts/train.py` also runs the benchmark.
+
 ## Comparison views
 
 The W&B project holds two saved views. Training shows the curves of every training

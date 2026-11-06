@@ -8,7 +8,9 @@ import torch
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
+from wandb.sdk.wandb_run import Run
 
+from architecture.mae import CrossSensorMAE
 from configs.load import load_config
 from configs.model import built_model
 from evaluation.evaluate import evaluate
@@ -16,6 +18,25 @@ from logs.evaluation import EVALUATION
 from logs.tracker import console_logger, logged_checkpoint, start_logging
 
 log = console_logger(__name__)
+
+
+def trained_model(model: CrossSensorMAE, run: Run, run_name: str) -> CrossSensorMAE:
+    """Return the model with a logged run's latest weights, a "random" run's as drawn.
+
+    Args:
+        model: The model, as built.
+        run: The tracked run that reads the weights.
+        run_name: What the trained run is called, which names its model, a last
+            part of "random" keeping the seed's own weights.
+
+    Returns:
+        model: The same model, its weights loaded.
+    """
+    if run_name.split("/")[-1] != "random":
+        held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")
+        model.load_state_dict(held["model"])
+        log.info("%s trained for %d steps", run_name, held["step"])
+    return model
 
 
 @handler()
@@ -32,13 +53,9 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(EVALUATION)
     run = start_logging(asdict(config), run_name, EVALUATION, {"device": str(device)})
-    if run_name.split("/")[-1] != "random":
-        held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")
-        model.load_state_dict(held["model"])
-        log.info("%s trained for %d steps", run_name, held["step"])
     log.info("evaluating %s on %s", run_name, device)
     evaluate(
-        model,
+        trained_model(model, run, run_name),
         build,
         sizes,
         shapes,

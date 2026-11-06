@@ -21,6 +21,7 @@ PYTHONPATH = "/shared:/shared/src:/shared/scripts"
 HANDLERS = {
     "training": "scripts.train:run_training",
     "evaluation": "scripts.evaluate:run_evaluation",
+    "benchmark": "scripts.benchmark:run_benchmark",
 }
 
 SECRETS = [

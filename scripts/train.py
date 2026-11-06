@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from benchmark import run_benchmark
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
@@ -22,13 +23,13 @@ log = console_logger(__name__)
 def run_training(
     run_name: str, overrides: list[str] | None = None, evaluate: bool = False
 ) -> None:
-    """Train one run, log the checkpoint it ended on, and evaluate it if asked.
+    """Train one run, log its last checkpoint, and evaluate and benchmark it if asked.
 
     Args:
         run_name: What the run is called, which names the model it saves and the
             tracked run it logs to, the part before a slash grouping it.
         overrides: What to change in the configs, as dotted keys.
-        evaluate: Whether to evaluate the checkpoint once the training ends.
+        evaluate: Whether to evaluate and benchmark the checkpoint once trained.
     """
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.dataset.build)
@@ -81,9 +82,13 @@ def run_training(
     run.finish()
     if evaluate:
         run_evaluation.__wrapped__(run_name, overrides)
+        run_benchmark.__wrapped__(run_name, overrides)
 
 
 if __name__ == "__main__":
     run_stage(
-        TRAINING, run_training, __doc__, {"evaluate": "evaluate the model once trained"}
+        TRAINING,
+        run_training,
+        __doc__,
+        {"evaluate": "evaluate and benchmark the model once trained"},
     )
