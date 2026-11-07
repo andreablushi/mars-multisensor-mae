@@ -35,7 +35,6 @@ def finetune(
     validation: Sequence[str],
     tested: DataLoader,
     targets: Mapping[str, Mapping[str, np.ndarray]],
-    icy: Mapping[str, Mapping[str, np.ndarray]],
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
     budget: Mapping[str, int],
@@ -59,15 +58,13 @@ def finetune(
     Args:
         model: The model, on the device, only its parameters asking for gradients
             trained.
-        heads: The classifier and the segmenter, on the device, keyed by task.
+        heads: The tile head and the map head, on the device, keyed by task.
         build: The build the tiles are read from.
         training: The training tiles.
         validation: The validation tiles.
         tested: The test tiles, in batches, each read whole.
         targets: SWIM's consistency at each depth, the tile's median or every
             point's, keyed by task, then by tile. (Z,) or (P * P, Z)
-        icy: Whether SWIM finds ice there, keyed by task, then by tile. (Z,) or
-            (P * P, Z)
         sizes: How far a patch of each sensor read runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
         budget: How many patches of each instrument a training tile keeps.
@@ -143,7 +140,7 @@ def finetune(
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
-    best = dict.fromkeys(heads, -math.inf)
+    best = dict.fromkeys(heads, math.inf)
     kept, step = {}, 0
     model.train()
     for head in heads.values():
@@ -155,7 +152,7 @@ def finetune(
             losses = ice_losses(
                 consistency,
                 torch.as_tensor(
-                    np.stack([targets["segmentation"][tile] for tile in identities]),
+                    np.stack([targets["map"][tile] for tile in identities]),
                     device=device,
                 ),
                 covered,
@@ -173,17 +170,15 @@ def finetune(
             )
         predicted = predicted_consistency(model, heads, validation, device)
         scores = {
-            task: ice_scores(held, targets[task], icy[task], task == "segmentation")
+            task: ice_scores(held, targets[task], task == "map")
             for task, held in predicted.items()
         }
         log_epoch(run, prefix, step, scores)
         for task, by_depth in scores.items():
-            gained = float(np.mean([held["AUPRC"] for held in by_depth.values()]))
-            log.info(
-                "%s/%s epoch %d validation AUPRC %.4f", prefix, task, epoch, gained
-            )
-            if gained > best[task]:
-                best[task] = gained
+            error = float(np.mean([held["RMSE"] for held in by_depth.values()]))
+            log.info("%s/%s epoch %d validation RMSE %.4f", prefix, task, epoch, error)
+            if error < best[task]:
+                best[task] = error
                 kept[task] = deepcopy(
                     (
                         heads[task].state_dict(),

@@ -64,7 +64,6 @@ def run_benchmark(run_name: str, overrides: list[str] | None = None) -> None:
         config.benchmark.finetune.lora_learning_rate,
         config.benchmark.finetune.weight_decay,
         config.benchmark.finetune.max_grad_norm,
-        config.benchmark.evaluation.thresholds,
         config.benchmark.evaluation.tiles,
         config.benchmark.evaluation.shown,
         config.dataset.seed,

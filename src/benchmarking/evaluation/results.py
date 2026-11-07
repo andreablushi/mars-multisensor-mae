@@ -20,7 +20,7 @@ class IcePrediction:
     Attributes:
         tile: The tile.
         protocol: How its head was trained, "linear-probe" or "fine-tune".
-        task: What its head tells, "classification" or "segmentation".
+        task: What its head tells, "tile" or "map".
         depth: The depth, as SWIM's labels name it.
         consistency: The consistency, one for the tile or one per point, rows from
             the north and points from the west.

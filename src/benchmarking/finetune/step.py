@@ -25,7 +25,7 @@ def batch_consistency(
 
     Args:
         model: The model, on the device.
-        heads: The classifier and the segmenter, on the device, keyed by task.
+        heads: The tile head and the map head, on the device, keyed by task.
         batch: Each instrument's patches over the batch, as the loader hands it.
         device: Where the model runs.
 

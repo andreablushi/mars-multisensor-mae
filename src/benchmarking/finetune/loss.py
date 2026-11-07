@@ -18,14 +18,14 @@ def ice_losses(
         covered: Which grid points have a token in the cell around them. (B, P * P)
 
     Returns:
-        losses: Each head's loss, keyed by task, the classifier's against the
-            median over the covered points, whose threshold is SWIM's own label.
+        losses: Each head's loss, keyed by task, the tile head's against the
+            median over the covered points.
     """
     held = covered.any(1)  # (B)
     median = targets.masked_fill(~covered[..., None], float("nan")).nanmedian(1)
-    tiles = (consistency["classification"] - median.values.nan_to_num()) ** 2
-    points = (consistency["segmentation"] - targets) ** 2 * covered[..., None]
+    tiles = (consistency["tile"] - median.values.nan_to_num()) ** 2
+    points = (consistency["map"] - targets) ** 2 * covered[..., None]
     return {
-        "classification": tiles[held].mean(),
-        "segmentation": points.sum() / (covered.sum() * targets.shape[-1]),
+        "tile": tiles[held].mean(),
+        "map": points.sum() / (covered.sum() * targets.shape[-1]),
     }

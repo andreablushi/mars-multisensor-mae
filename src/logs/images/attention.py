@@ -262,6 +262,24 @@ def sounder_passes(
     return passes
 
 
+def signed_overlay(grey: np.ndarray, lift: np.ndarray) -> np.ndarray:
+    """Return a grey image coloured red where the lift is positive, blue where negative.
+
+    Args:
+        grey: The image from 0 to 1, NaN where nothing is shown. (H, W)
+        lift: What is coloured, full colour at 1 or -1. (H, W)
+
+    Returns:
+        image: The image. (H, W, 3)
+    """
+    lift = np.clip(lift, -1, 1)
+    alpha = 0.9 * np.abs(lift)[..., None]
+    colour = np.where(lift[..., None] > 0, (215, 48, 39), (69, 117, 180))
+    rgb = (1 - alpha) * grey[..., None] * 255 + alpha * colour
+    rgb[np.isnan(grey)] = EMPTY_RGB
+    return rgb.astype(np.uint8)
+
+
 def overlaid(grey: np.ndarray, ratio: np.ndarray) -> np.ndarray:
     """Return a grey image coloured red where attention is above its mean, blue below.
 
@@ -273,12 +291,9 @@ def overlaid(grey: np.ndarray, ratio: np.ndarray) -> np.ndarray:
     Returns:
         image: The image. (H, W, 3)
     """
-    lift = np.clip(np.log(np.maximum(np.nan_to_num(ratio), 1e-12)) / np.log(2.0), -1, 1)
-    alpha = 0.9 * np.abs(lift)[..., None]
-    colour = np.where(lift[..., None] > 0, (215, 48, 39), (69, 117, 180))
-    rgb = (1 - alpha) * grey[..., None] * 255 + alpha * colour
-    rgb[np.isnan(grey)] = EMPTY_RGB
-    return rgb.astype(np.uint8)
+    return signed_overlay(
+        grey, np.log(np.maximum(np.nan_to_num(ratio), 1e-12)) / np.log(2.0)
+    )
 
 
 def ratio_bar() -> np.ndarray:

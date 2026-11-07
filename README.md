@@ -74,14 +74,17 @@ uv run python scripts/benchmark.py default/mae-small
 uv run --group digitalhub python scripts/benchmark.py --dh --ref main default/mae-small
 ```
 
-- It probes and fine-tunes a classifier and a segmenter on SWIM's subsurface ice
-  over the run's latest W&B model, and logs a benchmark run of the same name.
-- Both heads regress SWIM's ice consistency, the classifier the tile's median and
-  the segmenter every grid point, trained together on one read of the tokens. A
+- It probes and fine-tunes two heads on SWIM's subsurface ice consistency over the
+  run's latest W&B model, and logs a benchmark run of the same name.
+- Both heads regress SWIM's consistency, the tile head the tile's median and the
+  map head every grid point, trained together on one read of the tokens. A
   training crop scores only the points it has tokens near. Fine-tuning trains LoRA
   updates of the encoders.
-- AUROC and AUPRC rank SWIM's own icy points and tiles, RMSE and R2 measure the fit,
-  the segmenter's within each tile SWIM finds both icy and dry.
+- RMSE and R2 measure the fit, the map head's as each point's departure from its
+  tile's mean, over the tiles whose consistency varies. Each head is kept at its
+  best validation RMSE.
+- The drawn tiles show SWIM's consistency beside each map head's, red where icy and
+  blue where dry, a row per depth.
 - Fewer `benchmark.instruments` than the model reads name the run for those left
   out, such as `default/mae-small-no-sharad`.
 - `--evaluate` on `scripts/train.py` also runs the benchmark.

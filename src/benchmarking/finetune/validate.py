@@ -23,7 +23,7 @@ def predicted_consistency(
 
     Args:
         model: The model, measured in evaluation on the device.
-        heads: The classifier and the segmenter, measured alike, keyed by task.
+        heads: The tile head and the map head, measured alike, keyed by task.
         loader: The split, in batches, each tile read whole.
         device: Where the model runs.
 

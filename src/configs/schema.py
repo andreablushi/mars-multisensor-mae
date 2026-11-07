@@ -146,7 +146,7 @@ class FinetuneConfig:
         budget: How many patches of each instrument a tile keeps.
         budget_scale: The most a batch's budget is multiplied by.
         epochs: How many epochs the heads train for, each kept at its best
-            validation AUPRC.
+            validation RMSE.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         head_learning_rate: The heads' peak learning rate.
         lora_rank: The rank of each LoRA update of the encoders when fine-tuned.
@@ -176,15 +176,12 @@ class BenchmarkEvaluationConfig:
 
     Attributes:
         batch_size: How many tiles one batch holds, each read whole.
-        thresholds: SWIM's consistency from which each depth is icy, which cuts the
-            heads' own for the confusion and the drawn grids.
         tiles: The test tiles drawn as SWIM's grid beside the predicted ones, by
             what they show.
         shown: The instrument whose every observation of a tile is drawn beneath.
     """
 
     batch_size: int
-    thresholds: dict[str, float]
     tiles: dict[str, str]
     shown: str
 

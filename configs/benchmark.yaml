@@ -9,10 +9,10 @@ instruments: ${model.instruments}
 folds: 10
 block_deg: 10.0
 
-# What the classifier reads of a tile, the GAP of its tokens or its CLS.
+# What the tile head reads of a tile, the GAP of its tokens or its CLS.
 pooling: GAP
 
-# Cross-attention blocks the segmenter's points read the tokens through.
+# Cross-attention blocks the map head's points read the tokens through.
 segmenter_depth: 1
 
 # How both heads are trained together, as a linear probe and fine-tuned.
@@ -21,7 +21,7 @@ finetune:
   batch_size: 32
   budget: ${dataset.budget}
   budget_scale: ${dataset.budget_scale}
-  # Epochs of the whole schedule, each head kept at its best validation AUPRC.
+  # Epochs of the whole schedule, each head kept at its best validation RMSE.
   epochs: 50
   # Epochs of warmup before the cosine decay.
   warmup_epochs: 5
@@ -38,13 +38,8 @@ finetune:
 evaluation:
   # Tiles per batch, each read whole.
   batch_size: 8
-  # SWIM's consistency from which each depth is icy, as the dataset labels it,
-  # cutting the heads' own for the confusion and the drawn grids.
-  thresholds:
-    1_5m: 0.4
-    5m: 0.5
-  # Test tiles drawn as SWIM's grid beside the predicted ones, both depths
-  # combined, over every observation of the instrument shown.
+  # Test tiles drawn as SWIM's consistency beside the predicted, a row per depth,
+  # over every observation of the instrument shown.
   tiles:
     mixed: b259_c0082
   shown: CTX
