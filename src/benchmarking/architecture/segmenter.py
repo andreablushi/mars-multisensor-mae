@@ -19,16 +19,17 @@ class Segmenter(nn.Module):
         query: The token every point asks with, told apart by where it sits. (D)
         points: Where each point sits, east and north in metres, rows from the
             north and points from the west, at no delay. (P * P, 3)
-        blocks: The cross-attention block the points read the tokens through.
+        blocks: The cross-attention blocks the points read the tokens through.
         predict: From a point's token to one logit per depth.
     """
 
-    def __init__(self, dim: int, heads: int, depths: int) -> None:
+    def __init__(self, dim: int, heads: int, depth: int, depths: int) -> None:
         """Build the segmenter for one token width.
 
         Args:
             dim: The token width.
-            heads: How many attention heads its block runs.
+            heads: How many attention heads each block runs.
+            depth: How many cross-attention blocks are stacked.
             depths: How many depths a point is labelled at.
         """
         super().__init__()
@@ -42,7 +43,7 @@ class Segmenter(nn.Module):
             "points",
             torch.stack([east, north, torch.zeros_like(east)], -1).flatten(0, 1),
         )
-        self.blocks = Transformer(dim, heads, 1)
+        self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, depths)
 
     def forward(self, cls: Tensor, context: Context) -> Tensor:

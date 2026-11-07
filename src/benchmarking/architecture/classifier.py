@@ -1,4 +1,4 @@
-"""Telling whether a tile is icy at each depth from one vector, a linear probe."""
+"""Telling whether a tile is icy at each depth from one vector, by one linear layer."""
 
 from __future__ import annotations
 
@@ -12,20 +12,25 @@ class Classifier(nn.Module):
 
     Attributes:
         pooling: What it reads of a tile, "GAP" or "CLS".
-        linear: From that vector to the logits.
+        linear: From that vector to the logits, after a BatchNorm without affine
+            when the encoders are frozen, as MAE's linear probe.
     """
 
-    def __init__(self, dim: int, depths: int, pooling: str) -> None:
+    def __init__(self, dim: int, depths: int, pooling: str, probed: bool) -> None:
         """Build the classifier for one token width.
 
         Args:
             dim: The token width.
             depths: How many depths a tile is labelled at.
             pooling: What it reads of a tile, "GAP" or "CLS".
+            probed: Whether the encoders stay frozen, so the vector is normalised.
         """
         super().__init__()
         self.pooling = pooling
-        self.linear = nn.Linear(dim, depths)
+        self.linear = nn.Sequential(
+            *([nn.BatchNorm1d(dim, affine=False, eps=1e-6)] if probed else []),
+            nn.Linear(dim, depths),
+        )
 
     def forward(self, cls: Tensor, context: Context) -> Tensor:
         """Return each tile's logits.

@@ -13,11 +13,10 @@ from wandb.sdk.wandb_run import Run
 from architecture.mae import CrossSensorMAE
 from benchmarking.architecture.classifier import Classifier
 from benchmarking.architecture.segmenter import Segmenter
-from benchmarking.evaluation.metrics import DEPTHS, ice_scores
+from benchmarking.evaluation.metrics import DEPTHS, ice_confusion, ice_scores
 from benchmarking.evaluation.results import write_predictions
 from benchmarking.finetune.finetune import finetune
 from benchmarking.finetune.validate import predicted_probabilities
-from configs.schema import DrawnTile
 from dataset.loader import ice_split, tile_loader
 from dataset.store import DatasetBuild
 from evaluation.reconstruct import drawn_arrays
@@ -25,6 +24,8 @@ from logs.benchmark import BENCHMARK, log_benchmark
 from logs.images.ice import ice_image
 
 PROTOCOLS = {"linear-probe": False, "fine-tune": True}
+
+TITLES = {"linear-probe": "Linear Probe", "fine-tune": "Fine-tuning"}
 
 LABELS = {"classification": "ice_", "segmentation": "icy_points_"}
 
@@ -38,6 +39,7 @@ def benchmark(
     shapes: Mapping[str, tuple[int, ...]],
     dim: int,
     heads: int,
+    segmenter_depth: int,
     folds: int,
     block_deg: float,
     pooling: str,
@@ -51,7 +53,10 @@ def benchmark(
     head_learning_rate: float,
     encoder_learning_rate: float,
     weight_decay: float,
-    tiles: Mapping[str, DrawnTile],
+    max_grad_norm: float,
+    threshold: float,
+    tiles: Mapping[str, str],
+    shown: str,
     seed: int,
     workers: int,
     device: torch.device,
@@ -69,6 +74,7 @@ def benchmark(
         shapes: The shape of one patch of each instrument as the model reads it.
         dim: The token width the model hands its tokens at.
         heads: How many attention heads the segmenter runs.
+        segmenter_depth: How many cross-attention blocks the segmenter stacks.
         folds: How many equal folds the labelled tiles are dealt into, the first
             testing, the second validating and the rest training.
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
@@ -83,8 +89,12 @@ def benchmark(
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
         weight_decay: The AdamW weight decay.
-        tiles: The test tiles drawn as SWIM's grids beside the segmenters', by what
-            they show, with the one observation shown beneath.
+        max_grad_norm: The norm every step's gradient is clipped to.
+        threshold: The chance at or above which a point or tile counts as icy, for
+            mIoU, the confusion and the drawn grids.
+        tiles: The test tiles drawn as SWIM's grid beside the segmenters', by what
+            they show.
+        shown: The instrument whose every observation of a tile is drawn beneath.
         seed: What fixes the split, the order and each fixed cut.
         workers: How many processes read tiles beside the model.
         device: Where the model runs.
@@ -118,9 +128,9 @@ def benchmark(
             segmented = task == "segmentation"
             model.load_state_dict(pretrained)
             head = (
-                Segmenter(dim, heads, len(DEPTHS))
+                Segmenter(dim, heads, segmenter_depth, len(DEPTHS))
                 if segmented
-                else Classifier(dim, len(DEPTHS), pooling)
+                else Classifier(dim, len(DEPTHS), pooling, not tuned)
             ).to(device)
             finetune(
                 model,
@@ -144,6 +154,8 @@ def benchmark(
                 head_learning_rate,
                 encoder_learning_rate,
                 weight_decay,
+                max_grad_norm,
+                threshold,
                 seed,
                 device,
                 run,
@@ -152,26 +164,36 @@ def benchmark(
             probabilities[protocol, task] = predicted_probabilities(
                 model, head, tested, device
             )
-    images = {}
-    for place, drawn in tiles.items():
-        ((name, identifier),) = drawn.shown.items()
-        (row,) = (
-            one for one in by_tile[drawn.tile][name] if one.identifier == identifier
-        )
-        images[place] = ice_image(
-            drawn_arrays(build, name, [row], sizes[name], shapes[name]),
-            {"SWIM": targets["segmentation"][drawn.tile]}
+    images = {
+        place: ice_image(
+            drawn_arrays(
+                build, shown, by_tile[tile][shown], sizes[shown], shapes[shown]
+            ),
+            {"Ground Truth": targets["segmentation"][tile]}
             | {
-                protocol: probabilities[protocol, "segmentation"][drawn.tile]
+                TITLES[protocol]: probabilities[protocol, "segmentation"][tile]
                 for protocol in PROTOCOLS
             },
+            threshold,
         )
+        for place, tile in tiles.items()
+    }
     log_benchmark(
         run,
         run_name,
         {
-            (protocol, task): ice_scores(held, targets[task], task == "segmentation")
+            (protocol, task): ice_scores(
+                held, targets[task], task == "segmentation", threshold
+            )
             for (protocol, task), held in probabilities.items()
+        },
+        {
+            protocol: ice_confusion(
+                probabilities[protocol, "classification"],
+                targets["classification"],
+                threshold,
+            )
+            for protocol in PROTOCOLS
         },
         images,
         write_predictions(run_name, probabilities),

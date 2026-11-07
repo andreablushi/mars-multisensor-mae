@@ -20,7 +20,7 @@ from benchmarking.finetune.step import batch_logits
 from benchmarking.finetune.validate import predicted_probabilities
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
-from logs.benchmark import log_epoch
+from logs.benchmark import log_epoch, log_step
 from logs.tracker import console_logger
 
 log = console_logger(__name__)
@@ -48,6 +48,8 @@ def finetune(
     head_learning_rate: float,
     encoder_learning_rate: float,
     weight_decay: float,
+    max_grad_norm: float,
+    threshold: float,
     seed: int,
     device: torch.device,
     run: Run,
@@ -78,10 +80,12 @@ def finetune(
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when tuned.
         weight_decay: The AdamW weight decay.
+        max_grad_norm: The norm every step's gradient is clipped to.
+        threshold: The chance at or above which a point counts as icy, for mIoU.
         seed: What fixes the order, the readers' own draws and each fixed cut.
         device: Where the model runs.
-        run: The tracked run every epoch is logged to.
-        prefix: Where the head's epochs are logged.
+        run: The tracked run every step is logged to.
+        prefix: Where the head's steps are logged.
     """
     training, validation = (
         tile_loader(
@@ -94,6 +98,7 @@ def finetune(
             seed,
             size,
             workers,
+            shuffled,
             shuffled,
         )
         for tiles, cut, size, shuffled in (
@@ -137,11 +142,10 @@ def finetune(
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
-    best, waited, kept = -math.inf, 0, None
+    best, waited, kept, step = -math.inf, 0, None, 0
     model.train()
     head.train()
     for epoch in range(1, epochs + 1):
-        losses = []
         for batch, identities in training:
             optimizer.zero_grad()
             truth = np.stack([targets[tile] for tile in identities])
@@ -150,16 +154,18 @@ def finetune(
                 torch.as_tensor(truth, device=device),
             )
             loss.backward()
-            clip_grad_norm_([*heads, *encoders], 1.0)
+            clip_grad_norm_([*heads, *encoders], max_grad_norm)
             optimizer.step()
             scheduler.step()
-            losses.append(loss.detach())
+            step += 1
+            log_step(run, prefix, step, float(loss))
         scores = ice_scores(
             predicted_probabilities(model, head, validation, device),
             targets,
             segmented,
+            threshold,
         )
-        log_epoch(run, prefix, epoch, float(torch.stack(losses).mean()), scores)
+        log_epoch(run, prefix, step, scores)
         gained = float(np.mean([held["AUPRC"] for held in scores.values()]))
         log.info("%s epoch %d validation AUPRC %.4f", prefix, epoch, gained)
         if gained > best:

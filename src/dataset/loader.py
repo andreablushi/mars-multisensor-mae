@@ -166,6 +166,7 @@ def tile_loader(
     batch_size: int,
     workers: int,
     training: bool,
+    drop_last: bool = False,
 ) -> DataLoader:
     """Return some tiles of a build in batches, each cut into the cache on first read.
 
@@ -180,6 +181,7 @@ def tile_loader(
         batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the model.
         training: Whether the tiles are shuffled, scaled and cut anew every pass.
+        drop_last: Whether a last batch short of batch_size is left out.
 
     Returns:
         loader: The tiles in batches.
@@ -189,6 +191,7 @@ def tile_loader(
         list(tiles),
         batch_size=batch_size,
         shuffle=training,
+        drop_last=drop_last,
         num_workers=workers,
         persistent_workers=workers > 0,
         pin_memory=True,

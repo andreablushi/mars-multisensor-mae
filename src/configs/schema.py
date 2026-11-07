@@ -151,6 +151,7 @@ class FinetuneConfig:
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
         weight_decay: The AdamW weight decay.
+        max_grad_norm: The norm every step's gradient is clipped to.
     """
 
     batch_size: int
@@ -162,6 +163,7 @@ class FinetuneConfig:
     head_learning_rate: float
     encoder_learning_rate: float
     weight_decay: float
+    max_grad_norm: float
 
 
 @dataclass
@@ -170,11 +172,17 @@ class BenchmarkEvaluationConfig:
 
     Attributes:
         batch_size: How many tiles one batch holds, each read whole.
-        tiles: The test tiles drawn as SWIM's grids beside the predicted ones.
+        threshold: The chance at or above which a point or tile counts as icy, for
+            mIoU, the confusion and the drawn grids.
+        tiles: The test tiles drawn as SWIM's grid beside the predicted ones, by
+            what they show.
+        shown: The instrument whose every observation of a tile is drawn beneath.
     """
 
     batch_size: int
-    tiles: dict[str, DrawnTile]
+    threshold: float
+    tiles: dict[str, str]
+    shown: str
 
 
 @dataclass
@@ -188,6 +196,7 @@ class BenchmarkConfig:
             testing, the second validating and the rest training.
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
         pooling: What the classifier reads of a tile, the GAP of its tokens or its CLS.
+        segmenter_depth: How many cross-attention blocks the segmenter stacks.
         finetune: How every head is trained.
         evaluation: How every head is measured.
     """
@@ -197,6 +206,7 @@ class BenchmarkConfig:
     folds: int
     block_deg: float
     pooling: str
+    segmenter_depth: int
     finetune: FinetuneConfig
     evaluation: BenchmarkEvaluationConfig
 

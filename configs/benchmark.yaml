@@ -12,6 +12,9 @@ block_deg: 10.0
 # What the classifier reads of a tile, the GAP of its tokens or its CLS.
 pooling: GAP
 
+# Cross-attention blocks the segmenter's points read the tokens through.
+segmenter_depth: 1
+
 # How every head is trained, as a linear probe and fine-tuned.
 finetune:
   # Tiles per batch, each cut to the training budget.
@@ -27,19 +30,18 @@ finetune:
   head_learning_rate: 0.001
   encoder_learning_rate: 0.00001
   weight_decay: 0.05
+  # Norm every step's gradient is clipped to.
+  max_grad_norm: 1.0
 
 # How every head is measured on the validation and test tiles.
 evaluation:
   # Tiles per batch, each read whole.
   batch_size: 1
-  # Test tiles drawn as SWIM's grids beside the predicted ones, over the
-  # observation shown.
+  # Chance at or above which a point or tile counts as icy, for mIoU, the
+  # confusion and the drawn grids.
+  threshold: 0.5
+  # Test tiles drawn as SWIM's grid beside the predicted ones, both depths
+  # combined, over every observation of the instrument shown.
   tiles:
-    boundary:
-      tile: b222_c0148
-      shown:
-        CTX: b08_012592_2105_xn_30n266w
-    shallow:
-      tile: b259_c0414
-      shown:
-        CTX: b04_011277_2283_xn_48n008w
+    mixed: b259_c0082
+  shown: CTX
