@@ -1,1 +1,1 @@
-"""The heads read on the model's tokens: one per tile, and one per labelled point."""
+"""The map head over the model's tokens, and the LoRA updates fine-tuning trains."""

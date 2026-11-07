@@ -1,4 +1,4 @@
-"""Logging what one benchmark comes to: each head's steps, its scores, drawn tiles."""
+"""Logging what one benchmark comes to: its steps, its scores, its drawn tiles."""
 
 from __future__ import annotations
 
@@ -18,42 +18,38 @@ STEP = f"{BENCHMARK}/step"
 RESULTS_STEP = 10**6
 
 
-def log_step(run: Run, prefix: str, step: int, losses: Mapping[str, float]) -> None:
-    """Log one training step of one protocol, each head's loss against the step.
+def log_step(run: Run, prefix: str, step: int, loss: float) -> None:
+    """Log one training step of one protocol, its loss against the step.
 
     Args:
         run: The tracked run.
         prefix: Where the protocol's steps are logged.
         step: Which step it is, from 1.
-        losses: Each head's training loss, keyed by task.
+        loss: The training loss.
     """
-    run.log(
-        {STEP: step}
-        | {f"{prefix}/{task}/train/loss": loss for task, loss in losses.items()}
-    )
+    run.log({STEP: step, f"{prefix}/train/loss": loss})
 
 
 def log_epoch(
     run: Run,
     prefix: str,
     step: int,
-    scores: Mapping[str, Mapping[str, Mapping[str, float]]],
+    scores: Mapping[str, Mapping[str, float]],
 ) -> None:
-    """Log one epoch of one protocol, each head's validation against its last step.
+    """Log one epoch of one protocol, its validation against its last step.
 
     Args:
         run: The tracked run.
         prefix: Where the protocol's steps are logged.
         step: The epoch's last step.
-        scores: Each validation metric, keyed by task, then by depth and metric.
+        scores: Each validation metric, keyed by depth, then by metric.
     """
     run.define_metric(f"{prefix}/*", step_metric=STEP)
     run.log(
         {STEP: step}
         | {
-            f"{prefix}/{task}/validation/{depth}/{metric}": value
-            for task, by_depth in scores.items()
-            for depth, held in by_depth.items()
+            f"{prefix}/validation/{depth}/{metric}": value
+            for depth, held in scores.items()
             for metric, value in held.items()
         }
     )
@@ -62,7 +58,7 @@ def log_epoch(
 def log_benchmark(
     run: Run,
     run_name: str,
-    scores: Mapping[tuple[str, str], Mapping[str, Mapping[str, float]]],
+    scores: Mapping[str, Mapping[str, Mapping[str, float]]],
     images: Mapping[str, tuple[np.ndarray, str]],
     path: Path,
 ) -> None:
@@ -71,27 +67,26 @@ def log_benchmark(
     Args:
         run: The tracked run.
         run_name: What the tracked run is called, which names its artifact.
-        scores: Each test metric, keyed by protocol and task, then by depth and
-            metric.
+        scores: Each test metric, keyed by protocol, then by depth and metric.
         images: Each drawn tile's image and caption, keyed by what it shows.
         path: Where the predictions were written.
     """
     rows = [
-        [protocol, task, depth, metric, value]
-        for (protocol, task), by_depth in scores.items()
+        [protocol, depth, metric, value]
+        for protocol, by_depth in scores.items()
         for depth, held in by_depth.items()
         for metric, value in held.items()
     ]
     run.summary.update(
         {
-            f"{BENCHMARK}/{protocol}/{task}/test/{depth}/{metric}": value
-            for protocol, task, depth, metric, value in rows
+            f"{BENCHMARK}/{protocol}/test/{depth}/{metric}": value
+            for protocol, depth, metric, value in rows
         }
     )
     run.log(
         {
             f"{BENCHMARK}/scores": wandb.Table(
-                columns=["protocol", "task", "depth", "metric", "value"], data=rows
+                columns=["protocol", "depth", "metric", "value"], data=rows
             ),
             **{
                 f"{BENCHMARK}/grids/{place}": wandb.Image(image, caption=caption)

@@ -1,4 +1,4 @@
-"""What a benchmark writes: every test tile's consistency, by protocol and task."""
+"""What a benchmark writes: every test tile's consistency, by protocol."""
 
 from __future__ import annotations
 
@@ -15,20 +15,18 @@ from configs.paths import predictions_path
 
 @dataclass(frozen=True, slots=True)
 class IcePrediction:
-    """One test tile's consistency with ice at one depth, under one protocol and task.
+    """One test tile's consistency with ice at one depth, under one protocol.
 
     Attributes:
         tile: The tile.
         protocol: How its head was trained, "linear-probe" or "fine-tune".
-        task: What its head tells, "tile" or "map".
         depth: The depth, as SWIM's labels name it.
-        consistency: The consistency, one for the tile or one per point, rows from
-            the north and points from the west.
+        consistency: The consistency of every point, rows from the north and points
+            from the west.
     """
 
     tile: str
     protocol: str
-    task: str
     depth: str
     consistency: tuple[float, ...]
 
@@ -38,14 +36,14 @@ PREDICTIONS_SCHEMA = parquet.schema_of(IcePrediction)
 
 def write_predictions(
     run_name: str,
-    consistency: Mapping[tuple[str, str], Mapping[str, np.ndarray]],
+    consistency: Mapping[str, Mapping[str, np.ndarray]],
 ) -> Path:
     """Return where one run's benchmark predictions were written, replacing any.
 
     Args:
         run_name: What the run is called, which names its predictions.
-        consistency: The consistency at each depth of every test tile, keyed by
-            protocol and task, then by tile. (Z,) or (P * P, Z)
+        consistency: The consistency of every point at each depth of every test
+            tile, keyed by protocol, then by tile. (P * P, Z)
 
     Returns:
         path: The predictions.
@@ -53,10 +51,8 @@ def write_predictions(
     path = predictions_path(run_name)
     parquet.write_rows(
         [
-            IcePrediction(
-                tile, protocol, task, depth, tuple(np.ravel(held[..., at]).tolist())
-            )
-            for (protocol, task), by_tile in consistency.items()
+            IcePrediction(tile, protocol, depth, tuple(held[:, at].tolist()))
+            for protocol, by_tile in consistency.items()
             for tile, held in sorted(by_tile.items())
             for at, depth in enumerate(DEPTHS)
         ],

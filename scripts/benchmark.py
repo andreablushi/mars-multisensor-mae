@@ -20,7 +20,7 @@ log = console_logger(__name__)
 
 @handler()
 def run_benchmark(run_name: str, overrides: list[str] | None = None) -> None:
-    """Probe and fine-tune heads over one logged model on SWIM's ice, and log them.
+    """Probe and fine-tune a map head over one logged model on SWIM's ice, and log it.
 
     Args:
         run_name: What the run is called, which names the model read and the
@@ -51,7 +51,6 @@ def run_benchmark(run_name: str, overrides: list[str] | None = None) -> None:
         config.benchmark.segmenter_depth,
         config.benchmark.folds,
         config.benchmark.block_deg,
-        config.benchmark.pooling,
         config.benchmark.finetune.budget,
         config.benchmark.finetune.budget_scale,
         config.benchmark.finetune.batch_size,

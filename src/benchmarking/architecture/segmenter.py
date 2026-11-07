@@ -12,20 +12,6 @@ from architecture.components.transformer import Transformer
 from architecture.models.context import Context
 
 
-def grid_points() -> Tensor:
-    """Return where SWIM's grid points sit around a tile's centre.
-
-    Returns:
-        points: East and north in metres, rows from the north and points from the
-            west, at no delay. (P * P, 3)
-    """
-    steps = (torch.arange(GRID_POINTS) - (GRID_POINTS - 1) / 2) * (
-        GRID_SPACING_KM * METRES_PER_KM
-    )
-    north, east = torch.meshgrid(steps.flip(0), steps, indexing="ij")
-    return torch.stack([east, north, torch.zeros_like(east)], -1).flatten(0, 1)
-
-
 class Segmenter(nn.Module):
     """SWIM's grid points asking every token of the tile, as Perceiver IO decodes.
 
@@ -49,15 +35,19 @@ class Segmenter(nn.Module):
         super().__init__()
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.query, std=0.02)
-        self.register_buffer("points", grid_points())
+        steps = (torch.arange(GRID_POINTS) - (GRID_POINTS - 1) / 2) * (
+            GRID_SPACING_KM * METRES_PER_KM
+        )
+        north, east = torch.meshgrid(steps.flip(0), steps, indexing="ij")
+        points = torch.stack([east, north, torch.zeros_like(east)], -1)
+        self.register_buffer("points", points.flatten(0, 1))
         self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, depths)
 
-    def forward(self, cls: Tensor, context: Context) -> Tensor:
+    def forward(self, context: Context) -> Tensor:
         """Return every point's consistency.
 
         Args:
-            cls: The token read over every instrument together, unread. (B, D)
             context: Every instrument's tokens side by side, without their CLS.
 
         Returns:

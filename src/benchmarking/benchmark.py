@@ -1,4 +1,4 @@
-"""Probing and fine-tuning heads on SWIM's ice, and logging what they come to."""
+"""Probing and fine-tuning a map head on SWIM's ice, and logging what it comes to."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from analysis.ground_truth.swim.models import IceLabel
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
-from benchmarking.architecture.classifier import Classifier
 from benchmarking.architecture.lora import adapted_model
 from benchmarking.architecture.segmenter import Segmenter
 from benchmarking.evaluation.metrics import DEPTHS, ice_scores
@@ -39,7 +38,6 @@ def benchmark(
     segmenter_depth: int,
     folds: int,
     block_deg: float,
-    pooling: str,
     budget: Mapping[str, int],
     budget_scale: float,
     batch_size: int,
@@ -60,13 +58,13 @@ def benchmark(
     run: Run,
     run_name: str,
 ) -> None:
-    """Probe and fine-tune both heads, then log their test scores and the drawn tiles.
+    """Probe and fine-tune the map head, then log its test scores and the drawn tiles.
 
     Args:
         model: The model, on the device, left as it is.
         build: The build the labelled tiles are read from.
         labels: Each tile's ice at both depths, keyed by the tile, over any build.
-        instruments: The instruments the heads read.
+        instruments: The instruments the head reads.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
         dim: The token width the model hands its tokens at.
@@ -75,13 +73,12 @@ def benchmark(
         folds: How many equal folds the labelled tiles are dealt into, the first
             testing, the second validating and the rest training.
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
-        pooling: What the tile head reads of a tile, "GAP" or "CLS".
         budget: How many patches of each instrument a training tile keeps.
         budget_scale: The most a training batch's budget is multiplied by.
         batch_size: How many tiles one training batch holds.
         whole_batch_size: How many tiles one batch read whole holds.
-        epochs: How many epochs the heads train for, each kept at its best
-            validation RMSE.
+        epochs: How many epochs the head trains for, kept at its best validation
+            RMSE.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         head_learning_rate: The head's peak learning rate.
         lora_rank: The rank of each LoRA update of the encoders when fine-tuned.
@@ -90,7 +87,7 @@ def benchmark(
         lora_learning_rate: The LoRA updates' peak learning rate.
         weight_decay: The AdamW weight decay.
         max_grad_norm: The norm every step's gradient is clipped to.
-        tiles: The test tiles drawn as SWIM's grid beside the map heads', by what
+        tiles: The test tiles drawn as SWIM's grid beside the head's, by what
             they show.
         shown: The instrument whose every observation of a tile is drawn beneath.
         seed: What fixes the split, the order and each fixed cut.
@@ -109,10 +106,6 @@ def benchmark(
         ).astype(np.float32)
         for tile, one in labels.items()
     }
-    targets = {
-        "tile": {tile: np.median(grid, 0) for tile, grid in grids.items()},
-        "map": grids,
-    }
     tested = tile_loader(
         build, test, read, shapes, None, 1.0, seed, whole_batch_size, workers, False
     )
@@ -120,17 +113,14 @@ def benchmark(
     consistency = {}
     for protocol, tuned in PROTOCOLS.items():
         adapted = adapted_model(model, lora_rank, lora_alpha) if tuned else model
-        predicted = finetune(
+        consistency[protocol] = finetune(
             adapted,
-            {
-                "tile": Classifier(dim, len(DEPTHS), pooling, not tuned).to(device),
-                "map": Segmenter(dim, heads, segmenter_depth, len(DEPTHS)).to(device),
-            },
+            Segmenter(dim, heads, segmenter_depth, len(DEPTHS)).to(device),
             build,
             training,
             validation,
             tested,
-            targets,
+            grids,
             read,
             shapes,
             budget,
@@ -149,27 +139,20 @@ def benchmark(
             run,
             f"{BENCHMARK}/{protocol}",
         )
-        consistency |= {(protocol, task): held for task, held in predicted.items()}
     images = {
         place: ice_image(
             drawn_arrays(
                 build, shown, by_tile[tile][shown], sizes[shown], shapes[shown]
             ),
             {"Ground Truth": grids[tile]}
-            | {
-                TITLES[protocol]: consistency[protocol, "map"][tile]
-                for protocol in PROTOCOLS
-            },
+            | {TITLES[protocol]: consistency[protocol][tile] for protocol in PROTOCOLS},
         )
         for place, tile in tiles.items()
     }
     log_benchmark(
         run,
         run_name,
-        {
-            (protocol, task): ice_scores(held, targets[task], task == "map")
-            for (protocol, task), held in consistency.items()
-        },
+        {protocol: ice_scores(held, grids) for protocol, held in consistency.items()},
         images,
         write_predictions(run_name, consistency),
     )

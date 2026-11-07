@@ -1,7 +1,7 @@
 # Build whose tiles SWIM labels, read with every label it has.
 build: training
 
-# Instruments the heads read.
+# Instruments the head reads.
 instruments: ${model.instruments}
 
 # Equal folds the labelled tiles are dealt into, by squares of block_deg degrees
@@ -9,19 +9,16 @@ instruments: ${model.instruments}
 folds: 10
 block_deg: 10.0
 
-# What the tile head reads of a tile, the GAP of its tokens or its CLS.
-pooling: GAP
-
 # Cross-attention blocks the map head's points read the tokens through.
 segmenter_depth: 1
 
-# How both heads are trained together, as a linear probe and fine-tuned.
+# How the map head is trained, as a linear probe and fine-tuned.
 finetune:
   # Tiles per batch, each cut to the training budget.
   batch_size: 32
   budget: ${dataset.budget}
   budget_scale: ${dataset.budget_scale}
-  # Epochs of the whole schedule, each head kept at its best validation RMSE.
+  # Epochs of the whole schedule, the head kept at its best validation RMSE.
   epochs: 50
   # Epochs of warmup before the cosine decay.
   warmup_epochs: 5
@@ -34,7 +31,7 @@ finetune:
   # Norm every step's gradient is clipped to.
   max_grad_norm: 1.0
 
-# How every head is measured on the validation and test tiles.
+# How the head is measured on the validation and test tiles.
 evaluation:
   # Tiles per batch, each read whole.
   batch_size: 8

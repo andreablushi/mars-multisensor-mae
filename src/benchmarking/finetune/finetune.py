@@ -1,4 +1,4 @@
-"""Training the heads on one read of the model's tokens, the model frozen or adapted."""
+"""Training the map head over the model's tokens, the model frozen or adapted."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from benchmarking.evaluation.metrics import ice_scores
-from benchmarking.finetune.loss import ice_losses
 from benchmarking.finetune.step import batch_consistency
 from benchmarking.finetune.validate import predicted_consistency
 from dataset.loader import tile_loader
@@ -29,12 +28,12 @@ log = console_logger(__name__)
 
 def finetune(
     model: CrossSensorMAE,
-    heads: Mapping[str, nn.Module],
+    head: nn.Module,
     build: DatasetBuild,
     training: Sequence[str],
     validation: Sequence[str],
     tested: DataLoader,
-    targets: Mapping[str, Mapping[str, np.ndarray]],
+    targets: Mapping[str, np.ndarray],
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
     budget: Mapping[str, int],
@@ -52,19 +51,19 @@ def finetune(
     device: torch.device,
     run: Run,
     prefix: str,
-) -> dict[str, dict[str, np.ndarray]]:
-    """Train every head together, then return each one's test consistency at its best.
+) -> dict[str, np.ndarray]:
+    """Train the head, then return its test consistency at its best.
 
     Args:
         model: The model, on the device, only its parameters asking for gradients
             trained.
-        heads: The tile head and the map head, on the device, keyed by task.
+        head: The map head, on the device.
         build: The build the tiles are read from.
         training: The training tiles.
         validation: The validation tiles.
         tested: The test tiles, in batches, each read whole.
-        targets: SWIM's consistency at each depth, the tile's median or every
-            point's, keyed by task, then by tile. (Z,) or (P * P, Z)
+        targets: SWIM's consistency of every point at each depth, keyed by the
+            tile. (P * P, Z)
         sizes: How far a patch of each sensor read runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
         budget: How many patches of each instrument a training tile keeps.
@@ -72,9 +71,9 @@ def finetune(
         batch_size: How many tiles one training batch holds.
         whole_batch_size: How many tiles one validation batch holds, each read whole.
         workers: How many processes read tiles beside the training.
-        epochs: How many epochs the heads train for.
+        epochs: How many epochs the head trains for.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
-        head_learning_rate: The heads' peak learning rate.
+        head_learning_rate: The head's peak learning rate.
         model_learning_rate: The peak learning rate of the model's trained
             parameters.
         weight_decay: The AdamW weight decay.
@@ -85,8 +84,8 @@ def finetune(
         prefix: Where the protocol's steps are logged.
 
     Returns:
-        consistency: Each head's test consistency at its best validation epoch,
-            keyed by task, then by tile. (Z,) or (P * P, Z)
+        consistency: The test consistency at the best validation epoch, keyed by
+            the tile. (P * P, Z)
     """
     training, validation = (
         tile_loader(
@@ -109,10 +108,7 @@ def finetune(
     )
     trained = {name: one for name, one in model.named_parameters() if one.requires_grad}
     groups = (
-        (
-            [one for head in heads.values() for one in head.parameters()],
-            head_learning_rate,
-        ),
+        (list(head.parameters()), head_learning_rate),
         (list(trained.values()), model_learning_rate),
     )
     optimizer = torch.optim.AdamW(
@@ -140,24 +136,19 @@ def finetune(
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
-    best = dict.fromkeys(heads, math.inf)
-    kept, step = {}, 0
+    best, step = math.inf, 0
     model.train()
-    for head in heads.values():
-        head.train()
+    head.train()
     for epoch in range(1, epochs + 1):
         for batch, identities in training:
             optimizer.zero_grad()
-            consistency, covered = batch_consistency(model, heads, batch, device)
-            losses = ice_losses(
-                consistency,
-                torch.as_tensor(
-                    np.stack([targets["map"][tile] for tile in identities]),
-                    device=device,
-                ),
-                covered,
+            consistency, covered = batch_consistency(model, head, batch, device)
+            wanted = torch.as_tensor(
+                np.stack([targets[tile] for tile in identities]), device=device
             )
-            sum(losses.values()).backward()
+            error = (consistency - wanted) ** 2 * covered[..., None]
+            loss = error.sum() / (covered.sum() * wanted.shape[-1])
+            loss.backward()
             clip_grad_norm_(
                 [one for group in optimizer.param_groups for one in group["params"]],
                 max_grad_norm,
@@ -165,31 +156,21 @@ def finetune(
             optimizer.step()
             scheduler.step()
             step += 1
-            log_step(
-                run, prefix, step, {task: float(one) for task, one in losses.items()}
-            )
-        predicted = predicted_consistency(model, heads, validation, device)
-        scores = {
-            task: ice_scores(held, targets[task], task == "map")
-            for task, held in predicted.items()
-        }
+            log_step(run, prefix, step, float(loss.detach()))
+        scores = ice_scores(
+            predicted_consistency(model, head, validation, device), targets
+        )
         log_epoch(run, prefix, step, scores)
-        for task, by_depth in scores.items():
-            error = float(np.mean([held["RMSE"] for held in by_depth.values()]))
-            log.info("%s/%s epoch %d validation RMSE %.4f", prefix, task, epoch, error)
-            if error < best[task]:
-                best[task] = error
-                kept[task] = deepcopy(
-                    (
-                        heads[task].state_dict(),
-                        {name: one.detach() for name, one in trained.items()},
-                    )
+        rmse = float(np.mean([held["RMSE"] for held in scores.values()]))
+        log.info("%s epoch %d validation RMSE %.4f", prefix, epoch, rmse)
+        if rmse < best:
+            best = rmse
+            kept = deepcopy(
+                (
+                    head.state_dict(),
+                    {name: one.detach() for name, one in trained.items()},
                 )
-    consistency = {}
-    for task, (head, parameters) in kept.items():
-        heads[task].load_state_dict(head)
-        model.load_state_dict(parameters, strict=False)
-        consistency[task] = predicted_consistency(
-            model, {task: heads[task]}, tested, device
-        )[task]
-    return consistency
+            )
+    head.load_state_dict(kept[0])
+    model.load_state_dict(kept[1], strict=False)
+    return predicted_consistency(model, head, tested, device)

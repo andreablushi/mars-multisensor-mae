@@ -139,16 +139,16 @@ class EvaluationConfig:
 
 @dataclass
 class FinetuneConfig:
-    """How every benchmark head is trained, as a linear probe and fine-tuned.
+    """How the benchmark head is trained, as a linear probe and fine-tuned.
 
     Attributes:
         batch_size: How many tiles one batch holds.
         budget: How many patches of each instrument a tile keeps.
         budget_scale: The most a batch's budget is multiplied by.
-        epochs: How many epochs the heads train for, each kept at its best
-            validation RMSE.
+        epochs: How many epochs the head trains for, kept at its best validation
+            RMSE.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
-        head_learning_rate: The heads' peak learning rate.
+        head_learning_rate: The head's peak learning rate.
         lora_rank: The rank of each LoRA update of the encoders when fine-tuned.
         lora_alpha: What each LoRA update is scaled by before it is divided by its
             rank.
@@ -172,7 +172,7 @@ class FinetuneConfig:
 
 @dataclass
 class BenchmarkEvaluationConfig:
-    """How every benchmark head is measured on the validation and test tiles.
+    """How the benchmark head is measured on the validation and test tiles.
 
     Attributes:
         batch_size: How many tiles one batch holds, each read whole.
@@ -192,21 +192,19 @@ class BenchmarkConfig:
 
     Attributes:
         build: The build whose labelled tiles are read, published as dataset-<build>.
-        instruments: The instruments the heads read.
+        instruments: The instruments the head reads.
         folds: How many equal folds the labelled tiles are dealt into, the first
             testing, the second validating and the rest training.
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
-        pooling: What the classifier reads of a tile, the GAP of its tokens or its CLS.
-        segmenter_depth: How many cross-attention blocks the segmenter stacks.
-        finetune: How every head is trained.
-        evaluation: How every head is measured.
+        segmenter_depth: How many cross-attention blocks the map head stacks.
+        finetune: How the head is trained.
+        evaluation: How the head is measured.
     """
 
     build: str
     instruments: list[str]
     folds: int
     block_deg: float
-    pooling: str
     segmenter_depth: int
     finetune: FinetuneConfig
     evaluation: BenchmarkEvaluationConfig

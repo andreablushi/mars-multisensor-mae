@@ -1,8 +1,6 @@
-"""Predicting every head's consistency over one split."""
+"""Predicting the head's consistency over one split."""
 
 from __future__ import annotations
-
-from collections.abc import Mapping
 
 import numpy as np
 import torch
@@ -15,32 +13,29 @@ from benchmarking.finetune.step import batch_consistency
 
 def predicted_consistency(
     model: CrossSensorMAE,
-    heads: Mapping[str, nn.Module],
+    head: nn.Module,
     loader: DataLoader,
     device: torch.device,
-) -> dict[str, dict[str, np.ndarray]]:
-    """Return every head's consistency over one split, all of them left training.
+) -> dict[str, np.ndarray]:
+    """Return the head's consistency over one split, both left training.
 
     Args:
         model: The model, measured in evaluation on the device.
-        heads: The tile head and the map head, measured alike, keyed by task.
+        head: The map head, measured alike.
         loader: The split, in batches, each tile read whole.
         device: Where the model runs.
 
     Returns:
-        consistency: The consistency at each depth, keyed by task, then by tile.
-            (Z,) or (P * P, Z)
+        consistency: The consistency of every point at each depth, keyed by the
+            tile. (P * P, Z)
     """
-    parts = [model, *heads.values()]
-    for part in parts:
-        part.eval()
-    consistency = {task: {} for task in heads}
+    model.eval()
+    head.eval()
+    consistency = {}
     with torch.no_grad():
         for batch, identities in loader:
-            for task, held in batch_consistency(model, heads, batch, device)[0].items():
-                consistency[task].update(
-                    zip(identities, held.cpu().numpy(), strict=True)
-                )
-    for part in parts:
-        part.train()
+            held = batch_consistency(model, head, batch, device)[0].cpu().numpy()
+            consistency.update(zip(identities, held, strict=True))
+    model.train()
+    head.train()
     return consistency
