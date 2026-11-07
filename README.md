@@ -76,6 +76,12 @@ uv run --group digitalhub python scripts/benchmark.py --dh --ref main default/ma
 
 - It probes and fine-tunes a classifier and a segmenter on SWIM's subsurface ice
   over the run's latest W&B model, and logs a benchmark run of the same name.
+- Both heads regress SWIM's ice consistency, the classifier the tile's median and
+  the segmenter every grid point, trained together on one read of the tokens. A
+  training crop scores only the points it has tokens near. Fine-tuning trains LoRA
+  updates of the encoders.
+- AUROC and AUPRC rank SWIM's own icy points and tiles, RMSE and R2 measure the fit,
+  the segmenter's within each tile SWIM finds both icy and dry.
 - Fewer `benchmark.instruments` than the model reads name the run for those left
   out, such as `default/mae-small-no-sharad`.
 - `--evaluate` on `scripts/train.py` also runs the benchmark.

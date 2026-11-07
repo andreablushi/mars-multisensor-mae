@@ -145,11 +145,14 @@ class FinetuneConfig:
         batch_size: How many tiles one batch holds.
         budget: How many patches of each instrument a tile keeps.
         budget_scale: The most a batch's budget is multiplied by.
-        epochs: The most epochs a head trains for.
-        patience: How many epochs without a better validation AUPRC stop it.
+        epochs: How many epochs the heads train for, each kept at its best
+            validation AUPRC.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
-        head_learning_rate: The head's peak learning rate.
-        encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
+        head_learning_rate: The heads' peak learning rate.
+        lora_rank: The rank of each LoRA update of the encoders when fine-tuned.
+        lora_alpha: What each LoRA update is scaled by before it is divided by its
+            rank.
+        lora_learning_rate: The LoRA updates' peak learning rate.
         weight_decay: The AdamW weight decay.
         max_grad_norm: The norm every step's gradient is clipped to.
     """
@@ -158,10 +161,11 @@ class FinetuneConfig:
     budget: dict[str, int]
     budget_scale: float
     epochs: int
-    patience: int
     warmup_epochs: int
     head_learning_rate: float
-    encoder_learning_rate: float
+    lora_rank: int
+    lora_alpha: float
+    lora_learning_rate: float
     weight_decay: float
     max_grad_norm: float
 
@@ -172,15 +176,15 @@ class BenchmarkEvaluationConfig:
 
     Attributes:
         batch_size: How many tiles one batch holds, each read whole.
-        threshold: The chance at or above which a point or tile counts as icy, for
-            mIoU, the confusion and the drawn grids.
+        thresholds: SWIM's consistency from which each depth is icy, which cuts the
+            heads' own for the confusion and the drawn grids.
         tiles: The test tiles drawn as SWIM's grid beside the predicted ones, by
             what they show.
         shown: The instrument whose every observation of a tile is drawn beneath.
     """
 
     batch_size: int
-    threshold: float
+    thresholds: dict[str, float]
     tiles: dict[str, str]
     shown: str
 

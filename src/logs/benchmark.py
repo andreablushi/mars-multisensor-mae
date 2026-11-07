@@ -16,39 +16,45 @@ BENCHMARK = "benchmark"
 
 STEP = f"{BENCHMARK}/step"
 
+RESULTS_STEP = 10**6
 
-def log_step(run: Run, prefix: str, step: int, loss: float) -> None:
-    """Log one training step of one head, its loss against the step.
+
+def log_step(run: Run, prefix: str, step: int, losses: Mapping[str, float]) -> None:
+    """Log one training step of one protocol, each head's loss against the step.
 
     Args:
         run: The tracked run.
-        prefix: Where the head's steps are logged.
+        prefix: Where the protocol's steps are logged.
         step: Which step it is, from 1.
-        loss: The step's training loss.
+        losses: Each head's training loss, keyed by task.
     """
-    run.log({STEP: step, f"{prefix}/train/loss": loss})
+    run.log(
+        {STEP: step}
+        | {f"{prefix}/{task}/train/loss": loss for task, loss in losses.items()}
+    )
 
 
 def log_epoch(
     run: Run,
     prefix: str,
     step: int,
-    scores: Mapping[str, Mapping[str, float]],
+    scores: Mapping[str, Mapping[str, Mapping[str, float]]],
 ) -> None:
-    """Log one epoch of one head, its validation scores against its last step.
+    """Log one epoch of one protocol, each head's validation against its last step.
 
     Args:
         run: The tracked run.
-        prefix: Where the head's steps are logged.
+        prefix: Where the protocol's steps are logged.
         step: The epoch's last step.
-        scores: Each validation metric, keyed by depth, then by metric.
+        scores: Each validation metric, keyed by task, then by depth and metric.
     """
     run.define_metric(f"{prefix}/*", step_metric=STEP)
     run.log(
         {STEP: step}
         | {
-            f"{prefix}/validation/{depth}/{metric}": value
-            for depth, held in scores.items()
+            f"{prefix}/{task}/validation/{depth}/{metric}": value
+            for task, by_depth in scores.items()
+            for depth, held in by_depth.items()
             for metric, value in held.items()
         }
     )
@@ -62,7 +68,7 @@ def log_benchmark(
     images: Mapping[str, tuple[np.ndarray, str]],
     path: Path,
 ) -> None:
-    """Log the test scores and confusion, the drawn tiles, and the predictions.
+    """Log the test scores, confusion, drawn tiles and predictions at one step for all.
 
     Args:
         run: The tracked run.
@@ -104,7 +110,8 @@ def log_benchmark(
                 f"{BENCHMARK}/grids/{place}": wandb.Image(image, caption=caption)
                 for place, (image, caption) in images.items()
             },
-        }
+        },
+        step=RESULTS_STEP,
     )
     artifact = wandb.Artifact(artifact_name(BENCHMARK, run_name), type=BENCHMARK)
     artifact.add_file(str(path))

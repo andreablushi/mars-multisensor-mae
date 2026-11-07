@@ -1,108 +1,105 @@
-"""What a head's chance of ice comes to against SWIM's, depth by depth."""
+"""What a head's consistency comes to against SWIM's ice, depth by depth."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 
 import numpy as np
-from sklearn.metrics import (
-    average_precision_score,
-    confusion_matrix,
-    jaccard_score,
-    roc_auc_score,
-)
+from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
 
 DEPTHS = ("1_5m", "5m")
 
 COMBOS = ("neither", "1-5 m only", "below 5 m only", "both")
 
 
-def ice_combos(chance: np.ndarray, threshold: float) -> np.ndarray:
+def ice_combos(icy: np.ndarray) -> np.ndarray:
     """Return where ice is found at each depth as one of COMBOS, by its index.
 
     Args:
-        chance: The chance of ice at each depth, or SWIM's 0 or 1. (..., Z)
-        threshold: The chance at or above which a depth counts as icy.
+        icy: Whether each depth is icy. (..., Z)
 
     Returns:
-        combos: The index in COMBOS of the depths counted icy. (...)
+        combos: The index in COMBOS of the depths icy. (...)
     """
-    return (chance >= threshold) @ np.array([1, 2])
+    return icy.astype(int) @ np.array([1, 2])
 
 
 def ice_scores(
-    probabilities: Mapping[str, np.ndarray],
+    consistency: Mapping[str, np.ndarray],
     targets: Mapping[str, np.ndarray],
+    icy: Mapping[str, np.ndarray],
     segmented: bool,
-    threshold: float,
 ) -> dict[str, dict[str, float]]:
-    """Return each depth's AUROC and AUPRC, within each mixed tile when segmented.
+    """Return how well each depth's consistency ranks SWIM's ice and fits SWIM's own.
 
     Args:
-        probabilities: The chance of ice at each depth of some tiles, keyed by the
+        consistency: The consistency at each depth of some tiles, keyed by the
             tile. (Z,) or (P * P, Z)
-        targets: Whether SWIM finds ice there, as 0 or 1, keyed alike over at least
-            those tiles.
-        segmented: Whether every point is scored, rather than the tile. Each metric,
-            mIoU added, is then the mean over the tiles SWIM finds both icy and dry
-            at that depth, of what it comes to over the tile's points.
-        threshold: The chance at or above which a point counts as icy, for mIoU.
+        targets: SWIM's consistency there, keyed alike over at least those tiles.
+        icy: Whether SWIM finds ice there, keyed alike over at least those tiles.
+        segmented: Whether every point is scored, rather than the tile. Only the
+            tiles SWIM finds both icy and dry at a depth are then scored: AUROC and
+            AUPRC as the mean of what each tile's points come to, RMSE over their
+            points, and R2 around each tile's own mean.
 
     Returns:
-        scores: Each metric, keyed by depth, then by metric.
+        scores: The AUROC, AUPRC, RMSE and R2, keyed by depth, then by metric.
     """
 
-    def ranked(icy: np.ndarray, chance: np.ndarray) -> dict[str, float]:
-        """Return how well the chance ranks the icy above the dry."""
+    def ranked(truth: np.ndarray, score: np.ndarray) -> dict[str, float]:
+        """Return how well the score ranks the icy above the dry."""
         return {
-            "AUROC": float(roc_auc_score(icy, chance)),
-            "AUPRC": float(average_precision_score(icy, chance)),
+            "AUROC": float(roc_auc_score(truth, score)),
+            "AUPRC": float(average_precision_score(truth, score)),
         }
 
-    tiles = sorted(probabilities)
-    predicted, truth = (
-        np.stack([held[tile] for tile in tiles]) for held in (probabilities, targets)
+    tiles = sorted(consistency)
+    predicted, wanted, truth = (
+        np.stack([held[tile] for tile in tiles]) for held in (consistency, targets, icy)
     )  # (T, Z) or (T, P * P, Z)
     scores = {}
     for at, depth in enumerate(DEPTHS):
-        chance, icy = predicted[..., at], truth[..., at]
-        if not segmented:
-            scores[depth] = ranked(icy, chance)
-            continue
-        mixed = [
-            ranked(held, one)
-            | {"mIoU": float(jaccard_score(held, one >= threshold, average="macro"))}
-            for one, held in zip(chance, icy, strict=True)
-            if 0 < held.mean() < 1
-        ]
-        scores[depth] = {
-            metric: float(np.mean([held[metric] for held in mixed]))
-            for metric in mixed[0]
+        score, target, held = predicted[..., at], wanted[..., at], truth[..., at]
+        if segmented:
+            mixed = (0 < held.mean(1)) & (held.mean(1) < 1)
+            score, target, held = score[mixed], target[mixed], held[mixed]
+            each = [ranked(*one) for one in zip(held, score, strict=True)]
+            centre = target.mean(1, keepdims=True)
+            scores[depth] = {
+                metric: float(np.mean([one[metric] for one in each]))
+                for metric in each[0]
+            }
+        else:
+            centre = target.mean()
+            scores[depth] = ranked(held, score)
+        error = np.sum((score - target) ** 2)
+        scores[depth] |= {
+            "RMSE": float(np.sqrt(error / target.size)),
+            "R2": float(1 - error / np.sum((target - centre) ** 2)),
         }
     return scores
 
 
 def ice_confusion(
-    probabilities: Mapping[str, np.ndarray],
-    targets: Mapping[str, np.ndarray],
-    threshold: float,
+    consistency: Mapping[str, np.ndarray],
+    icy: Mapping[str, np.ndarray],
+    thresholds: np.ndarray,
 ) -> np.ndarray:
     """Return how many tiles of each SWIM combo are predicted as each combo.
 
     Args:
-        probabilities: The chance of ice at each depth of some tiles, keyed by the
+        consistency: The consistency at each depth of some tiles, keyed by the
             tile. (Z,)
-        targets: Whether SWIM finds ice there, as 0 or 1, keyed alike over at least
-            those tiles.
-        threshold: The chance at or above which a depth counts as icy.
+        icy: Whether SWIM finds ice there, keyed alike over at least those tiles.
+        thresholds: SWIM's consistency from which each depth is icy. (Z)
 
     Returns:
         counts: The tiles of each SWIM combo by row and predicted combo by column,
             both in COMBOS order. (len(COMBOS), len(COMBOS))
     """
-    tiles = sorted(probabilities)
-    truth, predicted = (
-        ice_combos(np.stack([held[tile] for tile in tiles]), threshold)
-        for held in (targets, probabilities)
+    tiles = sorted(consistency)
+    truth = ice_combos(np.stack([icy[tile] for tile in tiles]))
+    predicted = ice_combos(
+        np.stack([consistency[tile] for tile in tiles]) >= thresholds
     )
     return confusion_matrix(truth, predicted, labels=range(len(COMBOS)))

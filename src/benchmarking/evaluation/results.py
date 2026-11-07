@@ -1,4 +1,4 @@
-"""What a benchmark writes: every test tile's chance of ice, by protocol and task."""
+"""What a benchmark writes: every test tile's consistency, by protocol and task."""
 
 from __future__ import annotations
 
@@ -15,14 +15,14 @@ from configs.paths import predictions_path
 
 @dataclass(frozen=True, slots=True)
 class IcePrediction:
-    """One test tile's chance of ice at one depth, under one protocol and task.
+    """One test tile's consistency with ice at one depth, under one protocol and task.
 
     Attributes:
         tile: The tile.
         protocol: How its head was trained, "linear-probe" or "fine-tune".
         task: What its head tells, "classification" or "segmentation".
         depth: The depth, as SWIM's labels name it.
-        chance: The chance of ice, one for the tile or one per point, rows from
+        consistency: The consistency, one for the tile or one per point, rows from
             the north and points from the west.
     """
 
@@ -30,7 +30,7 @@ class IcePrediction:
     protocol: str
     task: str
     depth: str
-    chance: tuple[float, ...]
+    consistency: tuple[float, ...]
 
 
 PREDICTIONS_SCHEMA = parquet.schema_of(IcePrediction)
@@ -38,13 +38,13 @@ PREDICTIONS_SCHEMA = parquet.schema_of(IcePrediction)
 
 def write_predictions(
     run_name: str,
-    probabilities: Mapping[tuple[str, str], Mapping[str, np.ndarray]],
+    consistency: Mapping[tuple[str, str], Mapping[str, np.ndarray]],
 ) -> Path:
     """Return where one run's benchmark predictions were written, replacing any.
 
     Args:
         run_name: What the run is called, which names its predictions.
-        probabilities: The chance of ice at each depth of every test tile, keyed by
+        consistency: The consistency at each depth of every test tile, keyed by
             protocol and task, then by tile. (Z,) or (P * P, Z)
 
     Returns:
@@ -54,10 +54,10 @@ def write_predictions(
     parquet.write_rows(
         [
             IcePrediction(
-                tile, protocol, task, depth, tuple(np.ravel(chance[..., at]).tolist())
+                tile, protocol, task, depth, tuple(np.ravel(held[..., at]).tolist())
             )
-            for (protocol, task), by_tile in probabilities.items()
-            for tile, chance in sorted(by_tile.items())
+            for (protocol, task), by_tile in consistency.items()
+            for tile, held in sorted(by_tile.items())
             for at, depth in enumerate(DEPTHS)
         ],
         PREDICTIONS_SCHEMA,

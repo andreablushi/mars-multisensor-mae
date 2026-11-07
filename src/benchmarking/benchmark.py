@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 
 import numpy as np
 import torch
@@ -12,11 +11,11 @@ from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from benchmarking.architecture.classifier import Classifier
+from benchmarking.architecture.lora import adapted_model
 from benchmarking.architecture.segmenter import Segmenter
 from benchmarking.evaluation.metrics import DEPTHS, ice_confusion, ice_scores
 from benchmarking.evaluation.results import write_predictions
 from benchmarking.finetune.finetune import finetune
-from benchmarking.finetune.validate import predicted_probabilities
 from dataset.loader import ice_split, tile_loader
 from dataset.store import DatasetBuild
 from evaluation.reconstruct import drawn_arrays
@@ -27,7 +26,7 @@ PROTOCOLS = {"linear-probe": False, "fine-tune": True}
 
 TITLES = {"linear-probe": "Linear Probe", "fine-tune": "Fine-tuning"}
 
-LABELS = {"classification": "ice_", "segmentation": "icy_points_"}
+ICY = {"classification": "ice_", "segmentation": "icy_points_"}
 
 
 def benchmark(
@@ -48,13 +47,14 @@ def benchmark(
     batch_size: int,
     whole_batch_size: int,
     epochs: int,
-    patience: int,
     warmup_epochs: int,
     head_learning_rate: float,
-    encoder_learning_rate: float,
+    lora_rank: int,
+    lora_alpha: float,
+    lora_learning_rate: float,
     weight_decay: float,
     max_grad_norm: float,
-    threshold: float,
+    thresholds: Mapping[str, float],
     tiles: Mapping[str, str],
     shown: str,
     seed: int,
@@ -63,10 +63,10 @@ def benchmark(
     run: Run,
     run_name: str,
 ) -> None:
-    """Probe and fine-tune every head, then log its test scores and the drawn tiles.
+    """Probe and fine-tune both heads, then log their test scores and the drawn tiles.
 
     Args:
-        model: The model, on the device, its weights put back before every head.
+        model: The model, on the device, left as it is.
         build: The build the labelled tiles are read from.
         labels: Each tile's ice at both depths, keyed by the tile, over any build.
         instruments: The instruments the heads read.
@@ -83,15 +83,18 @@ def benchmark(
         budget_scale: The most a training batch's budget is multiplied by.
         batch_size: How many tiles one training batch holds.
         whole_batch_size: How many tiles one batch read whole holds.
-        epochs: The most epochs a head trains for.
-        patience: How many epochs without a better validation AUPRC stop it.
+        epochs: How many epochs the heads train for, each kept at its best
+            validation AUPRC.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         head_learning_rate: The head's peak learning rate.
-        encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
+        lora_rank: The rank of each LoRA update of the encoders when fine-tuned.
+        lora_alpha: What each LoRA update is scaled by before it is divided by its
+            rank.
+        lora_learning_rate: The LoRA updates' peak learning rate.
         weight_decay: The AdamW weight decay.
         max_grad_norm: The norm every step's gradient is clipped to.
-        threshold: The chance at or above which a point or tile counts as icy, for
-            mIoU, the confusion and the drawn grids.
+        thresholds: SWIM's consistency from which each depth is icy, which cuts the
+            heads' own for the confusion and the drawn grids.
         tiles: The test tiles drawn as SWIM's grid beside the segmenters', by what
             they show.
         shown: The instrument whose every observation of a tile is drawn beneath.
@@ -105,76 +108,78 @@ def benchmark(
     labels = {tile: one for tile, one in labels.items() if tile in by_tile}
     training, validation, test = ice_split(labels, folds, block_deg, seed)
     read = {name: sizes[name] for name in instruments}
+    cut = np.array([thresholds[depth] for depth in DEPTHS])
+
+    def stacked(one: IceLabel, field: str) -> np.ndarray:
+        """Return one label's field at every depth, depths last."""
+        return np.stack(
+            [np.asarray(getattr(one, field + depth)) for depth in DEPTHS], -1
+        )
+
+    grids = {
+        tile: stacked(one, "consistency_").astype(np.float32)
+        for tile, one in labels.items()
+    }
     targets = {
-        task: {
-            tile: np.stack(
-                [
-                    np.asarray(getattr(one, field + depth), np.float32)
-                    for depth in DEPTHS
-                ],
-                axis=-1,
-            )
-            for tile, one in labels.items()
-        }
-        for task, field in LABELS.items()
+        "classification": {tile: np.median(grid, 0) for tile, grid in grids.items()},
+        "segmentation": grids,
+    }
+    icy = {
+        task: {tile: stacked(one, field) for tile, one in labels.items()}
+        for task, field in ICY.items()
     }
     tested = tile_loader(
         build, test, read, shapes, None, 1.0, seed, whole_batch_size, workers, False
     )
-    pretrained = deepcopy(model.state_dict())
-    probabilities = {}
+    model.requires_grad_(False)
+    consistency = {}
     for protocol, tuned in PROTOCOLS.items():
-        for task in LABELS:
-            segmented = task == "segmentation"
-            model.load_state_dict(pretrained)
-            head = (
-                Segmenter(dim, heads, segmenter_depth, len(DEPTHS))
-                if segmented
-                else Classifier(dim, len(DEPTHS), pooling, not tuned)
-            ).to(device)
-            finetune(
-                model,
-                head,
-                build,
-                training,
-                validation,
-                targets[task],
-                segmented,
-                tuned,
-                read,
-                shapes,
-                budget,
-                budget_scale,
-                batch_size,
-                whole_batch_size,
-                workers,
-                epochs,
-                patience,
-                warmup_epochs,
-                head_learning_rate,
-                encoder_learning_rate,
-                weight_decay,
-                max_grad_norm,
-                threshold,
-                seed,
-                device,
-                run,
-                f"{BENCHMARK}/{protocol}/{task}",
-            )
-            probabilities[protocol, task] = predicted_probabilities(
-                model, head, tested, device
-            )
+        adapted = adapted_model(model, lora_rank, lora_alpha) if tuned else model
+        predicted = finetune(
+            adapted,
+            {
+                "classification": Classifier(dim, len(DEPTHS), pooling, not tuned).to(
+                    device
+                ),
+                "segmentation": Segmenter(dim, heads, segmenter_depth, len(DEPTHS)).to(
+                    device
+                ),
+            },
+            build,
+            training,
+            validation,
+            tested,
+            targets,
+            icy,
+            read,
+            shapes,
+            budget,
+            budget_scale,
+            batch_size,
+            whole_batch_size,
+            workers,
+            epochs,
+            warmup_epochs,
+            head_learning_rate,
+            lora_learning_rate,
+            weight_decay,
+            max_grad_norm,
+            seed,
+            device,
+            run,
+            f"{BENCHMARK}/{protocol}",
+        )
+        consistency |= {(protocol, task): held for task, held in predicted.items()}
     images = {
         place: ice_image(
             drawn_arrays(
                 build, shown, by_tile[tile][shown], sizes[shown], shapes[shown]
             ),
-            {"Ground Truth": targets["segmentation"][tile]}
+            {"Ground Truth": icy["segmentation"][tile]}
             | {
-                TITLES[protocol]: probabilities[protocol, "segmentation"][tile]
+                TITLES[protocol]: consistency[protocol, "segmentation"][tile] >= cut
                 for protocol in PROTOCOLS
             },
-            threshold,
         )
         for place, tile in tiles.items()
     }
@@ -183,18 +188,16 @@ def benchmark(
         run_name,
         {
             (protocol, task): ice_scores(
-                held, targets[task], task == "segmentation", threshold
+                held, targets[task], icy[task], task == "segmentation"
             )
-            for (protocol, task), held in probabilities.items()
+            for (protocol, task), held in consistency.items()
         },
         {
             protocol: ice_confusion(
-                probabilities[protocol, "classification"],
-                targets["classification"],
-                threshold,
+                consistency[protocol, "classification"], icy["classification"], cut
             )
             for protocol in PROTOCOLS
         },
         images,
-        write_predictions(run_name, probabilities),
+        write_predictions(run_name, consistency),
     )

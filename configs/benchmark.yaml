@@ -15,20 +15,21 @@ pooling: GAP
 # Cross-attention blocks the segmenter's points read the tokens through.
 segmenter_depth: 1
 
-# How every head is trained, as a linear probe and fine-tuned.
+# How both heads are trained together, as a linear probe and fine-tuned.
 finetune:
   # Tiles per batch, each cut to the training budget.
   batch_size: 32
   budget: ${dataset.budget}
   budget_scale: ${dataset.budget_scale}
-  # Most epochs, and epochs without a better validation AUPRC that stop it.
-  epochs: 30
-  patience: 5
+  # Epochs of the whole schedule, each head kept at its best validation AUPRC.
+  epochs: 50
   # Epochs of warmup before the cosine decay.
   warmup_epochs: 5
-  # Peak learning rates of the head, and of the encoders when fine-tuned.
   head_learning_rate: 0.001
-  encoder_learning_rate: 0.00001
+  # Fine-tuning trains LoRA updates beside every encoder attention layer.
+  lora_rank: 8
+  lora_alpha: 16
+  lora_learning_rate: 0.0001
   weight_decay: 0.05
   # Norm every step's gradient is clipped to.
   max_grad_norm: 1.0
@@ -36,10 +37,12 @@ finetune:
 # How every head is measured on the validation and test tiles.
 evaluation:
   # Tiles per batch, each read whole.
-  batch_size: 1
-  # Chance at or above which a point or tile counts as icy, for mIoU, the
-  # confusion and the drawn grids.
-  threshold: 0.5
+  batch_size: 8
+  # SWIM's consistency from which each depth is icy, as the dataset labels it,
+  # cutting the heads' own for the confusion and the drawn grids.
+  thresholds:
+    1_5m: 0.4
+    5m: 0.5
   # Test tiles drawn as SWIM's grid beside the predicted ones, both depths
   # combined, over every observation of the instrument shown.
   tiles:

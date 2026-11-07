@@ -1,4 +1,4 @@
-"""Telling whether a tile is icy at each depth from one vector, by one linear layer."""
+"""Telling how consistent with ice a tile is from one vector, by one linear layer."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from architecture.models.context import Context
 
 
 class Classifier(nn.Module):
-    """A linear layer from a tile's GAP or CLS to one logit per depth.
+    """A linear layer from a tile's GAP or CLS to its consistency at each depth.
 
     Attributes:
         pooling: What it reads of a tile, "GAP" or "CLS".
-        linear: From that vector to the logits, after a BatchNorm without affine
+        linear: From that vector to the consistency, after a BatchNorm without affine
             when the encoders are frozen, as MAE's linear probe.
     """
 
@@ -33,14 +33,14 @@ class Classifier(nn.Module):
         )
 
     def forward(self, cls: Tensor, context: Context) -> Tensor:
-        """Return each tile's logits.
+        """Return each tile's consistency.
 
         Args:
             cls: The token read over every instrument together. (B, D)
             context: Every instrument's tokens side by side, without their CLS.
 
         Returns:
-            logits: One per depth. (B, Z)
+            consistency: One per depth. (B, Z)
         """
         if self.pooling == "CLS":
             return self.linear(cls)

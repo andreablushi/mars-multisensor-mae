@@ -39,15 +39,13 @@ def tinted(grey: np.ndarray, combos: np.ndarray) -> np.ndarray:
 def ice_image(
     arrays: Mapping[str, np.ndarray],
     grids: Mapping[str, np.ndarray],
-    threshold: float,
 ) -> tuple[np.ndarray, str]:
     """Return every grid over the observations of one instrument, and its caption.
 
     Args:
         arrays: The observations shown, as the evaluation draws them.
-        grids: The chance of ice at every point and depth, SWIM's own first, keyed
-            by what each shows. (P * P, Z)
-        threshold: The chance at or above which a depth counts as icy.
+        grids: Whether each point is icy at each depth, SWIM's own first, keyed by
+            what each shows. (P * P, Z)
 
     Returns:
         image: The grids from left to right beside the legend of their colours.
@@ -71,7 +69,5 @@ def ice_image(
         )[:, 0],
         shown,
     )
-    panels = [
-        tinted(grey, ice_combos(grid, threshold)[point]) for grid in grids.values()
-    ]
+    panels = [tinted(grey, ice_combos(grid)[point]) for grid in grids.values()]
     return centred_rows([spaced_row([*panels, legend])]), " | ".join(grids)
