@@ -34,9 +34,10 @@ class LoRALinear(nn.Module):
         """
         super().__init__()
         self.linear = linear
-        self.down = nn.Parameter(torch.empty(rank, linear.in_features))
+        like = {"device": linear.weight.device, "dtype": linear.weight.dtype}
+        self.down = nn.Parameter(torch.empty(rank, linear.in_features, **like))
         nn.init.kaiming_uniform_(self.down, a=math.sqrt(5))
-        self.up = nn.Parameter(torch.zeros(linear.out_features, rank))
+        self.up = nn.Parameter(torch.zeros(linear.out_features, rank, **like))
         self.scale = alpha / rank
 
     def forward(self, tokens: Tensor) -> Tensor:
