@@ -1,0 +1,24 @@
+# Platform project.
+project: mars-multisensor-features
+
+# Repository a job clones.
+repository: https://github.com/andreablushi/mars-multisensor-mae
+
+# Job interpreter and base image.
+python_version: PYTHON3_13
+base_image: python:3.13-slim
+
+# Function, profile and resources per stage; tile readers are twice the cores.
+stages:
+  training:
+    function: train-mae
+    profile: 1xa40-shared
+    resources: {cpu: "4", mem: 48Gi, disk: 250Gi}
+  evaluation:
+    function: evaluate-mae
+    profile: 1xa40-shared
+    resources: {cpu: "4", mem: 16Gi, disk: 40Gi}
+  benchmark:
+    function: benchmark-mae
+    profile: 1xa40-shared
+    resources: {cpu: "4", mem: 48Gi, disk: 150Gi}

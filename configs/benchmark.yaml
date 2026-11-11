@@ -1,0 +1,41 @@
+# Build whose tiles SWIM labels, read with every label it has.
+build: training
+
+# Instruments the head reads.
+instruments: ${model.instruments}
+
+# Equal folds the labelled tiles are dealt into, by squares of block_deg degrees
+# each dealt whole: the first tests, the second validates, the rest train.
+folds: 10
+block_deg: 10.0
+
+# Shares of the training tiles each protocol is trained on, each on its own.
+fractions: [0.01, 0.05, 0.1, 1.0]
+
+# Cross-attention blocks the attentive probe's points read the tokens through.
+probe_depth: 1
+
+# Tiles per batch in training, validation and test, each read whole.
+batch_size: 16
+
+# How the attentive probe is trained, frozen over the model and fine-tuned.
+finetune:
+  # Epochs of the schedule over every training tile, kept at its best validation R2.
+  epochs: 20
+  # Epochs of warmup before the cosine decay.
+  warmup_epochs: 2
+  # Steps of the schedule over a share of the tiles, warmed up in the same proportion.
+  fraction_steps: 2000
+  head_learning_rate: 0.001
+  # Fine-tuning trains the encoders and the cross-sensor encoder whole.
+  encoder_learning_rate: 0.0001
+  weight_decay: 0.05
+  # Norm every step's gradient is clipped to.
+  max_grad_norm: 1.0
+
+# How the head is measured on the validation and test tiles.
+evaluation:
+  # Test tiles drawn as SWIM's targets beside the predicted, a row per target,
+  # over every observation of the instrument shown, as qualitative 1, 2 and 3.
+  tiles: [b078_c0024, b272_c0208, b166_c0388]
+  shown: CTX

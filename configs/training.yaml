@@ -1,0 +1,28 @@
+# 75 passes over the training tiles, in batches of 128.
+num_steps: 8025
+batch_size: 128
+learning_rate: 0.0001
+weight_decay: 0.05
+# 10 passes of warmup before the cosine decay.
+warmup_steps: 1070
+
+# Steps between validations.
+validate_every: 535
+
+# Share of each instrument's patches hidden from its encoder.
+mask_ratio: 0.5
+
+# What UMR and CMR measure, MSE or RMSE.
+reconstruction_error: RMSE
+
+# CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.
+contrastive:
+  pooling: GAP
+  instruments: ${model.instruments}
+  temperature: 0.2
+
+# Whether the encoders and decoders read the acquisition angles the dataset lists.
+acquisition: true
+
+# Checkpoint folder.
+checkpoints: checkpoints

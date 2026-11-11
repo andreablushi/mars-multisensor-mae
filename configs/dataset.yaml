@@ -1,0 +1,49 @@
+# Dataset version every build is read from.
+version: seasonal
+
+# Build read by training.
+build: training
+
+# Local folder holding the builds.
+root: data/dataset
+
+# Clip range of each instrument's z-scores, null for an open side.
+clip:
+  CTX: [null, null]
+  CRISM: [-6.0, 6.0]
+  SHARAD: [null, null]
+  MOLA: [null, null]
+
+# Whether SHARAD is cropped to the rows below its atmosphere before it is patched.
+sharad_atmosphere_cropping: true
+
+# Acquisition angles each instrument's encoder and decoder read when training turns
+# them on, of incidence_deg, emission_deg, phase_deg, solar_longitude_deg and
+# solar_azimuth_deg.
+acquisition:
+  CTX: [incidence_deg, emission_deg, phase_deg, solar_longitude_deg, solar_azimuth_deg]
+  CRISM: [incidence_deg, emission_deg, phase_deg, solar_longitude_deg, solar_azimuth_deg]
+  SHARAD: [incidence_deg, solar_longitude_deg]
+  MOLA: []
+
+# Patch length along each axis, a missing axis taken whole.
+patchsize:
+  CTX: {ground: 16}
+  CRISM: {ground: 3}
+  MOLA: {ground: 2}
+  SHARAD: {ground: 2, delay: 256}
+
+# Patches per instrument in a training crop.
+budget:
+  CTX: 192
+  CRISM: 192
+  MOLA: 92
+  SHARAD: 112
+
+# Largest budget multiplier drawn per training batch.
+budget_scale: 4
+
+# Train and validation shares.
+split: [0.98, 0.02]
+
+seed: 42
