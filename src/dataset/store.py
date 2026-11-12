@@ -18,6 +18,7 @@ from mars_multisensor_dataset.analysis.ground_truth.nomenclature.models.label im
 )
 from mars_multisensor_dataset.building import paths as built
 from mars_multisensor_dataset.building.common.layout import Axis
+from mars_multisensor_dataset.building.common.normalize import CLUTTER
 from mars_multisensor_dataset.building.configs import sharad
 from mars_multisensor_dataset.building.metadata.dataset import read_normalization
 from mars_multisensor_dataset.building.metadata.index import read_observation_metadata
@@ -128,10 +129,10 @@ class DatasetBuild:
 
         Returns:
             observation: The observation, its values normalised by the instrument's
-                own constants and SHARAD's cluttergram by the radargram's, both
-                clipped, a CRISM
-                pixel missing any band left unmeasured and zeroed, SHARAD cropped
-                below its atmosphere when asked, the rest as the build wrote them.
+                own constants and SHARAD's cluttergram by its own, both clipped, a
+                CRISM pixel missing any band left unmeasured and zeroed, SHARAD
+                cropped below its atmosphere when asked, the rest as the build wrote
+                them.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
@@ -165,7 +166,9 @@ class DatasetBuild:
             values = np.where(measured[..., None], values, 0.0)
         clip = self.clips[instrument]
         if clutter is not None:
-            clutter = np.clip((clutter - mean) / std, *clip).astype(np.float32)
+            simulated = self.read_stats()[CLUTTER]
+            clutter = (clutter - simulated["mean"]) / simulated["std"]
+            clutter = np.clip(clutter, *clip).astype(np.float32)
         return Observation(
             values=np.clip(values, *clip),
             axes=axes,

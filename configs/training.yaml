@@ -19,7 +19,7 @@ reconstruction_error: RMSE
 contrastive:
   pooling: GAP
   instruments: ${model.instruments}
-  temperature: 0.2
+  temperature: 0.5
 
 # Whether the encoders and decoders read the acquisition angles the dataset lists.
 acquisition: true
