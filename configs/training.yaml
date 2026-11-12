@@ -1,10 +1,10 @@
-# 30 passes over the training tiles, in batches of 128.
-num_steps: 16080
+# 50 passes over the training tiles, in batches of 128.
+num_steps: 26800
 batch_size: 128
 learning_rate: 0.0001
 weight_decay: 0.05
-# 2 passes of warmup before the cosine decay.
-warmup_steps: 1072
+# A fifteenth of the steps in warmup before the cosine decay.
+warmup_steps: 1787
 
 # Steps between validations.
 validate_every: 536

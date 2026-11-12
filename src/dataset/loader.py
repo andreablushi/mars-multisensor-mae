@@ -11,7 +11,7 @@ from functools import partial
 import numpy as np
 import torch
 from mars_multisensor_dataset.analysis.ground_truth.swim.models import IceLabel
-from mars_multisensor_dataset.building.configs import sharad
+from mars_multisensor_dataset.building.configs import mola, sharad
 from mars_multisensor_dataset.common.disk.files import atomic_path
 from sklearn.model_selection import StratifiedGroupKFold
 from torch.nn.utils.rnn import pad_sequence
@@ -22,6 +22,8 @@ from configs.load import named_generator, named_seed
 from configs.paths import ready_array_path
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
+
+HALVED = ("values", "condition")
 
 TARGETS = {
     "1_5m": "consistency_1_5m",
@@ -39,19 +41,24 @@ def padded_tokens(
         samples: Each tile's patch arrays of each instrument.
 
     Returns:
-        batch: Each instrument's patches over the tiles, keyed as ODE names it.
+        batch: Each instrument's patches over the tiles, keyed as ODE names it, what
+            the cache holds in half precision read back in single.
     """
     batch = {}
     # Pad each instrument's patches across the batch's tiles
     for name in samples[0]:
         # Every array a model reads padded with zeros to the most patches any tile has
+        padded = {
+            key: pad_sequence(
+                [torch.as_tensor(one[name][key]) for one in samples],
+                batch_first=True,
+            )
+            for key in Tokens._fields
+        }
         batch[name] = Tokens(
             **{
-                key: pad_sequence(
-                    [torch.as_tensor(one[name][key]) for one in samples],
-                    batch_first=True,
-                )
-                for key in Tokens._fields
+                key: one.float() if one.dtype == torch.float16 else one
+                for key, one in padded.items()
             }
         )
     return batch
@@ -72,7 +79,9 @@ def read_cached_tile(
         shapes: The shape of one patch of each instrument as the model reads it.
 
     Returns:
-        sample: Each instrument's patch arrays, keyed as ODE names it.
+        sample: Each instrument's patch arrays, keyed as ODE names it, the values
+            and the condition in the half precision the build stores them in,
+            MOLA's elevations apart.
     """
     paths = {
         name: {
@@ -100,6 +109,8 @@ def read_cached_tile(
                 patches, name, shapes[name], rows[name][0].axes, build.acquisition[name]
             )
             for key, array in arrays.items():
+                if key in HALVED and name != mola.LAYOUT.instrument:
+                    array = array.astype(np.float16)
                 with (
                     atomic_path(paths[name][key]) as written,
                     written.open("wb") as file,
