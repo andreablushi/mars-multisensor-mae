@@ -90,14 +90,18 @@ class DatasetBuild:
         """Return the observations of each tile, by the instrument that took them.
 
         Returns:
-            records: The rows of each sensor of each tile, keyed by tile.
+            records: The rows of each sensor of each tile, keyed by tile, a tile
+                missing an instrument the build holds left out.
         """
         if self.records is None:
             root = self.local_root(built.OBSERVATION_METADATA_NAME)
             standing = defaultdict(lambda: defaultdict(list))
             for one in read_observation_metadata(root):
                 standing[one.tile][one.instrument].append(one)
-            self.records = {tile: dict(rows) for tile, rows in standing.items()}
+            held = set().union(*standing.values())
+            self.records = {
+                tile: dict(rows) for tile, rows in standing.items() if held <= set(rows)
+            }
         return self.records
 
     def read_stats(self) -> dict[str, dict[str, Any]]:
