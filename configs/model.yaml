@@ -2,9 +2,9 @@
 instruments: [CTX, CRISM, MOLA, SHARAD]
 
 # Instrument encoders and cross-sensor encoder.
-encoder_dim: 384
-encoder_heads: 6
-encoder_depth: 4
+encoder_dim: 768
+encoder_heads: 12
+encoder_depth: 10
 crossencoder_depth: 2
 
 # Decoders.

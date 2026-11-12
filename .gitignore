@@ -28,3 +28,6 @@ __pycache__/
 /results
 /wandb
 
+
+# Configs of the seasonal runs
+/configs/seasonal

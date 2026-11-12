@@ -13,15 +13,15 @@ tiles:
   crater:
     tile: b209_c0352
     shown:
-      CTX: p03_002158_2034_xi_23n152w
+      CTX: p01_001538_2035_xi_23n152w
       CRISM: msp000055e9_03_if214_trr3
       MOLA: megdr128
       SHARAD: s_02228601
   ice_rich:
     tile: b327_c0013
     shown:
-      CTX: g18_025260_2652_xn_85n195w
-      CRISM: msp000241c1_01_if214_trr3
+      CTX: p17_007787_2670_xn_87n184w
+      CRISM: msp00003212_01_if214_trr3
       MOLA: megdr128
       SHARAD: s_01356201
 

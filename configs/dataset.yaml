@@ -1,5 +1,5 @@
 # Dataset version every build is read from.
-version: seasonal
+version: halfplanet
 
 # Build read by training.
 build: training
