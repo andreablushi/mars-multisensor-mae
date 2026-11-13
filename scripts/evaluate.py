@@ -11,7 +11,7 @@ from digitalhub_runtime_python import handler
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
-from configs.load import load_config
+from configs.load import load_config, named_generator
 from configs.model import built_model
 from evaluation.evaluate import evaluate
 from logs.evaluation import EVALUATION
@@ -52,6 +52,14 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     build = published_dataset_build(config, config.evaluation.build)
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(EVALUATION)
+    rank_build = published_dataset_build(config, config.dataset.build)
+    rank_tiles = [
+        sorted(rank_build.read_observation_metadata())[at]
+        for at in torch.randperm(
+            len(rank_build.read_observation_metadata()),
+            generator=named_generator(config.dataset.seed, "rankme"),
+        )[: config.evaluation.rank_tiles].tolist()
+    ]
     run = start_logging(asdict(config), run_name, EVALUATION, {"device": str(device)})
     log.info("evaluating %s on %s", run_name, device)
     evaluate(
@@ -61,6 +69,10 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         shapes,
         config.evaluation.batch_size,
         config.evaluation.neighbours,
+        rank_build,
+        rank_tiles,
+        config.dataset.budget,
+        config.training.batch_size,
         config.evaluation.tiles,
         config.training.mask_ratio,
         config.evaluation.ranging

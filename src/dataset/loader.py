@@ -70,6 +70,7 @@ def read_cached_tile(
     identity: str,
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
+    cache: bool = True,
 ) -> dict[str, dict[str, np.ndarray]]:
     """Return one tile's patch arrays from the run's cache, cut into it when missing.
 
@@ -78,6 +79,8 @@ def read_cached_tile(
         identity: The tile.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
+        cache: Whether a tile missing from the cache is kept there once cut, or cut
+            in memory alone.
 
     Returns:
         sample: Each instrument's patch arrays, keyed as ODE names it, the values
@@ -105,13 +108,25 @@ def read_cached_tile(
     }
     rows = build.read_observation_metadata()[identity]
     if not all(path.is_file() for held in paths.values() for path in held.values()):
-        for name, patches in cut_tile_patches(rows, build, sizes).items():
-            arrays = patch_arrays(
-                patches, name, shapes[name], rows[name][0].axes, build.acquisition[name]
-            )
+        cut = {
+            name: {
+                key: array.astype(np.float16)
+                if key in HALVED and name != mola.LAYOUT.instrument
+                else array
+                for key, array in patch_arrays(
+                    patches,
+                    name,
+                    shapes[name],
+                    rows[name][0].axes,
+                    build.acquisition[name],
+                ).items()
+            }
+            for name, patches in cut_tile_patches(rows, build, sizes).items()
+        }
+        if not cache:
+            return cut
+        for name, arrays in cut.items():
             for key, array in arrays.items():
-                if key in HALVED and name != mola.LAYOUT.instrument:
-                    array = array.astype(np.float16)
                 if key == "measured":
                     array = np.packbits(array, axis=-1)
                 with (
@@ -140,6 +155,7 @@ def read_cached_batch(
     budget: Mapping[str, int] | None,
     scale: float,
     seed: int | None,
+    cache: bool = True,
 ) -> tuple[dict[str, Tokens], list[str]]:
     """Return one batch of cached tiles, each cut to the budget around a centre.
 
@@ -152,6 +168,7 @@ def read_cached_batch(
             read it whole.
         scale: The most the budget is multiplied by, drawn once per batch from 1.
         seed: What fixes each tile's centre, or None to draw a new one each read.
+        cache: Whether a tile missing from the cache is kept there once cut.
 
     Returns:
         batch: Each instrument's patches over the batch, keyed as ODE names it.
@@ -162,7 +179,7 @@ def read_cached_batch(
         budget = {name: round(count * factor) for name, count in budget.items()}
     samples = []
     for identity in identities:
-        sample = read_cached_tile(build, identity, sizes, shapes)
+        sample = read_cached_tile(build, identity, sizes, shapes, cache)
         if budget is not None:
             draw = random.Random(
                 random.random() if seed is None else f"{seed}/{identity}"
@@ -194,6 +211,7 @@ def tile_loader(
     workers: int,
     training: bool,
     drop_last: bool = False,
+    cache: bool = True,
 ) -> DataLoader:
     """Return some tiles of a build in batches, each cut into the cache on first read.
 
@@ -209,6 +227,7 @@ def tile_loader(
         workers: How many processes read tiles beside the model.
         training: Whether the tiles are shuffled, scaled and cut anew every pass.
         drop_last: Whether a last batch short of batch_size is left out.
+        cache: Whether a tile missing from the cache is kept there once cut.
 
     Returns:
         loader: The tiles in batches.
@@ -234,6 +253,7 @@ def tile_loader(
             budget=budget,
             scale=budget_scale if training else 1.0,
             seed=None if training else seed,
+            cache=cache,
         ),
     )
 

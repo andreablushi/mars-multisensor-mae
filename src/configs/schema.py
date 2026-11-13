@@ -129,6 +129,7 @@ class EvaluationConfig:
             <version>-dataset-<build>.
         batch_size: How many tiles one batch of the vector pass holds, each read whole.
         neighbours: How many neighbours the kNN vote reads.
+        rank_tiles: How many training tiles RankMe reads, each cut to the budget.
         tiles: The tiles drawn as reconstructions and attention maps, by what they show.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
     """
@@ -136,6 +137,7 @@ class EvaluationConfig:
     build: str
     batch_size: int
     neighbours: int
+    rank_tiles: int
     tiles: dict[str, DrawnTile]
     ranging: list[str]
 

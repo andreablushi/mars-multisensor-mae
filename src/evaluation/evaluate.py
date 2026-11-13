@@ -28,6 +28,10 @@ def evaluate(
     shapes: Mapping[str, tuple[int, ...]],
     batch_size: int,
     neighbours: int,
+    rank_build: DatasetBuild,
+    rank_tiles: Sequence[str],
+    budget: Mapping[str, int],
+    rank_batch_size: int,
     tiles: Mapping[str, DrawnTile],
     mask_ratio: float,
     ranging: Sequence[str],
@@ -46,6 +50,12 @@ def evaluate(
         shapes: The shape of one patch of each instrument as the model reads it.
         batch_size: How many tiles one batch of the vector pass holds.
         neighbours: How many neighbours the kNN vote reads.
+        rank_build: The training build RankMe's tiles are read from.
+        rank_tiles: The training tiles RankMe reads, as the source dataset in the
+            paper.
+        budget: How many patches of each instrument a RankMe tile keeps, around a
+            fixed centre.
+        rank_batch_size: How many RankMe tiles one batch holds.
         tiles: The tiles drawn as reconstructions and attention maps, by what they
             show, with each instrument's observation shown.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
@@ -60,7 +70,25 @@ def evaluate(
     loader = tile_loader(
         build, by_tile, sizes, shapes, None, 1.0, seed, batch_size, workers, False
     )
-    vectors, raw = tile_vectors(model, loader, device)
+    vectors, _ = tile_vectors(model, loader, device)
+    # RankMe reads training samples, cut as training cuts them and not kept
+    _, raw = tile_vectors(
+        model,
+        tile_loader(
+            rank_build,
+            rank_tiles,
+            sizes,
+            shapes,
+            budget,
+            1.0,
+            seed,
+            rank_batch_size,
+            workers,
+            False,
+            cache=False,
+        ),
+        device,
+    )
     classes = build.read_label_by_tile()
     reconstructions, rangings = {}, {}
     for place, drawn in tiles.items():

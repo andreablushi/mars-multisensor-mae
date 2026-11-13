@@ -25,8 +25,8 @@ class Metrics:
         distances: The mean cosine distance between the tiles of two classes. (C, C)
         silhouette: How much nearer each tile sits to its class than to the next. (T,)
         cross: How early the view finds the same tile in the others, averaged.
-        rank: The RankMe effective rank of the view's raw vectors, and the most it
-            can reach.
+        rank: The RankMe effective rank of the view's raw training vectors, and the
+            most it can reach.
     """
 
     retrieval: dict[str, np.ndarray]
@@ -48,7 +48,8 @@ def metrics_by_view(
 
     Args:
         vectors: Each tile's vector, keyed by pooling, then view, then tile.
-        raw: The same vectors before normalisation, which RankMe reads.
+        raw: The training tiles' vectors before normalisation, which RankMe reads,
+            keyed alike.
         classes: The class each tile earned, keyed by the tile.
         k: How many neighbours the kNN vote reads.
 
@@ -77,7 +78,7 @@ def metrics_by_view(
                 silhouette=silhouette_scores(similarities, labels),
                 cross=cross[view],
                 rank=rank_metrics(
-                    np.array([raw[pooling][view][tile] for tile in tiles], np.float64)
+                    np.array(list(raw[pooling][view].values()), np.float64)
                 ),
             )
     return metrics

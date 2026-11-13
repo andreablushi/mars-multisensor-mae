@@ -7,6 +7,9 @@ batch_size: 1
 # Neighbours the kNN vote reads.
 neighbours: 5
 
+# Training tiles RankMe reads, each cut to the dataset's budget around a fixed centre.
+rank_tiles: 13000
+
 # Tiles drawn as reconstructions and attention maps, and each instrument's
 # observation shown.
 tiles:
