@@ -45,6 +45,7 @@ def log_evaluation(
             **one.knn,
             "silhouette": float(one.silhouette.mean()),
             **one.cross,
+            **one.rank,
         }.items()
     ]
     run.summary.update(

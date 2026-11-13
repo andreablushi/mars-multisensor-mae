@@ -25,6 +25,8 @@ class Metrics:
         distances: The mean cosine distance between the tiles of two classes. (C, C)
         silhouette: How much nearer each tile sits to its class than to the next. (T,)
         cross: How early the view finds the same tile in the others, averaged.
+        rank: The RankMe effective rank of the view's raw vectors, and the most it
+            can reach.
     """
 
     retrieval: dict[str, np.ndarray]
@@ -33,10 +35,12 @@ class Metrics:
     distances: np.ndarray
     silhouette: np.ndarray
     cross: dict[str, float]
+    rank: dict[str, float]
 
 
 def metrics_by_view(
     vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    raw: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     classes: Mapping[str, str],
     k: int,
 ) -> dict[tuple[str, str], Metrics]:
@@ -44,6 +48,7 @@ def metrics_by_view(
 
     Args:
         vectors: Each tile's vector, keyed by pooling, then view, then tile.
+        raw: The same vectors before normalisation, which RankMe reads.
         classes: The class each tile earned, keyed by the tile.
         k: How many neighbours the kNN vote reads.
 
@@ -71,6 +76,9 @@ def metrics_by_view(
                 distances=class_distance_metrics(similarities, labels, classed),
                 silhouette=silhouette_scores(similarities, labels),
                 cross=cross[view],
+                rank=rank_metrics(
+                    np.array([raw[pooling][view][tile] for tile in tiles], np.float64)
+                ),
             )
     return metrics
 
@@ -202,3 +210,21 @@ def silhouette_scores(similarities: np.ndarray, labels: Sequence[str]) -> np.nda
     distances = np.clip(1 - similarities, 0, None)
     np.fill_diagonal(distances, 0)
     return silhouette_samples(distances, labels, metric="precomputed")
+
+
+def rank_metrics(vectors: np.ndarray) -> dict[str, float]:
+    """Return the RankMe effective rank of some vectors (Garrido et al. 2023, Eq. 1).
+
+    Args:
+        vectors: One vector per tile, not normalised. (T, D)
+
+    Returns:
+        scores: "RankMe", the exponential of the entropy of the singular values
+            normalised to sum to one, and "RankMe max", min(T, D), the most it reaches.
+    """
+    singular = np.linalg.svd(vectors, compute_uv=False)
+    share = singular / singular.sum() + 1e-7
+    return {
+        "RankMe": float(np.exp(-np.sum(share * np.log(share)))),
+        "RankMe max": float(min(vectors.shape)),
+    }

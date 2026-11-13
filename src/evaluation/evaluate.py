@@ -60,7 +60,7 @@ def evaluate(
     loader = tile_loader(
         build, by_tile, sizes, shapes, None, 1.0, seed, batch_size, workers, False
     )
-    vectors = tile_vectors(model, loader, device)
+    vectors, raw = tile_vectors(model, loader, device)
     classes = build.read_label_by_tile()
     reconstructions, rangings = {}, {}
     for place, drawn in tiles.items():
@@ -82,7 +82,7 @@ def evaluate(
     log_evaluation(
         run,
         run_name,
-        metrics_by_view(vectors, classes, neighbours),
+        metrics_by_view(vectors, raw, classes, neighbours),
         reconstructions,
         rangings,
         directory,
@@ -91,8 +91,11 @@ def evaluate(
 
 def tile_vectors(
     model: CrossSensorMAE, loader: DataLoader, device: torch.device
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
-    """Return one vector per tile, pooling and view: each instrument's, and all.
+) -> tuple[
+    dict[str, dict[str, dict[str, np.ndarray]]],
+    dict[str, dict[str, dict[str, np.ndarray]]],
+]:
+    """Return one vector per tile, pooling and view, unit and raw: each instrument, all.
 
     Args:
         model: The model, on the device.
@@ -103,8 +106,12 @@ def tile_vectors(
         vectors: Each tile's unit vector, keyed by CLS or GAP, then by instrument or
             "all", then by tile, CLS of every instrument being the
             model's own and GAP's the mean of the instruments'. (D,)
+        raw: The same vectors before any normalisation, GAP the mean of the
+            readable tokens and its "all" the mean of the instruments' GAP, keyed
+            alike. (D,)
     """
     vectors = defaultdict(lambda: defaultdict(dict))
+    raw = defaultdict(lambda: defaultdict(dict))
     with torch.no_grad():
         for batch, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
@@ -118,9 +125,23 @@ def tile_vectors(
             pooled["GAP"]["all"] = functional.normalize(
                 torch.stack(list(pooled["GAP"].values()), dim=1).sum(1), dim=-1
             )
-            for pooling, by_view in pooled.items():
-                for view, held in by_view.items():
-                    vectors[pooling][view].update(
-                        zip(identities, held.cpu().numpy(), strict=True)
-                    )
-    return {pooling: dict(by_view) for pooling, by_view in vectors.items()}
+            unscaled = {
+                "CLS": {name: held.tokens[:, 0] for name, held in contexts.items()},
+                "GAP": {
+                    name: (held.tokens[:, 1:] * present[name].unsqueeze(-1)).sum(1)
+                    / present[name].sum(1, keepdim=True).clamp(min=1)
+                    for name, held in contexts.items()
+                },
+            }
+            unscaled["CLS"]["all"] = cls
+            unscaled["GAP"]["all"] = torch.stack(list(unscaled["GAP"].values())).mean(0)
+            for held_by, kept in ((pooled, vectors), (unscaled, raw)):
+                for pooling, by_view in held_by.items():
+                    for view, held in by_view.items():
+                        kept[pooling][view].update(
+                            zip(identities, held.float().cpu().numpy(), strict=True)
+                        )
+    return tuple(
+        {pooling: dict(by_view) for pooling, by_view in kept.items()}
+        for kept in (vectors, raw)
+    )
