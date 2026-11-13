@@ -51,6 +51,21 @@ class BenchmarkModel(nn.Module):
         with named_rng(seed, "benchmark/probe"):
             self.probe = AttentiveProbe(dim, heads, depth, len(TARGETS))
 
+    def tokens(self, batch: dict[str, Tokens]) -> Context:
+        """Return every instrument's tokens of one batch, as the probe reads them.
+
+        Args:
+            batch: Each instrument's patches over the batch, on the device.
+
+        Returns:
+            context: Every instrument's tokens side by side, without their CLS.
+        """
+        present = {name: tokens.present for name, tokens in batch.items()}
+        _, contexts = self.mae.embed_tokens(batch, present)
+        return Context.joined(
+            [Context(*(part[:, 1:] for part in held)) for held in contexts.values()]
+        )
+
     def forward(self, batch: dict[str, Tokens]) -> Tensor:
         """Return every point's prediction of each target over one batch.
 
@@ -60,10 +75,4 @@ class BenchmarkModel(nn.Module):
         Returns:
             prediction: One per point and target. (B, P * P, Z)
         """
-        present = {name: tokens.present for name, tokens in batch.items()}
-        _, contexts = self.mae.embed_tokens(batch, present)
-        return self.probe(
-            Context.joined(
-                [Context(*(part[:, 1:] for part in held)) for held in contexts.values()]
-            )
-        )
+        return self.probe(self.tokens(batch))

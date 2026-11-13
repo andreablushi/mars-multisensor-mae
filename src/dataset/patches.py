@@ -47,8 +47,16 @@ def cut_tile_patches(
             counts = tuple(
                 length // patch for length, patch in zip(shape, lengths, strict=True)
             )
+            if not math.prod(counts):
+                continue
+            ground = [
+                at for at, holds in enumerate(record.axes) if holds == Axis.GROUND
+            ]
+            centres = observation.patch_metres_from_centre(
+                [lengths[at] for at in ground], [counts[at] for at in ground]
+            )
             for at in range(math.prod(counts)):
-                patch = cut_patch(observation, at, lengths, counts, angles)
+                patch = cut_patch(observation, at, lengths, counts, angles, centres)
                 if patch.measured.any():
                     held.append(patch)
         read[name] = held
@@ -61,6 +69,7 @@ def cut_patch(
     lengths: tuple[int, ...],
     counts: tuple[int, ...],
     acquisition: np.ndarray,
+    centres: tuple[np.ndarray, np.ndarray],
 ) -> Patch:
     """Return one whole patch of one observation.
 
@@ -70,6 +79,8 @@ def cut_patch(
         lengths: How far one patch of it runs along each axis.
         counts: How many whole patches each of those axes holds.
         acquisition: The observation's acquisition angles the model reads.
+        centres: How far north and east of the tile centre every whole patch of it
+            sits, one per patch along every ground axis.
 
     Returns:
         patch: The patch, copied, with what it measured and where it sits.
@@ -84,7 +95,10 @@ def cut_patch(
     taken = tuple(
         one for one, holds in zip(window, axes, strict=True) if holds == Axis.GROUND
     )
-    north_m, east_m = observation.mean_metres_from_centre(taken)
+    spot = tuple(
+        at for at, holds in zip(cell, axes, strict=True) if holds == Axis.GROUND
+    )
+    north_m, east_m = (float(held[spot]) for held in centres)
     ground_shape = tuple(
         length if holds == Axis.GROUND else 1
         for length, holds in zip(lengths, axes, strict=True)

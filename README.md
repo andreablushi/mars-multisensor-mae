@@ -86,18 +86,22 @@ uv run --group digitalhub python scripts/benchmark.py --dh --ref main default/ma
   below 5 m, and on its radar surface power, which comes from SHARAD alone, over
   the run's latest W&B model, frozen and fine-tuned, both in one loop on the same
   batches and from the same draw, once on each share of the training tiles
-  `benchmark.fractions` names (1%, 5%, 10% and all of them), a smaller share held
+  `benchmark.fractions` names (1%, 5%, 10% and 50%), a smaller share held
   in every larger one. It logs two runs of the same name:
   `benchmark-finetune` holds the training curves and the heads, `benchmark` the
   test scores.
 - `--finetune` fine-tunes alone, `--evaluate` scores the last logged heads alone, and
   neither runs both.
 - The probe regresses SWIM's three targets at every grid point of a tile, each tile
-  read whole in training as in test. Fine-tuning trains the encoders and the
-  cross-sensor encoder whole, so on `random` it is training from scratch. The loss
-  divides each target by its spread over the training tiles.
+  cut to the dataset's budget around one centre in training, up to
+  `benchmark.budget_scale` times it, with only the points near a read patch
+  scored, and read whole in validation and test. Fine-tuning trains the encoders
+  and the cross-sensor encoder whole, so on `random` it is training from scratch.
+  The loss divides each target by its spread over the training tiles.
 - RMSE and R2 measure the fit over every SWIM cell of the test tiles. Each protocol
-  is kept at its best validation R2, averaged over the targets.
+  is kept at its best validation R2, averaged over the targets, measured
+  `benchmark.finetune.validations` times a share on `benchmark.validation_tiles`
+  validation tiles.
 - The drawn tiles show SWIM's targets beside the head's, a row per target, each
   coloured in viridis over the range its panels span.
 - Fewer `benchmark.instruments` than the model reads name the run for those left

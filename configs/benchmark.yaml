@@ -15,17 +15,28 @@ fractions: [0.01, 0.05, 0.1, 0.5]
 # Cross-attention blocks the attentive probe's points read the tokens through.
 probe_depth: 1
 
-# Tiles per batch in training, validation and test, each read whole.
+# Tiles per batch in validation and test, each read whole.
 batch_size: 8
+
+# Largest multiplier of the dataset's budget a training batch's tiles are cut to.
+budget_scale: 4
+
+# Validation tiles each share is validated on, the first of one draw.
+validation_tiles: 1000
 
 # How the attentive probe is trained, frozen over the model and fine-tuned.
 finetune:
+  # Tiles per training batch, each cut to the budget around one centre.
+  batch_size: 32
   # Epochs of the schedule over every training tile, kept at its best validation R2.
   epochs: 20
   # Epochs of warmup before the cosine decay.
   warmup_epochs: 2
-  # Steps of the schedule over a share of the tiles, warmed up in the same proportion.
-  fraction_steps: 4000
+  # Steps of the schedule over each share of the tiles, the smallest first, warmed
+  # up in the same proportion.
+  fraction_steps: [1000, 2000, 3000, 4000]
+  # Validations of a share of the tiles, evenly apart, kept at its best R2.
+  validations: 4
   head_learning_rate: 0.001
   # Fine-tuning trains the encoders and the cross-sensor encoder whole.
   encoder_learning_rate: 0.0001

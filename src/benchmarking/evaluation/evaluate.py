@@ -8,9 +8,8 @@ import numpy as np
 import torch
 from wandb.sdk.wandb_run import Run
 
-from benchmarking.architecture.model import BenchmarkModel
+from benchmarking.architecture.model import PROTOCOLS, BenchmarkModel
 from benchmarking.evaluation.metrics import rmse_and_r2
-from benchmarking.finetune.validate import validate
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from evaluation.reconstruct import drawn_arrays
@@ -60,8 +59,27 @@ def evaluate(
         build, test, read, shapes, None, 1.0, seed, batch_size, workers, False
     )
     predictions = {
-        share: validate(held, loader, device) for share, held in models.items()
+        share: {protocol: {} for protocol in held} for share, held in models.items()
     }
+    still = next(protocol for protocol, tuned in PROTOCOLS.items() if not tuned)
+    with torch.no_grad():
+        for batch, identities in loader:
+            batch = {name: tokens.to(device) for name, tokens in batch.items()}
+            with torch.autocast(device.type, dtype=torch.bfloat16):
+                # The frozen MAE is the same under every share, so it reads once
+                frozen = next(iter(models.values()))[still].tokens(batch)
+                for share, held in models.items():
+                    for protocol, model in held.items():
+                        read_tokens = (
+                            model.tokens(batch) if PROTOCOLS[protocol] else frozen
+                        )
+                        predictions[share][protocol].update(
+                            zip(
+                                identities,
+                                model.probe(read_tokens).float().cpu().numpy(),
+                                strict=True,
+                            )
+                        )
     drawn = predictions[list(models)[-1]]
     by_tile = build.read_observation_metadata()
     images = [

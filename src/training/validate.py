@@ -8,11 +8,8 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from architecture.mae import CrossSensorMAE
-
 
 def validation_terms(
-    model: CrossSensorMAE,
     loader: DataLoader,
     step: Callable[..., dict[str, Tensor]],
     generators: Mapping[str, torch.Generator],
@@ -20,7 +17,6 @@ def validation_terms(
     """Return the loss terms over one split.
 
     Args:
-        model: The model.
         loader: The split, in batches.
         step: One batch's loss terms, from the batch and the mask generators.
         generators: What fixes each instrument's masks, on the device.

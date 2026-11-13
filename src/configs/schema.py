@@ -145,20 +145,25 @@ class FinetuneConfig:
     """How the attentive probe is trained, frozen over the model and fine-tuned.
 
     Attributes:
+        batch_size: How many tiles one training batch holds, each cut to the budget.
         epochs: How many epochs the head trains for over every training tile, kept
             at its best validation R2.
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
-        fraction_steps: How many steps the head trains for over a share of the
-            tiles, warmed up in the same proportion.
+        fraction_steps: How many steps the head trains for over each share of the
+            tiles, the smallest first, warmed up in the same proportion.
+        validations: How many times a share of the tiles is validated, evenly
+            apart, kept at its best R2.
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
         weight_decay: The AdamW weight decay.
         max_grad_norm: The norm every step's gradient is clipped to.
     """
 
+    batch_size: int
     epochs: int
     warmup_epochs: int
-    fraction_steps: int
+    fraction_steps: list[int]
+    validations: int
     head_learning_rate: float
     encoder_learning_rate: float
     weight_decay: float
@@ -192,7 +197,10 @@ class BenchmarkConfig:
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
         fractions: The shares of the training tiles each protocol is trained on.
         probe_depth: How many cross-attention blocks the attentive probe stacks.
-        batch_size: How many tiles one batch holds, each read whole.
+        batch_size: How many tiles one validation or test batch holds, each read
+            whole.
+        budget_scale: The most a training batch's budget is multiplied by.
+        validation_tiles: How many validation tiles each share is validated on.
         finetune: How the head is trained.
         evaluation: How the head is measured.
     """
@@ -204,6 +212,8 @@ class BenchmarkConfig:
     fractions: list[float]
     probe_depth: int
     batch_size: int
+    budget_scale: float
+    validation_tiles: int
     finetune: FinetuneConfig
     evaluation: BenchmarkEvaluationConfig
 

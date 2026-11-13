@@ -151,7 +151,7 @@ def train(
         if step % validate_every and step < num_steps:
             continue
         metrics = validation_terms(
-            model, validation, step_terms, mask_generators(model.encoders, seed, device)
+            validation, step_terms, mask_generators(model.encoders, seed, device)
         )
         log_terms(run, step, VALIDATION, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])

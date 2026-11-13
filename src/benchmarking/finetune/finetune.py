@@ -9,6 +9,10 @@ from itertools import chain, repeat
 
 import numpy as np
 import torch
+from mars_multisensor_dataset.analysis.ground_truth.swim.sample import (
+    GRID_SPACING_KM,
+    METRES_PER_KM,
+)
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import LambdaLR
@@ -26,6 +30,8 @@ from logs.tracker import console_logger
 
 log = console_logger(__name__)
 
+REACH_M = GRID_SPACING_KM * METRES_PER_KM / 2
+
 
 def finetune(
     models: Mapping[str, BenchmarkModel],
@@ -36,6 +42,9 @@ def finetune(
     spread: np.ndarray,
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
+    budget: Mapping[str, int],
+    budget_scale: float,
+    training_batch_size: int,
     batch_size: int,
     workers: int,
     num_steps: int,
@@ -64,7 +73,11 @@ def finetune(
         sizes: How far a patch of each instrument read runs along each axis it is
             cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        batch_size: How many tiles one batch holds, each read whole.
+        budget: How many patches of each instrument a training tile keeps.
+        budget_scale: The most a training batch's budget is multiplied by.
+        training_batch_size: How many tiles one training batch holds, each cut to
+            the budget around one centre.
+        batch_size: How many tiles one validation batch holds, each read whole.
         workers: How many processes read tiles beside the training.
         num_steps: How many steps the models train for.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -88,15 +101,18 @@ def finetune(
             tiles,
             sizes,
             shapes,
-            None,
-            1.0,
+            cut,
+            budget_scale,
             seed,
-            batch_size,
+            held,
             workers,
             shuffled,
             shuffled,
         )
-        for tiles, shuffled in ((training, True), (validation, False))
+        for tiles, cut, held, shuffled in (
+            (training, budget, training_batch_size, True),
+            (validation, None, batch_size, False),
+        )
     )
     groups = defaultdict(list)
     for model in models.values():
@@ -125,6 +141,7 @@ def finetune(
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     scale = torch.as_tensor(spread, device=device)
     best, kept = dict.fromkeys(models, -math.inf), {}
+    points = next(iter(models.values())).probe.points[:, :2].cpu()  # (P * P, 2)
     batches = chain.from_iterable(repeat(training))
     for step in range(1, num_steps + 1):
         batch, identities = next(batches)
@@ -133,8 +150,13 @@ def finetune(
         target = torch.as_tensor(
             np.stack([targets[tile] for tile in identities]), device=device
         )
+        # A point is scored where a patch the tile was cut to stands near it
+        spots = torch.cat([one.position[..., :2] for one in batch.values()], 1)
+        read = torch.cat([one.present for one in batch.values()], 1)  # (B, S)
+        apart = torch.cdist(points.expand(len(spots), -1, -1), spots)  # (B, P * P, S)
+        scored = apart.masked_fill(~read[:, None], math.inf).amin(-1) <= REACH_M
         losses = {
-            protocol: mse(prediction, target, scale)
+            protocol: mse(prediction, target, scale, scored.to(device))
             for protocol, prediction in predictions.items()
         }
         sum(losses.values()).backward()

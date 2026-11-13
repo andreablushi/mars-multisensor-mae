@@ -11,6 +11,7 @@ from functools import partial
 import numpy as np
 import torch
 from mars_multisensor_dataset.analysis.ground_truth.swim.models import IceLabel
+from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.configs import mola, sharad
 from mars_multisensor_dataset.common.disk.files import atomic_path
 from sklearn.model_selection import StratifiedGroupKFold
@@ -102,8 +103,8 @@ def read_cached_tile(
         }
         for name, size in sizes.items()
     }
+    rows = build.read_observation_metadata()[identity]
     if not all(path.is_file() for held in paths.values() for path in held.values()):
-        rows = build.read_observation_metadata()[identity]
         for name, patches in cut_tile_patches(rows, build, sizes).items():
             arrays = patch_arrays(
                 patches, name, shapes[name], rows[name][0].axes, build.acquisition[name]
@@ -111,15 +112,24 @@ def read_cached_tile(
             for key, array in arrays.items():
                 if key in HALVED and name != mola.LAYOUT.instrument:
                     array = array.astype(np.float16)
+                if key == "measured":
+                    array = np.packbits(array, axis=-1)
                 with (
                     atomic_path(paths[name][key]) as written,
                     written.open("wb") as file,
                 ):
                     np.save(file, array)
-    return {
+    sample = {
         name: {key: np.load(path, mmap_mode="c") for key, path in held.items()}
         for name, held in paths.items()
     }
+    for name, held in sample.items():
+        # What is measured is kept a bit a sample, along the last axis it runs on
+        last = shapes[name][-1] if rows[name][0].axes[-1] == Axis.GROUND else 1
+        held["measured"] = np.unpackbits(held["measured"], axis=-1, count=last).view(
+            bool
+        )
+    return sample
 
 
 def read_cached_batch(
@@ -211,6 +221,7 @@ def tile_loader(
         drop_last=drop_last,
         num_workers=workers,
         persistent_workers=workers > 0,
+        prefetch_factor=1 if workers else None,
         pin_memory=True,
         generator=named_generator(
             seed, "loader/train" if training else "loader/validation"

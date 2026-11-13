@@ -12,7 +12,8 @@ from architecture.components.transformer import Transformer
 class CrossSensorEncoder(nn.Module):
     """Attend over each sensor's tokens on its own, on weights every sensor shares.
 
-    One CLS token reads every sensor's tokens, and none of them reads it back.
+    One CLS token reads every sensor's tokens, and none of them reads it back, so
+    each sensor is attended apart and the CLS as one query over them all.
 
     Attributes:
         cls: The token that reads every instrument together. (D)
@@ -47,20 +48,24 @@ class CrossSensorEncoder(nn.Module):
             tokens: Each instrument's mapped tokens, meaningful where visible.
                 (B, K, D)
         """
-        sizes = [one.shape[1] for one in keys]
-        counted = torch.cat(visible, 1)  # (B, S)
-        owner = torch.repeat_interleave(
-            torch.tensor(sizes, device=counted.device)
-        )  # (S)
-        # Each instrument's CLS leads its tokens, reading them and never read back
-        lead = functional.pad(owner[1:] != owner[:-1], (1, 0), value=True)  # (S)
-        apart = (owner[:, None] == owner) & (lead[:, None] | ~lead)  # (S, S)
-        reads = torch.cat(
-            [counted.unsqueeze(1), apart & counted.unsqueeze(1)], 1
-        )  # (B, 1 + S, S)
-        mapped = self.blocks(
-            torch.cat([self.cls.expand(len(counted), 1, -1), *keys], 1),
-            functional.pad(reads, (1, 0)),  # (B, 1 + S, 1 + S)
-            functional.pad(torch.cat(position, 1), (0, 0, 1, 0)),
-        )  # (B, 1 + S, D)
-        return mapped[:, 0], list(mapped[:, 1:].split(sizes, 1))
+        cls = self.cls.expand(len(keys[0]), 1, -1)  # (B, 1, D)
+        width = sum(one.shape[1] for one in keys)
+        # The CLS is the one query over every instrument's tokens, itself the last key
+        every = functional.pad(torch.cat(visible, 1), (0, 1), value=True)  # (B, S + 1)
+        placed = functional.pad(torch.cat(position, 1), (0, 0, 0, 1))  # (B, S + 1, 3)
+        for block in self.blocks.blocks:
+            read = block(
+                torch.cat([*keys, cls], 1), every[:, None, None], placed, width
+            )
+            mapped = []
+            for held, counted, where in zip(keys, visible, position, strict=True):
+                count = held.shape[1]
+                # Each instrument's CLS leads its tokens, reading them and never read
+                heard = torch.ones(count, count, dtype=torch.bool, device=held.device)
+                heard[1:, 0] = False
+                # A token always reads itself, so a row with no other key stays finite
+                itself = torch.eye(count, dtype=torch.bool, device=held.device)
+                reads = counted.unsqueeze(1) & heard | itself  # (B, K, K)
+                mapped.append(block(held, reads.unsqueeze(1), where, 0))
+            keys, cls = mapped, read[:, width:]
+        return self.blocks.norm(cls)[:, 0], [self.blocks.norm(held) for held in keys]

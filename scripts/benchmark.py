@@ -79,7 +79,16 @@ def run_benchmark(
         ]
         for fraction in sorted(config.benchmark.fractions)
     }
-    pass_steps = len(training) // config.benchmark.batch_size
+    share_steps = dict(zip(shares, settings.fraction_steps, strict=True))
+    pass_steps = len(training) // settings.batch_size
+    # Every share is validated on the same first tiles of one draw
+    checked = [
+        validation[at]
+        for at in torch.randperm(
+            len(validation),
+            generator=named_generator(config.dataset.seed, "benchmark/validation"),
+        ).tolist()[: config.benchmark.validation_tiles]
+    ]
 
     def tracked_run(stage: str) -> tuple[Run, CrossSensorMAE]:
         """Return one phase's tracked run, and the MAE it reads."""
@@ -92,25 +101,25 @@ def run_benchmark(
         run, mae = tracked_run(FINETUNE)
         heads = {}
         for share, tiles in shares.items():
-            num_steps = (
-                settings.epochs * pass_steps
-                if len(tiles) == len(training)
-                else settings.fraction_steps
-            )
+            whole = len(tiles) == len(training)
+            num_steps = settings.epochs * pass_steps if whole else share_steps[share]
             heads[share] = finetuning.finetune(
                 built_benchmark_model(config, mae, device),
                 build,
                 tiles,
-                validation,
+                checked,
                 targets,
                 spread,
                 {name: sizes[name] for name in config.benchmark.instruments},
                 shapes,
+                config.dataset.budget,
+                config.benchmark.budget_scale,
+                settings.batch_size,
                 config.benchmark.batch_size,
                 workers,
                 num_steps,
                 round(num_steps * settings.warmup_epochs / settings.epochs),
-                pass_steps,
+                pass_steps if whole else num_steps // settings.validations,
                 settings.head_learning_rate,
                 settings.encoder_learning_rate,
                 settings.weight_decay,

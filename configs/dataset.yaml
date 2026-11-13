@@ -41,7 +41,7 @@ budget:
   SHARAD: 112
 
 # Largest budget multiplier drawn per training batch.
-budget_scale: 4
+budget_scale: 2
 
 # Train and validation shares.
 split: [0.98, 0.02]
