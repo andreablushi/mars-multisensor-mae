@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import asdict
 
 from benchmark import run_benchmark
@@ -84,6 +85,7 @@ def run_training(
     )
     log_checkpoint(run, last, run_name)
     run.finish()
+    shutil.rmtree(build.root / "ready", ignore_errors=True)
     if evaluate:
         run_evaluation.__wrapped__(run_name, overrides)
     if benchmark:
