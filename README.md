@@ -42,7 +42,8 @@ uv run --group digitalhub python scripts/train.py --dh --ref main --evaluate def
   `training.contrastive.instruments=[CTX,CRISM]`.
 - `--dh` submits to DigitalHub, `--ref` names the pushed branch or tag it runs.
 - `--evaluate` evaluates the model once trained, `--benchmark` benchmarks it.
-- `configs/digitalhub.yaml` sets the project, profile, cores, memory and disk.
+- `configs/digitalhub.yaml` sets the project, profile, cores, memory and disk,
+  overridden alike: `digitalhub.stages.evaluation.profile=1xrtxa5000-shared`.
 - The last checkpoint is logged to W&B as the model `model-<run name>`, slashes
   made dots.
 

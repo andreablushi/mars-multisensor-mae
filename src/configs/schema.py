@@ -219,6 +219,40 @@ class BenchmarkConfig:
 
 
 @dataclass
+class StageConfig:
+    """Where and with what one stage runs on DigitalHub.
+
+    Attributes:
+        function: The function the stage is registered as.
+        profile: The platform profile, which sets the GPU and the limits.
+        resources: The cores, memory and disk the job requests.
+    """
+
+    function: str
+    profile: str
+    resources: dict[str, str]
+
+
+@dataclass
+class DigitalHubConfig:
+    """Where and how each stage runs on DigitalHub.
+
+    Attributes:
+        project: The platform project.
+        repository: The repository a job clones.
+        python_version: The job interpreter.
+        base_image: The job base image.
+        stages: Each stage's function, profile and resources, keyed by the stage.
+    """
+
+    project: str
+    repository: str
+    python_version: str
+    base_image: str
+    stages: dict[str, StageConfig]
+
+
+@dataclass
 class Config:
     """One run, composed of the build it reads, the model it trains, and how.
 
@@ -228,6 +262,7 @@ class Config:
         training: How it trains.
         evaluation: How what it trained is measured.
         benchmark: How what it trained is probed and fine-tuned on SWIM's ice.
+        digitalhub: Where and how each stage runs on DigitalHub.
     """
 
     dataset: DatasetConfig
@@ -235,3 +270,4 @@ class Config:
     training: TrainingConfig
     evaluation: EvaluationConfig
     benchmark: BenchmarkConfig
+    digitalhub: DigitalHubConfig

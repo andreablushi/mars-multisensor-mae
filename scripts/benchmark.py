@@ -50,7 +50,7 @@ def run_benchmark(
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.benchmark.build)
     model, device, sizes, shapes = built_model(config, build)
-    workers = requested_read_workers(BENCHMARK)
+    workers = requested_read_workers(config, BENCHMARK)
     left = [
         one
         for one in config.model.instruments
@@ -60,7 +60,9 @@ def run_benchmark(
     # Split the labelled tiles of the build by square
     by_tile = build.read_observation_metadata()
     labels = {
-        tile: one for tile, one in published_ice_labels().items() if tile in by_tile
+        tile: one
+        for tile, one in published_ice_labels(config).items()
+        if tile in by_tile
     }
     training, validation, test = tiles_split_by_square(
         labels, config.benchmark.folds, config.benchmark.block_deg, config.dataset.seed

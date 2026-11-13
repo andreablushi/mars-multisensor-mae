@@ -12,8 +12,6 @@ ENV_PATH = REPO_ROOT / ".env"
 
 CONFIGS_ROOT = REPO_ROOT / "configs"
 
-PLATFORM_CONFIG_PATH = CONFIGS_ROOT / "digitalhub.yaml"
-
 ARTIFACTS_ROOT = REPO_ROOT / "artifacts"
 
 RESULTS_ROOT = REPO_ROOT / "results"

@@ -16,7 +16,6 @@ from urllib3.exceptions import SSLError
 from configs.paths import build_root
 from configs.schema import Config
 from dataset.store import DatasetBuild
-from dhub.submit import load_platform
 
 BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
 
@@ -31,7 +30,7 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
     Returns:
         build: The build, off disk where already fetched and from the store otherwise.
     """
-    project = dh.get_or_create_project(load_platform()["project"])
+    project = dh.get_or_create_project(config.digitalhub.project)
     name = f"{config.dataset.version}-dataset-{build}"
     published = urlparse(project.get_artifact(name).spec.path)
     bucket = published.netloc
@@ -75,13 +74,16 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
     )
 
 
-def published_ice_labels() -> dict[str, IceLabel]:
+def published_ice_labels(config: Config) -> dict[str, IceLabel]:
     """Return the ice SWIM finds under every tile it covers, read straight into memory.
+
+    Args:
+        config: The run's config.
 
     Returns:
         labels: Each tile's ice at both depths, keyed by the tile.
     """
-    project = dh.get_or_create_project(load_platform()["project"])
+    project = dh.get_or_create_project(config.digitalhub.project)
     published = urlparse(project.get_artifact("swim").spec.path)
     key = f"{published.path.strip('/')}/{labelled.ICE_LABELS_NAME}"
     held = dh.get_s3_client().get_object(Bucket=published.netloc, Key=key)

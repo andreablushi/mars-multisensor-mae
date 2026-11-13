@@ -38,7 +38,7 @@ def run_training(
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.dataset.build)
     model, device, sizes, shapes = built_model(config, build)
-    workers = requested_read_workers(TRAINING)
+    workers = requested_read_workers(config, TRAINING)
     tiles = sorted(build.read_observation_metadata())
     training, validation = random_split(
         tiles, config.dataset.split, named_generator(config.dataset.seed, "split")

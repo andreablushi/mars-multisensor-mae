@@ -51,7 +51,7 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.evaluation.build)
     model, device, sizes, shapes = built_model(config, build)
-    workers = requested_read_workers(EVALUATION)
+    workers = requested_read_workers(config, EVALUATION)
     rank_build = published_dataset_build(config, config.dataset.build)
     rank_tiles = [
         sorted(rank_build.read_observation_metadata())[at]

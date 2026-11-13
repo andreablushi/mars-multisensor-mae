@@ -10,10 +10,11 @@ from functools import partial
 
 import digitalhub as dh
 import urllib3.connection
-import yaml
 from dotenv import load_dotenv
 
-from configs.paths import ENV_PATH, PLATFORM_CONFIG_PATH
+from configs.load import load_config
+from configs.paths import ENV_PATH
+from configs.schema import Config
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
 PYTHONPATH = "/shared:/shared/src:/shared/scripts"
@@ -39,25 +40,17 @@ if PYTHONPATH in os.environ.get("PYTHONPATH", ""):
     )
 
 
-def load_platform() -> dict:
-    """Return what a platform run is given, read from `configs/digitalhub.yaml`.
-
-    Returns:
-        platform: Where and how each stage runs on DigitalHub, keyed as the file is.
-    """
-    return yaml.safe_load(PLATFORM_CONFIG_PATH.read_text(encoding="utf-8"))
-
-
-def requested_read_workers(stage: str) -> int:
+def requested_read_workers(config: Config, stage: str) -> int:
     """Return how many processes read tiles beside one stage's work, twice its cores.
 
     Args:
+        config: The run's config.
         stage: Which stage, as `configs/digitalhub.yaml` names it.
 
     Returns:
         workers: Twice the cores the stage is given.
     """
-    return 2 * int(load_platform()["stages"][stage]["resources"]["cpu"])
+    return 2 * int(config.digitalhub.stages[stage].resources["cpu"])
 
 
 def run_stage(
@@ -98,21 +91,21 @@ def run_stage(
         run.__wrapped__(**arguments)
         return
     load_dotenv(ENV_PATH)
-    platform = load_platform()
-    asked = platform["stages"][stage]
+    platform = load_config(arguments["overrides"]).digitalhub
+    asked = platform.stages[stage]
     # The job installs the clone's requirements.txt at start, so no image is built
-    function = dh.get_or_create_project(platform["project"]).new_function(
-        name=asked["function"],
+    function = dh.get_or_create_project(platform.project).new_function(
+        name=asked.function,
         kind="python",
-        python_version=platform["python_version"],
-        base_image=platform["base_image"],
-        code_src=f"git+{platform['repository']}#{ref}",
+        python_version=platform.python_version,
+        base_image=platform.base_image,
+        code_src=f"git+{platform.repository}#{ref}",
         handler=HANDLERS[stage],
     )
     job = function.run(
         action="job",
-        profile=asked["profile"],
-        resources=asked["resources"],
+        profile=asked.profile,
+        resources=asked.resources,
         secrets=SECRETS,
         envs=[
             {"name": "PYTHONPATH", "value": PYTHONPATH},
