@@ -24,7 +24,7 @@ validation_tiles: 1000
 # How the attentive probe is trained, frozen over the model and fine-tuned.
 finetune:
   # Tiles per training batch, each cut to the budget around one centre.
-  batch_size: 32
+  batch_size: 48
   # Epochs of the schedule over every training tile, kept at its best validation R2.
   epochs: 20
   # Epochs of warmup before the cosine decay.
