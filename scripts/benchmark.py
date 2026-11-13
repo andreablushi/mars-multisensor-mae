@@ -113,7 +113,7 @@ def run_benchmark(
                 {name: sizes[name] for name in config.benchmark.instruments},
                 shapes,
                 config.dataset.budget,
-                config.benchmark.budget_scale,
+                config.dataset.budget_scale,
                 settings.batch_size,
                 config.benchmark.batch_size,
                 workers,

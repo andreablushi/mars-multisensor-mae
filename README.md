@@ -94,8 +94,8 @@ uv run --group digitalhub python scripts/benchmark.py --dh --ref main default/ma
   neither runs both.
 - The probe regresses SWIM's three targets at every grid point of a tile, each tile
   cut to the dataset's budget around one centre in training, up to
-  `benchmark.budget_scale` times it, with only the points near a read patch
-  scored, and read whole in validation and test. Fine-tuning trains the encoders
+  `dataset.budget_scale` times it as in pretraining, with only the points near a
+  read patch scored, and read whole in validation and test. Fine-tuning trains the encoders
   and the cross-sensor encoder whole, so on `random` it is training from scratch.
   The loss divides each target by its spread over the training tiles.
 - RMSE and R2 measure the fit over every SWIM cell of the test tiles. Each protocol

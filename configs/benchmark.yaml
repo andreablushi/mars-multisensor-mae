@@ -18,9 +18,6 @@ probe_depth: 1
 # Tiles per batch in validation and test, each read whole.
 batch_size: 8
 
-# Largest multiplier of the dataset's budget a training batch's tiles are cut to.
-budget_scale: 4
-
 # Validation tiles each share is validated on, the first of one draw.
 validation_tiles: 1000
 

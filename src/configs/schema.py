@@ -199,7 +199,6 @@ class BenchmarkConfig:
         probe_depth: How many cross-attention blocks the attentive probe stacks.
         batch_size: How many tiles one validation or test batch holds, each read
             whole.
-        budget_scale: The most a training batch's budget is multiplied by.
         validation_tiles: How many validation tiles each share is validated on.
         finetune: How the head is trained.
         evaluation: How the head is measured.
@@ -212,7 +211,6 @@ class BenchmarkConfig:
     fractions: list[float]
     probe_depth: int
     batch_size: int
-    budget_scale: float
     validation_tiles: int
     finetune: FinetuneConfig
     evaluation: BenchmarkEvaluationConfig
