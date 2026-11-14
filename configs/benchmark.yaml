@@ -45,5 +45,5 @@ finetune:
 evaluation:
   # Test tiles drawn as SWIM's targets beside the predicted, a row per target,
   # over every observation of the instrument shown, as qualitative 1, 2 and 3.
-  tiles: [b196_c0020, b221_c0268, b168_c0514]
+  tiles: [b248_c0436, b252_c0422, b114_c0190]
   shown: CTX
