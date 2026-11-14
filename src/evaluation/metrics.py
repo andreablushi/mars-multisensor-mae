@@ -25,8 +25,8 @@ class Metrics:
         distances: The mean cosine distance between the tiles of two classes. (C, C)
         silhouette: How much nearer each tile sits to its class than to the next. (T,)
         cross: How early the view finds the same tile in the others, averaged.
-        rank: The RankMe effective rank of the view's raw training vectors, and the
-            most it can reach.
+        rank: The RankMe effective rank of the view's raw training vectors, raw and
+            centered, and the most it can reach.
     """
 
     retrieval: dict[str, np.ndarray]
@@ -221,11 +221,15 @@ def rank_metrics(vectors: np.ndarray) -> dict[str, float]:
 
     Returns:
         scores: "RankMe", the exponential of the entropy of the singular values
-            normalised to sum to one, and "RankMe max", min(T, D), the most it reaches.
+            normalised to sum to one, "RankMe centered", the same once the mean
+            vector is subtracted, and "RankMe max", min(T, D), the most it reaches.
     """
-    singular = np.linalg.svd(vectors, compute_uv=False)
-    share = singular / singular.sum() + 1e-7
-    return {
-        "RankMe": float(np.exp(-np.sum(share * np.log(share)))),
-        "RankMe max": float(min(vectors.shape)),
-    }
+    scores = {}
+    for name, held in (
+        ("RankMe", vectors),
+        ("RankMe centered", vectors - vectors.mean(0)),
+    ):
+        singular = np.linalg.svd(held, compute_uv=False)
+        share = singular / singular.sum() + 1e-7
+        scores[name] = float(np.exp(-np.sum(share * np.log(share))))
+    return scores | {"RankMe max": float(min(vectors.shape))}
