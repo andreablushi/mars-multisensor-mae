@@ -4,6 +4,9 @@ version: halfplanet
 # Build read by training.
 build: training
 
+# Version whose training build sets the normalising constants, the model's own.
+stats_version: ${dataset.version}
+
 # Local folder holding the builds.
 root: data/dataset
 

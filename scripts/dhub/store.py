@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from urllib.parse import urlparse
 
 import digitalhub as dh
@@ -62,7 +63,7 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
             except BROKEN_READS as refused:
                 raise RuntimeError(f"{key}: {refused}") from None
 
-    return DatasetBuild(
+    held = DatasetBuild(
         root=build_root(name, config.dataset.root),
         fetch=fetch,
         clips=config.dataset.clip,
@@ -72,6 +73,13 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
             for name, fields in config.dataset.acquisition.items()
         },
     )
+    if config.dataset.stats_version != config.dataset.version:
+        trained = replace(
+            config,
+            dataset=replace(config.dataset, version=config.dataset.stats_version),
+        )
+        held.stats = published_dataset_build(trained, config.dataset.build).read_stats()
+    return held
 
 
 def published_ice_labels(config: Config) -> dict[str, IceLabel]:

@@ -12,6 +12,7 @@ class DatasetConfig:
     Attributes:
         version: The dataset version every build is read from.
         build: The build to read, published as <version>-dataset-<build>.
+        stats_version: The version whose training build sets the normalising constants.
         root: Where every build sits on this machine, under a directory of its own name.
         clip: The low and high each instrument's values are clipped to, None for open.
         sharad_atmosphere_cropping: Whether SHARAD is cropped below its atmosphere.
@@ -25,6 +26,7 @@ class DatasetConfig:
 
     version: str
     build: str
+    stats_version: str
     root: str
     clip: dict[str, list[float | None]]
     sharad_atmosphere_cropping: bool
