@@ -85,7 +85,7 @@ def log_benchmark(
     scores: Mapping[str, Mapping[str, Mapping[str, Mapping[str, float]]]],
     images: Sequence[tuple[np.ndarray, str]],
 ) -> None:
-    """Log the test scores and drawn tiles at one step for every run.
+    """Log the test scores and drawn tiles at one step for every run, or after it.
 
     Args:
         run: The tracked run.
@@ -111,5 +111,5 @@ def log_benchmark(
                 for at, (image, caption) in enumerate(images, 1)
             },
         },
-        step=RESULTS_STEP,
+        step=max(RESULTS_STEP, run.step),
     )

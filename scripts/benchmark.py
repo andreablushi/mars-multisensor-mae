@@ -10,9 +10,7 @@ from dhub.store import published_dataset_build, published_ice_labels
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from evaluate import trained_model
-from wandb.sdk.wandb_run import Run
 
-from architecture.mae import CrossSensorMAE
 from benchmarking.evaluation import evaluate as evaluation
 from benchmarking.finetune import finetune as finetuning
 from configs.load import load_config, named_generator
@@ -23,7 +21,7 @@ from logs.benchmark import BENCHMARK, FINETUNE, HEADS
 from logs.tracker import (
     console_logger,
     log_checkpoint,
-    logged_checkpoint,
+    resumed_logging,
     start_logging,
 )
 
@@ -92,15 +90,18 @@ def run_benchmark(
         ).tolist()[: config.benchmark.validation_tiles]
     ]
 
-    def tracked_run(stage: str) -> tuple[Run, CrossSensorMAE]:
-        """Return one phase's tracked run, and the MAE it reads."""
-        run = start_logging(asdict(config), tracked, stage, {"device": str(device)})
-        log.info("%s of %s on %s", stage, tracked, device)
-        return run, trained_model(model, run, run_name)
-
+    # Both phases log to one tracked run, which the evaluation alone reopens
+    path = heads_path(tracked)
+    if finetune or not evaluate:
+        run = start_logging(
+            asdict(config), tracked, BENCHMARK, {"device": str(device)}, [FINETUNE]
+        )
+    else:
+        run, path = resumed_logging(tracked, [BENCHMARK, FINETUNE], HEADS)
+    log.info("%s of %s on %s", BENCHMARK, tracked, device)
+    mae = trained_model(model, run, run_name)
     # Train both protocols on each share of the training tiles, kept at their best
     if finetune or not evaluate:
-        run, mae = tracked_run(FINETUNE)
         heads = {}
         for share, tiles in shares.items():
             whole = len(tiles) == len(training)
@@ -131,15 +132,12 @@ def run_benchmark(
                 run,
                 share,
             )
-        path = heads_path(tracked)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(heads, path)
         log_checkpoint(run, path, tracked, HEADS)
-        run.finish()
     # Score the logged heads on the test tiles and draw the qualitative ones
     if evaluate or not finetune:
-        run, mae = tracked_run(BENCHMARK)
-        heads = torch.load(logged_checkpoint(run, tracked, HEADS), map_location="cpu")
+        heads = torch.load(path, map_location="cpu")
         evaluation.evaluate(
             {
                 share: built_benchmark_model(config, mae, device, heads[share])
@@ -161,7 +159,7 @@ def run_benchmark(
             device,
             run,
         )
-        run.finish()
+    run.finish()
 
 
 if __name__ == "__main__":
