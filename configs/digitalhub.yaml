@@ -12,13 +12,13 @@ base_image: python:3.13-slim
 stages:
   training:
     function: train-mae
-    profile: 1xa40-shared
+    profile: 1xv100-shared
     resources: {cpu: "8", mem: 32Gi, disk: 570Gi}
   evaluation:
     function: evaluate-mae
-    profile: 1xa40-shared
+    profile: 1xv100-shared
     resources: {cpu: "4", mem: 16Gi, disk: 30Gi}
   benchmark:
     function: benchmark-mae
-    profile: 1xa40-shared
+    profile: 1xv100-shared
     resources: {cpu: "4", mem: 24Gi, disk: 240Gi}
