@@ -167,8 +167,10 @@ class DatasetBuild:
         clip = self.clips[instrument]
         if clutter is not None:
             simulated = self.read_stats()[CLUTTER]
-            clutter = (clutter - simulated["mean"]) / simulated["std"]
-            clutter = np.clip(clutter, *clip).astype(np.float32)
+            clutter = (clutter.astype(np.float32) - simulated["mean"]) / simulated[
+                "std"
+            ]
+            clutter = np.clip(clutter, *clip)
         return Observation(
             values=np.clip(values, *clip),
             axes=axes,

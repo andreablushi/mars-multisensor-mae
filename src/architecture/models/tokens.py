@@ -43,9 +43,13 @@ class Tokens(NamedTuple):
             device: Where they are moved.
 
         Returns:
-            tokens: The patches, every array on the device.
+            tokens: The patches, every array on the device, half precision read
+                there in single.
         """
-        return Tokens(*(one.to(device, non_blocking=True) for one in self))
+        moved = (one.to(device, non_blocking=True) for one in self)
+        return Tokens(
+            *(one.float() if one.dtype == torch.float16 else one for one in moved)
+        )
 
     def readable_and_position_with_cls(self, readable: Tensor) -> tuple[Tensor, Tensor]:
         """Return which slots count and where they sit, a CLS slot leading them.

@@ -110,7 +110,6 @@ def train(
         betas=(0.9, 0.95),
         fused=True,
     )
-    torch.set_float32_matmul_precision("high")
 
     def lambda_lr_schedule(step: int) -> float:
         """Return the share of the peak rate one step runs at."""
@@ -165,7 +164,6 @@ def train(
     torch.save(
         {
             "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
             "step": num_steps,
             "config": dict(config),
         },

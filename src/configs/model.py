@@ -39,6 +39,7 @@ def built_model(
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
     shapes = patch_shapes(build.read_observation_metadata(), sizes)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.set_float32_matmul_precision("high")
     model = CrossSensorMAE(
         shapes,
         {
@@ -68,7 +69,7 @@ def built_benchmark_model(
 
     Args:
         config: What the run reads and the model it benchmarks.
-        mae: The MAE, left as it is.
+        mae: The MAE, its weights left as they are, shared by the frozen protocol.
         device: Where the models run.
         heads: The trained weights to load, keyed by protocol, then by parameter,
             or None to keep them as drawn.

@@ -43,7 +43,7 @@ def padded_tokens(
 
     Returns:
         batch: Each instrument's patches over the tiles, keyed as ODE names it, what
-            the cache holds in half precision read back in single.
+            the cache holds in half precision kept so until the device.
     """
     batch = {}
     # Pad each instrument's patches across the batch's tiles
@@ -56,12 +56,7 @@ def padded_tokens(
             )
             for key in Tokens._fields
         }
-        batch[name] = Tokens(
-            **{
-                key: one.float() if one.dtype == torch.float16 else one
-                for key, one in padded.items()
-            }
-        )
+        batch[name] = Tokens(**padded)
     return batch
 
 

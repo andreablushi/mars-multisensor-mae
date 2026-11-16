@@ -20,7 +20,8 @@ class BenchmarkModel(nn.Module):
     """The MAE under the attentive probe, its encoders trained too when fine-tuned.
 
     Attributes:
-        mae: The copy, frozen whole or with its encoders left to train.
+        mae: The MAE itself, frozen whole, or a copy without its decoders with its
+            encoders left to train.
         probe: The attentive probe, reading every instrument's tokens.
     """
 
@@ -33,10 +34,10 @@ class BenchmarkModel(nn.Module):
         finetuned: bool,
         seed: int,
     ) -> None:
-        """Build the model over one MAE, left as it is.
+        """Build the model over one MAE, its weights left as they are.
 
         Args:
-            mae: The MAE.
+            mae: The MAE, shared when frozen and copied when fine-tuned.
             dim: The token width the MAE hands its tokens at.
             heads: How many attention heads the probe runs.
             depth: How many cross-attention blocks the probe stacks.
@@ -45,7 +46,9 @@ class BenchmarkModel(nn.Module):
             seed: What fixes the probe as drawn.
         """
         super().__init__()
-        self.mae = deepcopy(mae).requires_grad_(False)
+        self.mae = (
+            deepcopy(mae, {id(mae.decoders): nn.ModuleDict()}) if finetuned else mae
+        ).requires_grad_(False)
         self.mae.encoders.requires_grad_(finetuned)
         self.mae.crossencoder.requires_grad_(finetuned)
         with named_rng(seed, "benchmark/probe"):
