@@ -266,7 +266,7 @@ def rolled_attention(
     ]
     # The pass itself, the asked patches reading the context
     with torch.no_grad():
-        prediction = decoder.reconstructed_patches(
+        _, prediction = decoder.latents_and_patches(
             *context, position, acquisition, hidden
         )
     for hook in hooks:

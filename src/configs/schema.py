@@ -109,6 +109,7 @@ class TrainingConfig:
         warmup_steps: How many steps the rate climbs before the cosine decay.
         validate_every: How many steps between two validations.
         masking: Which masking_* strategy hides the patches, and its settings.
+        latent_temperature: What latent UMR and CMR divide every cosine by.
         reconstruction_error: What UMR and CMR measure, MSE or RMSE.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the encoders and decoders read the acquisition angles.
@@ -122,6 +123,7 @@ class TrainingConfig:
     warmup_steps: int
     validate_every: int
     masking: MaskingConfig
+    latent_temperature: float
     reconstruction_error: str
     contrastive: ContrastiveConfig
     acquisition: bool

@@ -36,6 +36,82 @@ def reconstruction_error(
     return error.sqrt() if measure == "RMSE" else error
 
 
+def patch_discrimination(
+    prediction: Tensor, target: Tensor, scored: Tensor, temperature: float
+) -> Tensor:
+    """Return OlmoEarth's patch discrimination over the scored patches.
+
+    Args:
+        prediction: The predicted latents. (B, K, D)
+        target: The patches' target latents. (B, K, D)
+        scored: Which patches are scored. (B, K)
+        temperature: What every cosine is divided by.
+
+    Returns:
+        error: The cross-entropy of each scored patch picking its own target among
+            its tile's scored ones, averaged over the patches, times twice the
+            temperature. ()
+    """
+    prediction = functional.normalize(prediction.float(), dim=-1)
+    target = functional.normalize(target, dim=-1)
+    logits = prediction @ target.mT / temperature  # (B, K, K)
+    # A patch is told apart from its tile's other scored patches alone
+    logits = logits.masked_fill(~scored.unsqueeze(1), float("-inf"))
+    own = torch.arange(scored.shape[1], device=scored.device).expand_as(scored)
+    return functional.cross_entropy(logits[scored], own[scored]) * 2 * temperature
+
+
+def latent_umr(
+    predictions: Mapping[str, Tensor],
+    targets: Mapping[str, Tensor],
+    hidden: Mapping[str, Tensor],
+    temperature: float,
+) -> dict[str, Tensor]:
+    """Return each instrument's latent UMR error, read from its own tokens.
+
+    Args:
+        predictions: Each instrument's latents read from its own tokens. (B, K, D)
+        targets: Each instrument's target latents. (B, K, D)
+        hidden: Which patches are predicted. (B, K)
+        temperature: What every cosine is divided by.
+
+    Returns:
+        errors: Each instrument's patch discrimination over its hidden patches. ()
+    """
+    return {
+        name: patch_discrimination(
+            predictions[name], targets[name], hidden[name], temperature
+        )
+        for name in targets
+    }
+
+
+def latent_cmr(
+    predictions: Mapping[str, Tensor],
+    targets: Mapping[str, Tensor],
+    hidden: Mapping[str, Tensor],
+    temperature: float,
+) -> dict[str, Tensor]:
+    """Return each instrument's latent CMR error, read from every other's tokens.
+
+    Args:
+        predictions: Each instrument's latents read from the others' tokens.
+            (B, K, D)
+        targets: Each instrument's target latents. (B, K, D)
+        hidden: Which patches are predicted. (B, K)
+        temperature: What every cosine is divided by.
+
+    Returns:
+        errors: Each instrument's patch discrimination over its hidden patches. ()
+    """
+    return {
+        name: patch_discrimination(
+            predictions[name], targets[name], hidden[name], temperature
+        )
+        for name in targets
+    }
+
+
 def umr(
     predictions: Mapping[str, Tensor],
     batch: Mapping[str, Tokens],
@@ -114,15 +190,19 @@ def mim(
 
 
 def total(
+    latent_umr_errors: Mapping[str, Tensor],
+    latent_cmr_errors: Mapping[str, Tensor],
     umr_errors: Mapping[str, Tensor],
     cmr_errors: Mapping[str, Tensor],
     mim_errors: Mapping[str, Tensor],
 ) -> dict[str, Tensor]:
-    """Return every term and the loss, the reconstruction sum plus the mean MIM.
+    """Return every term and the loss, the latent and pixel sums plus the mean MIM.
 
     Args:
-        umr_errors: Each instrument's UMR error. ()
-        cmr_errors: Each instrument's CMR error. ()
+        latent_umr_errors: Each instrument's latent UMR error. ()
+        latent_cmr_errors: Each instrument's latent CMR error. ()
+        umr_errors: Each instrument's UMR error, training its pixel head alone. ()
+        cmr_errors: Each instrument's CMR error, training its pixel head alone. ()
         mim_errors: Each aligned pair's MIM error, none when nothing is aligned. ()
 
     Returns:
@@ -130,7 +210,12 @@ def total(
     """
     terms = {
         f"{term}/{name}": error
-        for term, errors in (("umr", umr_errors), ("cmr", cmr_errors))
+        for term, errors in (
+            ("latent_umr", latent_umr_errors),
+            ("latent_cmr", latent_cmr_errors),
+            ("umr", umr_errors),
+            ("cmr", cmr_errors),
+        )
         for name, error in errors.items()
     }
     loss = sum(terms.values())

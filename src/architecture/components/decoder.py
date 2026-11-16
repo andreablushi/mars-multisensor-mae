@@ -1,4 +1,4 @@
-"""Writing a sensor's hidden patches back out of the tokens around them."""
+"""Predicting a sensor's hidden patches out of the tokens around them."""
 
 from __future__ import annotations
 
@@ -14,15 +14,18 @@ from architecture.models.context import Context
 
 
 class Decoder(nn.Module):
-    """Let each hidden patch attend over the tokens of its tile, then write it.
+    """Let each hidden patch attend over the tokens of its tile, then predict it.
 
     Attributes:
         shape: The shape of one patch this decoder predicts.
         expand: From the shared width to the decoder width.
         mask: The token standing in for a hidden patch. (D')
         blocks: The transformer the patches read the context through.
-        predict: From a token to every sample of its patch.
+        predict: From a token to every sample of its patch, read off the graph.
         acquisition: What tells a hidden patch's query how it was acquired, or None.
+        latent: From a token to its patch's target latent.
+        target: The frozen random projection from a patch to its target latent.
+            (prod P, D)
     """
 
     def __init__(
@@ -61,8 +64,12 @@ class Decoder(nn.Module):
         nn.init.zeros_(self.predict.weight)
         nn.init.zeros_(self.predict.bias)
         self.acquisition = AcquisitionConditioning(acquired, dim) if acquired else None
+        # Predict each patch's target latent from its token
+        self.latent = nn.Linear(dim, shared)
+        # OlmoEarth's Latent MIM Lite target, drawn once and never trained
+        self.register_buffer("target", torch.randn(math.prod(shape), shared))
 
-    def reconstructed_patches(
+    def latents_and_patches(
         self,
         context: Tensor,
         context_position: Tensor,
@@ -71,7 +78,7 @@ class Decoder(nn.Module):
         acquisition: Tensor,
         hidden: Tensor,
     ) -> Tensor:
-        """Return the hidden patches as read from one context.
+        """Return the hidden patches' latents and samples as read from one context.
 
         Args:
             context: The tokens the prediction reads. (B, S, D)
@@ -82,7 +89,9 @@ class Decoder(nn.Module):
             hidden: Which of them to predict. (B, K)
 
         Returns:
-            prediction: One patch per slot, meaningful where hidden. (B, K, *P)
+            latents: One target latent per slot, meaningful where hidden. (B, K, D)
+            patches: One patch per slot, written without a gradient to the tokens.
+                (B, K, *P)
         """
         # One mask token per slot as a query
         queries = self.mask.expand(*hidden.shape, -1)  # (B, K, D')
@@ -95,9 +104,9 @@ class Decoder(nn.Module):
         # The context is only keys, only the patch slots ask as queries and are updated
         keys = self.blocks(keys, readable.unsqueeze(1), placed, context.shape[1])
         queries = keys[:, context.shape[1] :]  # (B, K, D')
-        # Write every sample of each patch slot from its query
-        written = self.predict(queries)  # (B, K, prod P)
-        return written.unflatten(-1, self.shape)  # (B, K, *P)
+        # Write every sample of each patch slot from its query, off the graph
+        written = self.predict(queries.detach())  # (B, K, prod P)
+        return self.latent(queries), written.unflatten(-1, self.shape)
 
     def forward(
         self,
@@ -106,7 +115,7 @@ class Decoder(nn.Module):
         position: Tensor,
         acquisition: Tensor,
         hidden: Tensor,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[tuple[Tensor, Tensor], tuple[Tensor, Tensor]]:
         """Return the instrument's hidden patches, from its own tokens and the others'.
 
         Args:
@@ -117,12 +126,13 @@ class Decoder(nn.Module):
             hidden: Which of them to predict. (B, K)
 
         Returns:
-            umr: The patches read from the instrument's own tokens. (B, K, *P)
-            cmr: The same patches read from every other instrument's. (B, K, *P)
+            umr: The latents and patches read from the instrument's own tokens.
+                (B, K, D), (B, K, *P)
+            cmr: The same read from every other instrument's. (B, K, D), (B, K, *P)
         """
         # Each pass is recomputed on the way back, so only one is held at once
         umr = checkpoint(
-            self.reconstructed_patches,
+            self.latents_and_patches,
             *own,
             position,
             acquisition,
@@ -130,7 +140,7 @@ class Decoder(nn.Module):
             use_reentrant=False,
         )
         cmr = checkpoint(
-            self.reconstructed_patches,
+            self.latents_and_patches,
             *others,
             position,
             acquisition,

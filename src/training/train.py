@@ -49,6 +49,7 @@ def train(
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
+    latent_temperature: float,
     measure: str,
     checkpoints: str,
     seed: int,
@@ -83,6 +84,7 @@ def train(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        latent_temperature: What latent UMR and CMR divide every cosine by.
         measure: The reconstruction error, MSE or RMSE.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
@@ -138,6 +140,7 @@ def train(
         aligned=aligned,
         pooling=pooling,
         temperature=temperature,
+        latent_temperature=latent_temperature,
         measure=measure,
         device=device,
     )

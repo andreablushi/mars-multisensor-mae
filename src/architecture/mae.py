@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import chain
+
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
@@ -137,6 +139,21 @@ class CrossSensorMAE(nn.Module):
             )
         }
 
+    def target_latents(self, batch: dict[str, Tokens]) -> dict[str, Tensor]:
+        """Return each instrument's patches through its frozen random projection.
+
+        Args:
+            batch: Each instrument's patches over the batch.
+
+        Returns:
+            targets: Each patch's target latent, its unmeasured samples read as
+                zero. (B, K, D)
+        """
+        return {
+            name: (one.values * one.measured).flatten(2) @ self.decoders[name].target
+            for name, one in batch.items()
+        }
+
     def forward(
         self,
         batch: dict[str, Tokens],
@@ -155,7 +172,8 @@ class CrossSensorMAE(nn.Module):
         Returns:
             predictions: Under "umr" each instrument's patches read from its own
                 tokens with the CLS of every instrument, under "cmr" from every
-                other instrument's without it. (B, K, *P)
+                other instrument's without it (B, K, *P), under "latent_umr" and
+                "latent_cmr" their latents. (B, K, D)
             pooled: Each instrument's tile vector as one unit vector, in float.
                 (B, D)
         """
@@ -168,7 +186,7 @@ class CrossSensorMAE(nn.Module):
             cls.new_zeros(len(cls), 1, 3),
             cls.new_ones(len(cls), 1, dtype=torch.bool),
         )
-        predictions = {"umr": {}, "cmr": {}}
+        predictions = {"latent_umr": {}, "umr": {}, "latent_cmr": {}, "cmr": {}}
         for name, one in batch.items():
             # Only the hidden slots are asked, packed to the front, then put back
             asked, packed = one.kept(hidden[name])
@@ -178,9 +196,9 @@ class CrossSensorMAE(nn.Module):
                 asked.position,
                 asked.acquisition,
                 packed,
-            )  # (B, K', *P) each
-            for kind, held in zip(("umr", "cmr"), passes, strict=True):
+            )  # (B, K', D) and (B, K', *P) each
+            for kind, held in zip(predictions, chain(*passes), strict=True):
                 placed = held.new_zeros(*hidden[name].shape, *held.shape[2:])
                 placed[hidden[name]] = held[packed]
-                predictions[kind][name] = placed  # (B, K, *P)
+                predictions[kind][name] = placed  # (B, K, D) or (B, K, *P)
         return predictions, pooled_tokens(contexts, readable, pooling)

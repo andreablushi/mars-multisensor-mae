@@ -20,7 +20,10 @@ masking:
   # Instruments identical correspondence still draws patch by patch.
   independent: []
 
-# What UMR and CMR measure, MSE or RMSE.
+# What latent UMR and CMR divide every cosine by, OlmoEarth's patch discrimination.
+latent_temperature: 0.1
+
+# What the pixel heads' UMR and CMR measure, MSE or RMSE.
 reconstruction_error: RMSE
 
 # CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.

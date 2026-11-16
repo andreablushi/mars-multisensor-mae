@@ -10,7 +10,7 @@ from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
 from architecture.models.tokens import Tokens
-from training.loss import cmr, mim, total, umr
+from training.loss import cmr, latent_cmr, latent_umr, mim, total, umr
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype:
@@ -160,6 +160,7 @@ def batch_step(
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
+    latent_temperature: float,
     measure: str,
     generators: Mapping[str, torch.Generator],
     device: torch.device,
@@ -174,6 +175,7 @@ def batch_step(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        latent_temperature: What latent UMR and CMR divide every cosine by.
         measure: The reconstruction error, MSE or RMSE.
         generators: What fixes each instrument's masks, on the device.
         device: Where the model runs.
@@ -185,7 +187,10 @@ def batch_step(
     visible, hidden = masking(batch, mask_ratio, generators)
     with torch.autocast(device.type, dtype=autocast_dtype(device)):
         predictions, pooled = model(batch, visible, hidden, pooling)
+    targets = model.target_latents(batch)
     return total(
+        latent_umr(predictions["latent_umr"], targets, hidden, latent_temperature),
+        latent_cmr(predictions["latent_cmr"], targets, hidden, latent_temperature),
         umr(predictions["umr"], batch, hidden, measure),
         cmr(predictions["cmr"], batch, hidden, measure),
         mim(pooled, aligned, temperature),
