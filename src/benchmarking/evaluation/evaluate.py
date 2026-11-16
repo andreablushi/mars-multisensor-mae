@@ -15,6 +15,7 @@ from dataset.store import DatasetBuild
 from evaluation.reconstruct import drawn_arrays
 from logs.benchmark import log_benchmark
 from logs.images.ice import ice_image
+from training.step import autocast_dtype
 
 
 def evaluate(
@@ -65,7 +66,7 @@ def evaluate(
     with torch.no_grad():
         for batch, identities in loader:
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            with torch.autocast(device.type, dtype=torch.bfloat16):
+            with torch.autocast(device.type, dtype=autocast_dtype(device)):
                 # The frozen MAE is the same under every share, so it reads once
                 frozen = next(iter(models.values()))[still].tokens(batch)
                 for share, held in models.items():

@@ -12,6 +12,19 @@ from architecture.models.tokens import Tokens
 from training.loss import cmr, mim, total, umr
 
 
+def autocast_dtype(device: torch.device) -> torch.dtype:
+    """Return the half precision autocast runs in on a device.
+
+    Args:
+        device: Where the model runs.
+
+    Returns:
+        dtype: bfloat16 on CPU and GPUs of capability 8.0 or above, float16 below.
+    """
+    native = device.type != "cuda" or torch.cuda.get_device_capability(device) >= (8, 0)
+    return torch.bfloat16 if native else torch.float16
+
+
 def drawn_masks(
     batch: dict[str, Tokens],
     mask_ratio: float,
@@ -72,7 +85,7 @@ def batch_step(
     """
     batch = {name: tokens.to(device) for name, tokens in batch.items()}
     visible, hidden = drawn_masks(batch, mask_ratio, generators)
-    with torch.autocast(device.type, dtype=torch.bfloat16):
+    with torch.autocast(device.type, dtype=autocast_dtype(device)):
         predictions, pooled = model(batch, visible, hidden, pooling)
     return total(
         umr(predictions["umr"], batch, hidden, measure),

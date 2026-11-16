@@ -9,6 +9,7 @@ from torch import Tensor
 
 from architecture.models.tokens import Tokens
 from benchmarking.architecture.model import BenchmarkModel
+from training.step import autocast_dtype
 
 
 def batch_step(
@@ -28,5 +29,5 @@ def batch_step(
             protocol. (B, P * P, Z)
     """
     batch = {name: tokens.to(device) for name, tokens in batch.items()}
-    with torch.autocast(device.type, dtype=torch.bfloat16):
+    with torch.autocast(device.type, dtype=autocast_dtype(device)):
         return {protocol: model(batch).float() for protocol, model in models.items()}

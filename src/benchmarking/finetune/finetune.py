@@ -27,6 +27,7 @@ from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from logs.benchmark import log_epoch, log_step
 from logs.tracker import console_logger
+from training.step import autocast_dtype
 
 log = console_logger(__name__)
 
@@ -139,6 +140,9 @@ def finetune(
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
+    scaler = torch.amp.GradScaler(
+        device.type, enabled=autocast_dtype(device) == torch.float16
+    )
     scale = torch.as_tensor(spread, device=device)
     best, kept = dict.fromkeys(models, -math.inf), {}
     points = next(iter(models.values())).probe.points[:, :2].cpu()  # (P * P, 2)
@@ -159,10 +163,12 @@ def finetune(
             protocol: mse(prediction, target, scale, scored.to(device))
             for protocol, prediction in predictions.items()
         }
-        sum(losses.values()).backward()
+        scaler.scale(sum(losses.values())).backward()
+        scaler.unscale_(optimizer)
         for model in models.values():
             clip_grad_norm_(model.parameters(), max_grad_norm)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
         log_step(run, step, share, {name: float(one) for name, one in losses.items()})
         if step % validate_every and step < num_steps:

@@ -31,12 +31,6 @@ cloudpickle==3.1.2
     # via joblib
 colorama==0.4.6 ; sys_platform == 'win32'
     # via tqdm
-cuda-bindings==13.4.1 ; python_full_version < '3.15' and sys_platform == 'linux'
-    # via torch
-cuda-pathfinder==1.8.1 ; python_full_version < '3.15' and sys_platform == 'linux'
-    # via cuda-bindings
-cuda-toolkit==13.0.3.0 ; sys_platform == 'linux'
-    # via torch
 decorator==5.3.1
     # via jsonpath-rw
 digitalhub==0.15.11
@@ -120,47 +114,6 @@ numpy==2.5.3
     #   shapely
     #   tifffile
     #   zarr
-nvidia-cublas==13.1.1.3 ; sys_platform == 'linux'
-    # via
-    #   cuda-toolkit
-    #   nvidia-cudnn-cu13
-    #   nvidia-cusolver
-nvidia-cuda-cupti==13.0.85 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
-nvidia-cuda-nvrtc==13.0.88 ; sys_platform == 'linux'
-    # via
-    #   cuda-toolkit
-    #   nvidia-cublas
-nvidia-cuda-runtime==13.0.96 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
-nvidia-cudnn-cu13==9.24.0.43 ; sys_platform == 'linux'
-    # via torch
-nvidia-cufft==12.0.0.61 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
-nvidia-cufile==1.15.1.6 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
-nvidia-curand==10.4.0.35 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
-nvidia-cusolver==12.0.4.66 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
-nvidia-cusparse==12.6.3.3 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via
-    #   cuda-toolkit
-    #   nvidia-cusolver
-nvidia-cusparselt-cu13==0.8.1 ; sys_platform == 'linux'
-    # via torch
-nvidia-nccl-cu13==2.30.7 ; sys_platform == 'linux'
-    # via torch
-nvidia-nvjitlink==13.4.52 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via
-    #   cuda-toolkit
-    #   nvidia-cufft
-    #   nvidia-cusolver
-    #   nvidia-cusparse
-nvidia-nvshmem-cu13==3.4.5 ; sys_platform == 'linux'
-    # via torch
-nvidia-nvtx==13.0.85 ; (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')
-    # via cuda-toolkit
 omegaconf==2.3.1
     # via
     #   hydra-core
@@ -274,7 +227,7 @@ threadpoolctl==3.7.0
     # via scikit-learn
 tifffile==2026.8.23
     # via mars-multisensor-dataset
-torch==2.14.0
+torch @ https://download.pytorch.org/whl/cu126/torch-2.14.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl
     # via mars-multisensor-mae
 tqdm==4.70.0
     # via mlcroissant

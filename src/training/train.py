@@ -20,7 +20,7 @@ from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
-from training.step import batch_step
+from training.step import autocast_dtype, batch_step
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -120,6 +120,9 @@ def train(
         return 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lambda_lr_schedule)
+    scaler = torch.amp.GradScaler(
+        device.type, enabled=autocast_dtype(device) == torch.float16
+    )
     step_terms = partial(
         batch_step,
         model,
@@ -137,14 +140,16 @@ def train(
         batch, identities = next(batches)
         optimizer.zero_grad()
         terms = step_terms(batch, generators=generators)
-        terms["loss"].backward()
+        scaler.scale(terms["loss"]).backward()
+        scaler.unscale_(optimizer)
         # Stabilize training against exploding gradients
         norm = clip_grad_norm_(model.parameters(), 10.0)
-        if not torch.isfinite(norm):
+        if not scaler.is_enabled() and not torch.isfinite(norm):
             raise FloatingPointError(
                 f"step {step} has a non-finite gradient: {identities}"
             )
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
         log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
         # The last step is validated too, so every run ends on a measured loss
