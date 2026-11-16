@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import wandb
@@ -39,6 +39,7 @@ def start_logging(
     run_name: str,
     stage: str,
     facts: Mapping[str, object],
+    replaced: Sequence[str] = (),
 ) -> Run:
     """Return the tracked run of one stage, replacing any of its name and stage.
 
@@ -48,6 +49,7 @@ def start_logging(
             before a slash grouping it.
         stage: What the stage is called, which tells a training from an evaluation.
         facts: What only the assembled run knows, recorded beside the config.
+        replaced: The other stages whose runs of the name are deleted too.
 
     Returns:
         run: The run, named and grouped by the run name so the training and
@@ -58,7 +60,7 @@ def start_logging(
         f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
         filters={"display_name": run_name},
     ):
-        if tracked.job_type == stage:
+        if tracked.job_type in (stage, *replaced):
             tracked.delete(delete_artifacts=True)
     group = run_name.split("/")[0]
     run = wandb.init(config=dict(config), name=run_name, group=group, job_type=stage)
@@ -107,6 +109,32 @@ def log_checkpoint(run: Run, path: Path, run_name: str, kind: str = "model") -> 
     artifact = wandb.Artifact(artifact_name(kind, run_name), type=kind)
     artifact.add_file(str(path))
     run.log_artifact(artifact).wait()
+
+
+def resumed_logging(
+    run_name: str, stages: Sequence[str], kind: str
+) -> tuple[Run, Path]:
+    """Return the tracked run that logged a run's checkpoint of a kind, reopened.
+
+    Args:
+        run_name: What the run is called, which names the artifact.
+        stages: The stages whose other runs of the name are deleted, so one is left.
+        kind: What the checkpoint holds, the model or the benchmark's heads.
+
+    Returns:
+        run: The run that logged the checkpoint, reopened to log more.
+        path: The checkpoint, on this machine.
+    """
+    load_dotenv(ENV_PATH)
+    api = wandb.Api()
+    place = f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}"
+    artifact = api.artifact(f"{place}/{artifact_name(kind, run_name)}:latest")
+    owner = artifact.logged_by()
+    for tracked in api.runs(place, filters={"display_name": run_name}):
+        if tracked.job_type in stages and tracked.id != owner.id:
+            tracked.delete(delete_artifacts=True)
+    path = Path(artifact.file(str(ARTIFACTS_ROOT / artifact.name)))
+    return wandb.init(id=owner.id, resume="must"), path
 
 
 def logged_checkpoint(run: Run, run_name: str, kind: str = "model") -> Path:
