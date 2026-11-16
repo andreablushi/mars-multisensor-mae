@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 from architecture.models.tokens import Tokens
 from configs.load import named_generator, named_seed
 from configs.paths import ready_array_path
-from dataset.patches import cut_tile_patches, patch_arrays
+from dataset.patches import cut_tile_patches, patch_arrays, patch_budget_selection
 from dataset.store import DatasetBuild
 
 HALVED = ("values", "condition")
@@ -179,17 +179,7 @@ def read_cached_batch(
             draw = random.Random(
                 random.random() if seed is None else f"{seed}/{identity}"
             )
-            # Each ground spot once, whether a sounder's delay is cut or not
-            grounds = np.unique(
-                np.concatenate([held["position"][:, :2] for held in sample.values()]),
-                axis=0,
-            )
-            # One patch spot of any instrument is the centre all are cut around
-            centre = grounds[draw.randrange(len(grounds))]
-            for name, held in sample.items():
-                apart = np.linalg.norm(held["position"][:, :2] - centre, axis=1)
-                kept = np.argsort(apart, kind="stable")[: budget[name]]
-                sample[name] = {key: array[kept] for key, array in held.items()}
+            sample = patch_budget_selection(sample, budget, draw)
         samples.append(sample)
     return padded_tokens(samples), list(identities)
 

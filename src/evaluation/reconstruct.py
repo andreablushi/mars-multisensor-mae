@@ -18,7 +18,7 @@ from configs.load import mask_generators
 from dataset.loader import padded_tokens
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
-from training.step import drawn_masks
+from training.step import masking_random_correspondence
 
 NEAR_M = 3000.0
 
@@ -161,7 +161,7 @@ def masked_reconstruction(
         masked: Each instrument's "hidden" patches, and those rebuilt under "umr".
     """
     batch = batch_on_device(sample, device)
-    visible, hidden = drawn_masks(
+    visible, hidden = masking_random_correspondence(
         batch, mask_ratio, mask_generators(batch, seed, device)
     )
     with torch.no_grad():

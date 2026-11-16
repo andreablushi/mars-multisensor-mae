@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
@@ -126,6 +127,36 @@ def cut_patch(
         delay=delay,
         cell=cell,
     )
+
+
+def patch_budget_selection(
+    sample: Mapping[str, Mapping[str, np.ndarray]],
+    budget: Mapping[str, int],
+    draw: random.Random,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return one tile's patches cut to the budget around one drawn centre.
+
+    Args:
+        sample: Each instrument's arrays of the tile, as patch_arrays names them.
+        budget: How many patches of each instrument the tile keeps.
+        draw: What picks the centre.
+
+    Returns:
+        cut: Each instrument's arrays, only its patches nearest the centre kept.
+    """
+    # Each ground spot once, whether a sounder's delay is cut or not
+    grounds = np.unique(
+        np.concatenate([held["position"][:, :2] for held in sample.values()]),
+        axis=0,
+    )
+    # One patch spot of any instrument is the centre all are cut around
+    centre = grounds[draw.randrange(len(grounds))]
+    cut = {}
+    for name, held in sample.items():
+        apart = np.linalg.norm(held["position"][:, :2] - centre, axis=1)
+        kept = np.argsort(apart, kind="stable")[: budget[name]]
+        cut[name] = {key: array[kept] for key, array in held.items()}
+    return cut
 
 
 def patch_lengths(

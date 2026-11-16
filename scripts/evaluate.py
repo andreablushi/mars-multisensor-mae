@@ -74,7 +74,7 @@ def run_evaluation(run_name: str, overrides: list[str] | None = None) -> None:
         config.dataset.budget,
         config.training.batch_size,
         config.evaluation.tiles,
-        config.training.mask_ratio,
+        config.training.masking.mask_ratio,
         config.evaluation.ranging
         if set(config.evaluation.ranging) <= set(config.model.instruments)
         else [],

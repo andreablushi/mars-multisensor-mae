@@ -20,7 +20,7 @@ from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
-from training.step import autocast_dtype, batch_step
+from training.step import autocast_dtype, batch_step, selected_masking
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -42,6 +42,9 @@ def train(
     weight_decay: float,
     warmup_steps: int,
     validate_every: int,
+    masking: str,
+    masking_cell_m: float,
+    masking_independent: Sequence[str],
     mask_ratio: float,
     aligned: Sequence[str],
     pooling: str,
@@ -71,7 +74,12 @@ def train(
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
         validate_every: How many steps between two validations.
-        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        masking: The masking_* strategy, as CSMAE names its correspondence.
+        masking_cell_m: The side of one ground cell identical correspondence hides.
+        masking_independent: The instruments identical correspondence draws patch
+            by patch.
+        mask_ratio: The share of each instrument's patches hidden, of each tile's ground
+            cells under identical correspondence.
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
@@ -125,6 +133,7 @@ def train(
     step_terms = partial(
         batch_step,
         model,
+        masking=selected_masking(masking, masking_cell_m, masking_independent),
         mask_ratio=mask_ratio,
         aligned=aligned,
         pooling=pooling,

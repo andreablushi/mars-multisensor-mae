@@ -79,6 +79,25 @@ class ContrastiveConfig:
 
 
 @dataclass
+class MaskingConfig:
+    """Which patches are hidden, by CSMAE's correspondence across instruments.
+
+    Attributes:
+        strategy: The masking_* strategy, random_correspondence or
+            identical_correspondence.
+        mask_ratio: The share of each instrument's patches hidden, of each tile's
+            ground cells under identical correspondence.
+        cell_m: The side of one ground cell identical correspondence hides whole.
+        independent: The instruments identical correspondence draws patch by patch.
+    """
+
+    strategy: str
+    mask_ratio: float
+    cell_m: float
+    independent: list[str]
+
+
+@dataclass
 class TrainingConfig:
     """How a run trains, validates and stops.
 
@@ -89,7 +108,7 @@ class TrainingConfig:
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
         validate_every: How many steps between two validations.
-        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        masking: Which masking_* strategy hides the patches, and its settings.
         reconstruction_error: What UMR and CMR measure, MSE or RMSE.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the encoders and decoders read the acquisition angles.
@@ -102,7 +121,7 @@ class TrainingConfig:
     weight_decay: float
     warmup_steps: int
     validate_every: int
-    mask_ratio: float
+    masking: MaskingConfig
     reconstruction_error: str
     contrastive: ContrastiveConfig
     acquisition: bool
