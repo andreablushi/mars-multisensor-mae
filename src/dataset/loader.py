@@ -11,6 +11,7 @@ from functools import partial
 import numpy as np
 import torch
 from mars_multisensor_dataset.analysis.ground_truth.swim.models import IceLabel
+from mars_multisensor_dataset.analysis.ground_truth.swim.sample import grid_offsets
 from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.configs import mola, sharad
 from mars_multisensor_dataset.common.disk.files import atomic_path
@@ -21,7 +22,12 @@ from torch.utils.data import DataLoader
 from architecture.models.tokens import Tokens
 from configs.load import named_generator, named_seed
 from configs.paths import ready_array_path
-from dataset.patches import cut_tile_patches, patch_arrays, patch_budget_selection
+from dataset.patches import (
+    cut_tile_patches,
+    patch_arrays,
+    patch_budget_selection,
+    patch_ground_spots,
+)
 from dataset.store import DatasetBuild
 
 HALVED = ("values", "condition")
@@ -179,9 +185,89 @@ def read_cached_batch(
             draw = random.Random(
                 random.random() if seed is None else f"{seed}/{identity}"
             )
-            sample = patch_budget_selection(sample, budget, draw)
+            # One patch spot of any instrument is the centre all are cut around
+            grounds = patch_ground_spots(sample)
+            centre = grounds[draw.randrange(len(grounds))]
+            sample = patch_budget_selection(sample, budget, centre)
         samples.append(sample)
     return padded_tokens(samples), list(identities)
+
+
+def measured_patch_spots(sample: Mapping[str, Mapping[str, np.ndarray]]) -> np.ndarray:
+    """Return the ground spot of every patch holding a measurement, any instrument.
+
+    Args:
+        sample: Each instrument's patch arrays of one tile or crop.
+
+    Returns:
+        spots: East and north of each such patch in metres. (S, 2)
+    """
+    return np.concatenate(
+        [
+            held["position"][
+                held["measured"].any(tuple(range(1, held["measured"].ndim))), :2
+            ]
+            for held in sample.values()
+        ]
+    )
+
+
+def read_covering_crops_batch(
+    identities: Sequence[str],
+    build: DatasetBuild,
+    sizes: Mapping[str, Mapping[str, int]],
+    shapes: Mapping[str, tuple[int, ...]],
+    budget: Mapping[str, int],
+    reach_m: float,
+    cache: bool = True,
+) -> tuple[dict[str, Tokens], list[str], np.ndarray]:
+    """Return each tile of a batch as the budget crops that cover SWIM's points.
+
+    Args:
+        identities: The tiles of the batch.
+        build: The build the tiles are read from.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
+        budget: How many patches of each instrument a crop keeps.
+        reach_m: How near a read patch a point is scored, in metres.
+        cache: Whether a tile missing from the cache is kept there once cut.
+
+    Returns:
+        batch: Each instrument's patches over every crop, keyed as ODE names it.
+        identities: The tile each crop belongs to, a tile's crops side by side.
+        scored: Which points each crop predicts: those within reach of its read
+            patches, and those of no crop in the crop centred nearest them. (C, P * P)
+    """
+    points = np.stack(grid_offsets(), -1).reshape(-1, 2)  # (P * P, 2)
+    samples, tiles, scored = [], [], []
+    for identity in identities:
+        sample = read_cached_tile(build, identity, sizes, shapes, cache)
+        grounds = measured_patch_spots(sample)  # (G, 2)
+        apart = np.linalg.norm(points[:, None] - grounds[None], axis=-1)  # (P * P, G)
+        left = apart.min(1) <= reach_m
+        centres, reached = [], []
+        # Each crop is centred on the spot nearest the first point no crop reaches yet
+        while left.any() or not centres:
+            first = int(np.argmax(left))
+            centre = grounds[apart[first].argmin()]
+            crop = patch_budget_selection(sample, budget, centre)
+            spots = measured_patch_spots(crop)
+            near = (
+                np.linalg.norm(points[:, None] - spots[None], axis=-1).min(1) <= reach_m
+            )
+            near[first] = True
+            left &= ~near
+            centres.append(centre)
+            reached.append(near)
+            samples.append(crop)
+        reached = np.stack(reached)  # (C, P * P)
+        # A point no crop reaches is predicted by the crop centred nearest it
+        lone = ~reached.any(0)
+        nearest = np.linalg.norm(points[:, None] - np.stack(centres)[None], axis=-1)
+        reached[nearest.argmin(1)[lone], np.flatnonzero(lone)] = True
+        tiles += [identity] * len(reached)
+        scored.append(reached)
+    return padded_tokens(samples), tiles, np.concatenate(scored)
 
 
 def tile_loader(
@@ -197,6 +283,7 @@ def tile_loader(
     training: bool,
     drop_last: bool = False,
     cache: bool = True,
+    reach_m: float | None = None,
 ) -> DataLoader:
     """Return some tiles of a build in batches, each cut into the cache on first read.
 
@@ -213,9 +300,12 @@ def tile_loader(
         training: Whether the tiles are shuffled, scaled and cut anew every pass.
         drop_last: Whether a last batch short of batch_size is left out.
         cache: Whether a tile missing from the cache is kept there once cut.
+        reach_m: How near a read patch a point is scored, to read each tile as the
+            budget crops covering SWIM's points, or None for one read a tile.
 
     Returns:
-        loader: The tiles in batches.
+        loader: The tiles in batches, each crop with the points it predicts when
+            read as covering crops.
     """
     gc.freeze()
     return DataLoader(
@@ -238,6 +328,16 @@ def tile_loader(
             budget=budget,
             scale=budget_scale if training else 1.0,
             seed=None if training else seed,
+            cache=cache,
+        )
+        if reach_m is None
+        else partial(
+            read_covering_crops_batch,
+            build=build,
+            sizes=sizes,
+            shapes=shapes,
+            budget=budget,
+            reach_m=reach_m,
             cache=cache,
         ),
     )

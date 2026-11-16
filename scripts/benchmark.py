@@ -151,6 +151,8 @@ def run_benchmark(
             config.benchmark.instruments,
             sizes,
             shapes,
+            config.dataset.budget,
+            finetuning.REACH_M,
             config.benchmark.batch_size,
             config.benchmark.evaluation.tiles,
             config.benchmark.evaluation.shown,

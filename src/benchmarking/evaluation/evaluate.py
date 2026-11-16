@@ -26,6 +26,8 @@ def evaluate(
     instruments: Sequence[str],
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
+    budget: Mapping[str, int],
+    reach_m: float,
     batch_size: int,
     tiles: Sequence[str],
     shown: str,
@@ -46,7 +48,9 @@ def evaluate(
         instruments: The instruments the models read.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
-        batch_size: How many tiles one batch holds, each read whole.
+        budget: How many patches of each instrument a test crop keeps.
+        reach_m: How near a read patch of a crop a point is predicted, in metres.
+        batch_size: How many tiles one batch holds, each read as its covering crops.
         tiles: The test tiles drawn as SWIM's grid beside the models', in
             qualitative order.
         shown: The instrument whose every observation of a tile is drawn beneath.
@@ -57,14 +61,30 @@ def evaluate(
     """
     read = {name: sizes[name] for name in instruments}
     loader = tile_loader(
-        build, test, read, shapes, None, 1.0, seed, batch_size, workers, False
+        build,
+        test,
+        read,
+        shapes,
+        budget,
+        1.0,
+        seed,
+        batch_size,
+        workers,
+        False,
+        reach_m=reach_m,
     )
     predictions = {
         share: {protocol: {} for protocol in held} for share, held in models.items()
     }
     still = next(protocol for protocol, tuned in PROTOCOLS.items() if not tuned)
     with torch.no_grad():
-        for batch, identities in loader:
+        for batch, identities, scored in loader:
+            # Each point is the mean of the crops of its tile that predict it
+            weights = torch.as_tensor(scored, dtype=torch.float32).unsqueeze(-1)
+            crops = {
+                tile: [at for at, one in enumerate(identities) if one == tile]
+                for tile in dict.fromkeys(identities)
+            }
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             with torch.autocast(device.type, dtype=autocast_dtype(device)):
                 # The frozen MAE is the same under every share, so it reads once
@@ -74,12 +94,14 @@ def evaluate(
                         read_tokens = (
                             model.tokens(batch) if PROTOCOLS[protocol] else frozen
                         )
+                        predicted = model.probe(read_tokens).float().cpu() * weights
                         predictions[share][protocol].update(
-                            zip(
-                                identities,
-                                model.probe(read_tokens).float().cpu().numpy(),
-                                strict=True,
-                            )
+                            {
+                                tile: (
+                                    predicted[at].sum(0) / weights[at].sum(0)
+                                ).numpy()
+                                for tile, at in crops.items()
+                            }
                         )
     drawn = predictions[list(models)[-1]]
     by_tile = build.read_observation_metadata()
