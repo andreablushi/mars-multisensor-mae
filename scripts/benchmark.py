@@ -87,7 +87,7 @@ def run_benchmark(
         for at in torch.randperm(
             len(validation),
             generator=named_generator(config.dataset.seed, "benchmark/validation"),
-        ).tolist()[: config.benchmark.validation_tiles]
+        ).tolist()[: config.benchmark.validation_sample_size]
     ]
 
     # Both phases log to one tracked run, which the evaluation alone reopens
@@ -122,7 +122,7 @@ def run_benchmark(
                 workers,
                 num_steps,
                 round(num_steps * settings.warmup_epochs / settings.epochs),
-                pass_steps if whole else num_steps // settings.validations,
+                pass_steps if whole else num_steps // settings.validations_per_share,
                 settings.head_learning_rate,
                 settings.encoder_learning_rate,
                 settings.weight_decay,

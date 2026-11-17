@@ -18,8 +18,9 @@ probe_depth: 1
 # Tiles per batch in validation and test, each read whole.
 batch_size: 8
 
-# Validation tiles each share is validated on, the first of one draw.
-validation_tiles: 1000
+# Tiles of the k-fold validation fold every validation reads, the first of one
+# draw.
+validation_sample_size: 1000
 
 # How the attentive probe is trained, frozen over the model and fine-tuned.
 finetune:
@@ -32,8 +33,8 @@ finetune:
   # Steps of the schedule over each share of the tiles, the smallest first, warmed
   # up in the same proportion.
   fraction_steps: [1000, 2000, 3000, 4000]
-  # Validations of a share of the tiles, evenly apart, kept at its best R2.
-  validations: 4
+  # Validations of each share of the tiles, evenly apart, kept at its best R2.
+  validations_per_share: 4
   head_learning_rate: 0.001
   # Fine-tuning trains the encoders and the cross-sensor encoder whole.
   encoder_learning_rate: 0.0001

@@ -102,12 +102,12 @@ class TrainingConfig:
     """How a run trains, validates and stops.
 
     Attributes:
-        num_steps: How many steps the run takes.
+        num_epochs: How many epochs the run takes, a validation after each.
+        steps_per_epoch: How many steps one epoch takes.
         batch_size: How many tiles one step's gradient is averaged over.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
-        validate_every: How many steps between two validations.
         masking: Which masking_* strategy hides the patches, and its settings.
         reconstruction_error: What UMR and CMR measure, MSE or RMSE.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
@@ -115,12 +115,12 @@ class TrainingConfig:
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
-    num_steps: int
+    num_epochs: int
+    steps_per_epoch: int
     batch_size: int
     learning_rate: float
     weight_decay: float
     warmup_steps: int
-    validate_every: int
     masking: MaskingConfig
     reconstruction_error: str
     contrastive: ContrastiveConfig
@@ -216,8 +216,8 @@ class FinetuneConfig:
         warmup_epochs: How many epochs the rate climbs before the cosine decay.
         fraction_steps: How many steps the head trains for over each share of the
             tiles, the smallest first, warmed up in the same proportion.
-        validations: How many times a share of the tiles is validated, evenly
-            apart, kept at its best R2.
+        validations_per_share: How many times a share of the tiles is validated,
+            evenly apart, kept at its best R2.
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
         weight_decay: The AdamW weight decay.
@@ -228,7 +228,7 @@ class FinetuneConfig:
     epochs: int
     warmup_epochs: int
     fraction_steps: list[int]
-    validations: int
+    validations_per_share: int
     head_learning_rate: float
     encoder_learning_rate: float
     weight_decay: float
@@ -264,7 +264,8 @@ class BenchmarkConfig:
         probe_depth: How many cross-attention blocks the attentive probe stacks.
         batch_size: How many tiles one validation or test batch holds, each read
             whole.
-        validation_tiles: How many validation tiles each share is validated on.
+        validation_sample_size: How many tiles of the k-fold validation fold every
+            validation reads, the first of one draw.
         finetune: How the head is trained.
         evaluation: How the head is measured.
     """
@@ -276,7 +277,7 @@ class BenchmarkConfig:
     fractions: list[float]
     probe_depth: int
     batch_size: int
-    validation_tiles: int
+    validation_sample_size: int
     finetune: FinetuneConfig
     evaluation: BenchmarkEvaluationConfig
 
