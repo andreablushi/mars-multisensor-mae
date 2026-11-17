@@ -236,9 +236,10 @@ def retire_evaluation_run(old: TrackedRun, asked: Sequence[str]) -> None:
 
     Args:
         old: The evaluation run replaced.
-        asked: The parts logged anew, whose old artifacts are deleted too.
+        asked: The parts logged anew, whose old artifacts are deleted too unless
+            still the latest, as when the new content matched and W&B kept them.
     """
     for artifact in old.logged_artifacts():
-        if artifact.type in asked:
+        if artifact.type in asked and "latest" not in artifact.aliases:
             artifact.delete(delete_aliases=True)
     old.delete(delete_artifacts=False)
