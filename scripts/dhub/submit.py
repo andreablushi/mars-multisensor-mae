@@ -13,7 +13,7 @@ import urllib3.connection
 from dotenv import load_dotenv
 
 from configs.load import load_config
-from configs.paths import ENV_PATH
+from configs.paths import ENV_PATH, REPO_ROOT
 from configs.schema import Config
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
@@ -93,7 +93,7 @@ def run_stage(
     load_dotenv(ENV_PATH)
     platform = load_config(arguments["overrides"]).digitalhub
     asked = platform.stages[stage]
-    # The job installs the clone's requirements.txt at start, so no image is built
+    # The job installs the requirements.txt sent with the function, so no image is built
     function = dh.get_or_create_project(platform.project).new_function(
         name=asked.function,
         kind="python",
@@ -101,6 +101,7 @@ def run_stage(
         base_image=platform.base_image,
         code_src=f"git+{platform.repository}#{ref}",
         handler=HANDLERS[stage],
+        requirements=str(REPO_ROOT / "requirements.txt"),
     )
     job = function.run(
         action="job",
