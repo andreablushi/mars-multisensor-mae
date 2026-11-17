@@ -10,12 +10,12 @@ from wandb.sdk.wandb_run import Run
 
 from benchmarking.architecture.model import PROTOCOLS, BenchmarkModel
 from benchmarking.evaluation.metrics import rmse_and_r2
+from benchmarking.evaluation.predict import crop_mean_predictions
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from evaluation.reconstruct import drawn_arrays
 from logs.benchmark import log_benchmark
 from logs.images.ice import ice_image
-from training.step import autocast_dtype
 
 
 def evaluate(
@@ -79,30 +79,12 @@ def evaluate(
     still = next(protocol for protocol, tuned in PROTOCOLS.items() if not tuned)
     with torch.no_grad():
         for batch, identities, scored in loader:
-            # Each point is the mean of the crops of its tile that predict it
-            weights = torch.as_tensor(scored, dtype=torch.float32).unsqueeze(-1)
-            crops = {
-                tile: [at for at, one in enumerate(identities) if one == tile]
-                for tile in dict.fromkeys(identities)
-            }
-            batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            with torch.autocast(device.type, dtype=autocast_dtype(device)):
-                # The frozen MAE is the same under every share, so it reads once
-                frozen = next(iter(models.values()))[still].tokens(batch)
-                for share, held in models.items():
-                    for protocol, model in held.items():
-                        read_tokens = (
-                            model.tokens(batch) if PROTOCOLS[protocol] else frozen
-                        )
-                        predicted = model.probe(read_tokens).float().cpu() * weights
-                        predictions[share][protocol].update(
-                            {
-                                tile: (
-                                    predicted[at].sum(0) / weights[at].sum(0)
-                                ).numpy()
-                                for tile, at in crops.items()
-                            }
-                        )
+            batch_predictions = crop_mean_predictions(
+                models, batch, identities, scored, still, device
+            )
+            for share, held in batch_predictions.items():
+                for protocol, by_tile in held.items():
+                    predictions[share][protocol].update(by_tile)
     drawn = predictions[list(models)[-1]]
     by_tile = build.read_observation_metadata()
     images = [

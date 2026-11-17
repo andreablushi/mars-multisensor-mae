@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import time
 from collections.abc import Mapping, Sequence
 from functools import partial
@@ -11,7 +10,6 @@ from pathlib import Path
 
 import torch
 from torch.nn.utils import clip_grad_norm_
-from torch.optim.lr_scheduler import LambdaLR
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
@@ -20,6 +18,7 @@ from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
+from training.optimizer import pretraining_optimizer_and_schedule
 from training.step import autocast_dtype, batch_step, selected_masking
 from training.validate import validation_terms
 
@@ -108,25 +107,9 @@ def train(
         )
         for tiles, shuffled in ((training, True), (validation, False))
     )
-    # Biases, norms and learned vectors are not decayed, as MAE leaves them
-    decayed = [one for one in model.parameters() if one.ndim > 1]
-    kept = [one for one in model.parameters() if one.ndim <= 1]
-    optimizer = torch.optim.AdamW(
-        [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
-        lr=learning_rate,
-        weight_decay=weight_decay,
-        betas=(0.9, 0.95),
-        fused=True,
+    optimizer, scheduler = pretraining_optimizer_and_schedule(
+        model, learning_rate, weight_decay, warmup_steps, num_steps
     )
-
-    def lambda_lr_schedule(step: int) -> float:
-        """Return the share of the peak rate one step runs at."""
-        if step < warmup_steps:
-            return (step + 1) / warmup_steps
-        progress = (step - warmup_steps) / max(num_steps - warmup_steps, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))
-
-    scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     scaler = torch.amp.GradScaler(
         device.type, enabled=autocast_dtype(device) == torch.float16
     )
