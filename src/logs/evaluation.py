@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
 import wandb
+from wandb.apis.public import Run as TrackedRun
 from wandb.sdk.wandb_run import Run
 
 from evaluation.metrics import Metrics
-from logs.benchmark import RESULTS_STEP
 from logs.images.attention import attention_image
 from logs.images.ranging import ranging_image
 from logs.tracker import artifact_name
@@ -20,6 +22,8 @@ EVALUATION = "evaluation"
 RECONSTRUCTION = "reconstruction"
 
 LAVAFLOW = "lavaflow"
+
+PART_STEPS = {EVALUATION: 0, RECONSTRUCTION: 1, LAVAFLOW: 2}
 
 
 def log_evaluation(
@@ -67,7 +71,8 @@ def log_evaluation(
                     for column, value in zip(one.classes, held, strict=True)
                 ],
             ),
-        }
+        },
+        step=PART_STEPS[EVALUATION],
     )
     artifact = wandb.Artifact(artifact_name(EVALUATION, run_name), type=EVALUATION)
     artifact.add_dir(str(directory))
@@ -102,7 +107,7 @@ def log_reconstruction(
             media[f"{EVALUATION}/{section}/{query}/{place}"] = wandb.Image(
                 image, caption=caption
             )
-    run.log(media)
+    run.log(media, step=PART_STEPS[RECONSTRUCTION])
     artifact = wandb.Artifact(
         artifact_name(RECONSTRUCTION, run_name), type=RECONSTRUCTION
     )
@@ -143,5 +148,97 @@ def log_lavaflow(
                 for at, (image, caption) in enumerate(images, 1)
             },
         },
-        step=max(RESULTS_STEP, run.step),
+        step=PART_STEPS[LAVAFLOW],
     )
+
+
+def evaluation_part(key: str) -> str:
+    """Return which part of an evaluation logs a key of its run.
+
+    Args:
+        key: A history or summary key of an evaluation run.
+
+    Returns:
+        part: EVALUATION, RECONSTRUCTION or LAVAFLOW.
+    """
+    if key.startswith(f"{LAVAFLOW}/"):
+        return LAVAFLOW
+    if key.startswith((f"{EVALUATION}/reconstruction/", f"{EVALUATION}/ranging/")):
+        return RECONSTRUCTION
+    return EVALUATION
+
+
+def kept_evaluation_values(
+    old: TrackedRun, asked: Sequence[str], directory: Path
+) -> dict[str, tuple[dict[str, object], dict[str, object]]]:
+    """Return what every part not asked logged in an evaluation run, ready to log again.
+
+    Args:
+        old: The evaluation run whose parts are kept.
+        asked: The parts logged anew, left out.
+        directory: Where the kept images and tables are downloaded, emptied first.
+
+    Returns:
+        kept: Each kept part's last value of every history key and its summary
+            scalars, keyed by part.
+    """
+    shutil.rmtree(directory, ignore_errors=True)
+    history = {}
+    for row in old.scan_history():
+        history |= {
+            key: value
+            for key, value in row.items()
+            if not key.startswith("_") and value is not None
+        }
+    kept = {part: ({}, {}) for part in PART_STEPS if part not in asked}
+    for key, value in history.items():
+        if evaluation_part(key) not in kept:
+            continue
+        if isinstance(value, dict) and "path" in value:
+            with old.file(value["path"]).download(str(directory), replace=True) as file:
+                path = file.name
+            value = (
+                wandb.Table(**json.loads(Path(path).read_text()))
+                if value.get("_type") == "table-file"
+                else wandb.Image(path, caption=value.get("caption"))
+            )
+        kept[evaluation_part(key)][0][key] = value
+    for key, value in old.summary.items():
+        part = evaluation_part(key)
+        if (
+            part in kept
+            and key not in history
+            and not key.startswith("_")
+            and isinstance(value, (int, float, str))
+        ):
+            kept[part][1][key] = value
+    return kept
+
+
+def log_kept_part(
+    run: Run, history: Mapping[str, object], summary: Mapping[str, object], step: int
+) -> None:
+    """Log one kept part of an evaluation again at its own step.
+
+    Args:
+        run: The tracked run.
+        history: The part's last value of every history key.
+        summary: The part's summary scalars.
+        step: The step the part logs at.
+    """
+    run.summary.update(dict(summary))
+    if history:
+        run.log(dict(history), step=step)
+
+
+def retire_evaluation_run(old: TrackedRun, asked: Sequence[str]) -> None:
+    """Delete a replaced evaluation run, keeping the artifacts of the parts not asked.
+
+    Args:
+        old: The evaluation run replaced.
+        asked: The parts logged anew, whose old artifacts are deleted too.
+    """
+    for artifact in old.logged_artifacts():
+        if artifact.type in asked:
+            artifact.delete(delete_aliases=True)
+    old.delete(delete_artifacts=False)
