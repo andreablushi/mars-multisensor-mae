@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -22,7 +22,6 @@ from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
 from evaluation.results import write_reconstructions
 from logs.evaluation import log_reconstruction
-from training.step import masking_random_correspondence
 
 NEAR_M = 3000.0
 
@@ -33,6 +32,7 @@ def evaluate_reconstruction(
     tiles: Mapping[str, DrawnTile],
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
+    masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     ranging: Sequence[str],
     seed: int,
@@ -49,6 +49,7 @@ def evaluate_reconstruction(
             show, with each instrument's observation shown.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
+        masking: The masking_* strategy the run trained with, drawing the masked panels.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
         seed: What fixes the masks.
@@ -66,6 +67,7 @@ def evaluate_reconstruction(
             drawn.shown,
             sizes,
             shapes,
+            masking,
             mask_ratio,
             ranging,
             seed,
@@ -89,6 +91,7 @@ def reconstruction_and_attention(
     shown: Mapping[str, str],
     sizes: Mapping[str, Mapping[str, int]],
     shapes: Mapping[str, tuple[int, ...]],
+    masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     ranging: Sequence[str],
     seed: int,
@@ -106,6 +109,7 @@ def reconstruction_and_attention(
         shown: The observation of each instrument shown, by its identifier.
         sizes: How far a patch of each sensor runs along each axis it is cut on.
         shapes: The shape of one patch of each instrument as the model reads it.
+        masking: The masking_* strategy drawing the masked patches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
         seed: What fixes the masks.
@@ -125,7 +129,7 @@ def reconstruction_and_attention(
         # Every observation least measured first, so the most measured is laid last
         held = sorted(rows[name], key=lambda one: one.valid_count)
         every[name] = drawn_arrays(build, name, held, sizes[name], shapes[name])
-    masked = masked_reconstruction(model, alone, mask_ratio, seed, device)
+    masked = masked_reconstruction(model, alone, masking, mask_ratio, seed, device)
     # The query's shown observation hidden whole, every source's all read whole
     attention = {
         query: cmr_attention(
@@ -203,6 +207,7 @@ def batch_on_device(
 def masked_reconstruction(
     model: CrossSensorMAE,
     sample: Mapping[str, Mapping[str, np.ndarray]],
+    masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     seed: int,
     device: torch.device,
@@ -212,6 +217,7 @@ def masked_reconstruction(
     Args:
         model: The model, on the device.
         sample: Each instrument's arrays, as drawn_arrays names them.
+        masking: The masking_* strategy drawing which patches are read and hidden.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         seed: What fixes the masks.
         device: Where the model runs.
@@ -220,9 +226,7 @@ def masked_reconstruction(
         masked: Each instrument's "hidden" patches, and those rebuilt under "umr".
     """
     batch = batch_on_device(sample, device)
-    visible, hidden = masking_random_correspondence(
-        batch, mask_ratio, mask_generators(batch, seed, device)
-    )
+    visible, hidden = masking(batch, mask_ratio, mask_generators(batch, seed, device))
     with torch.no_grad():
         predictions, _ = model(batch, visible, hidden, "GAP")
     return {
