@@ -24,6 +24,7 @@ from logs.tracker import (
     reopened_logging,
     start_logging,
 )
+from training.step import selected_masking
 
 log = console_logger(__name__)
 
@@ -114,6 +115,11 @@ def run_evaluation(
             config.evaluation.reconstruction.tiles,
             sizes,
             shapes,
+            selected_masking(
+                config.training.masking.strategy,
+                config.training.masking.cell_m,
+                config.training.masking.independent,
+            ),
             config.training.masking.mask_ratio,
             ranging if set(ranging) <= set(config.model.instruments) else [],
             config.dataset.seed,
