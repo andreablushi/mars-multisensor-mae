@@ -40,7 +40,10 @@ def run_training(
     build = published_dataset_build(config, config.dataset.build)
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(config, TRAINING)
-    tiles = sorted(build.read_observation_metadata())
+    qualitative_tiles = {
+        drawn.tile for drawn in config.evaluation.reconstruction.tiles.values()
+    }
+    tiles = sorted(set(build.read_observation_metadata()) - qualitative_tiles)
     training, validation = random_split(
         tiles, config.dataset.split, named_generator(config.dataset.seed, "split")
     )
