@@ -1,0 +1,169 @@
+"""Retrieving the SHARAD crops that show a buried lava flow, by their vectors alone."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Mapping
+from dataclasses import replace
+
+import numpy as np
+import torch
+from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import REFLECTOR
+from mars_multisensor_dataset.building.configs import sharad
+from torch.utils.data import DataLoader
+from wandb.sdk.wandb_run import Run
+
+from architecture.mae import CrossSensorMAE, pooled_tokens
+from configs.load import named_generator
+from dataset.loader import tile_loader
+from dataset.store import DatasetBuild
+from evaluation.metrics import retrieval_metrics
+from evaluation.reconstruct import drawn_arrays
+from logs.evaluation import log_lavaflow
+from logs.images.lavaflow import lavaflow_image
+
+
+def evaluate_lavaflow(
+    model: CrossSensorMAE,
+    build: DatasetBuild,
+    size: Mapping[str, int],
+    shape: tuple[int, ...],
+    batch_size: int,
+    queries: int,
+    top_k: int,
+    pooling: str,
+    seed: int,
+    workers: int,
+    device: torch.device,
+    run: Run,
+) -> None:
+    """Log how early each reflector crop retrieves the others, and draw a few of them.
+
+    Args:
+        model: The model, on the device.
+        build: The lava flow build, SHARAD crops and their verdicts.
+        size: How far a SHARAD patch runs along each axis it is cut on.
+        shape: The shape of one SHARAD patch as the model reads it.
+        batch_size: How many crops one batch of the vector pass holds.
+        queries: How many reflector crops are drawn beside what they retrieve.
+        top_k: How many crops each drawn query shows it retrieved.
+        pooling: What the drawn queries are ranked by, "CLS", "GAP" or "GAP-surface".
+        seed: What fixes the drawn queries.
+        workers: How many processes read crops beside the model.
+        device: Where the model runs.
+        run: The tracked run.
+    """
+    name = sharad.LAYOUT.instrument
+    crops = build.read_lavaflow_crops()
+    by_tile = build.read_observation_metadata()
+    rows = {
+        one.crop: [
+            row for row in by_tile[one.tile][name] if row.identifier == one.track
+        ]
+        for one in crops
+    }
+    by_crop = replace(
+        build, records={crop: {name: held} for crop, held in rows.items()}
+    )
+    vectors = crop_vectors(
+        model,
+        tile_loader(
+            by_crop,
+            rows,
+            {name: size},
+            {name: shape},
+            None,
+            1.0,
+            seed,
+            batch_size,
+            workers,
+            False,
+        ),
+        device,
+    )
+    verdicts = np.array([one.verdict for one in crops])
+    tracks, tiles = (
+        np.array([getattr(one, key) for one in crops]) for key in ("track", "tile")
+    )
+    same_track = tracks[:, None] == tracks  # (N, N)
+    galleries = {
+        "track-out": same_track,
+        "tile-out": same_track | (tiles[:, None] == tiles),
+    }
+    queried = verdicts == REFLECTOR  # (N,)
+    similarities = {}
+    for pooled, by_crop_vector in vectors.items():
+        stacked = np.array([by_crop_vector[one.crop] for one in crops], np.float64)
+        similarities[pooled] = stacked @ stacked.T  # (N, N)
+    scores = {
+        (pooled, gallery): float(
+            retrieval_metrics(held, verdicts, hidden)["mAP"][queried].mean()
+        )
+        for pooled, held in similarities.items()
+        for gallery, hidden in galleries.items()
+    }
+    drawn = np.flatnonzero(queried)[
+        torch.randperm(
+            int(queried.sum()), generator=named_generator(seed, "lavaflow/queries")
+        )[:queries].numpy()
+    ]
+    ranked = np.where(same_track, -np.inf, similarities[pooling])  # (N, N)
+    images = []
+    for query in drawn:
+        retrieved = np.argsort(-ranked[query], kind="stable")[:top_k]
+        shown = [query, *retrieved]
+        images.append(
+            lavaflow_image(
+                [
+                    drawn_arrays(build, name, rows[crops[at].crop], size, shape)
+                    for at in shown
+                ],
+                [crops[at].crop for at in shown],
+                verdicts[retrieved].tolist(),
+                ranked[query, retrieved].tolist(),
+            )
+        )
+    log_lavaflow(run, scores, images)
+
+
+def crop_vectors(
+    model: CrossSensorMAE, loader: DataLoader, device: torch.device
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return one unit vector per SHARAD crop and pooling, its ground centred on itself.
+
+    Args:
+        model: The model, on the device.
+        loader: The crops to read, in batches, each read whole, SHARAD alone.
+        device: Where the model runs.
+
+    Returns:
+        vectors: Each crop's unit vector, keyed by "CLS", "GAP" or "GAP-surface",
+            the mean of its top row of patches, then by crop. (D,)
+    """
+    vectors = defaultdict(dict)
+    with torch.no_grad():
+        for batch, identities in loader:
+            ((name, tokens),) = batch.items()
+            tokens = tokens.to(device)
+            present = tokens.present  # (B, K)
+            counted = present.unsqueeze(-1).float()  # (B, K, 1)
+            ground = tokens.position[..., :2]  # (B, K, 2)
+            centre = (ground * counted).sum(1, keepdim=True) / counted.sum(
+                1, keepdim=True
+            )
+            tokens = tokens._replace(
+                position=torch.cat([ground - centre, tokens.position[..., 2:]], dim=-1)
+            )
+            _, contexts = model.embed_tokens({name: tokens}, {name: present})
+            delay = tokens.position[..., 2].masked_fill(~present, torch.inf)  # (B, K)
+            surface = present & (delay == delay.min(dim=1, keepdim=True).values)
+            pooled = {
+                "CLS": pooled_tokens(contexts, {name: present}, "CLS"),
+                "GAP": pooled_tokens(contexts, {name: present}, "GAP"),
+                "GAP-surface": pooled_tokens(contexts, {name: surface}, "GAP"),
+            }
+            for pooling, held in pooled.items():
+                vectors[pooling].update(
+                    zip(identities, held[name].cpu().numpy(), strict=True)
+                )
+    return dict(vectors)

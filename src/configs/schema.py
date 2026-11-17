@@ -144,6 +144,24 @@ class DrawnTile:
 
 
 @dataclass
+class LavaFlowConfig:
+    """How the SHARAD crops of buried lava flows are retrieved and drawn.
+
+    Attributes:
+        build: The build the crops and verdicts are read from, published as
+            <version>-dataset-<build>, or None to skip the retrieval.
+        queries: How many reflector crops are drawn beside what they retrieve.
+        top_k: How many crops each drawn query shows it retrieved.
+        pooling: What the drawn queries are ranked by, "CLS", "GAP" or "GAP-surface".
+    """
+
+    build: str | None
+    queries: int
+    top_k: int
+    pooling: str
+
+
+@dataclass
 class EvaluationConfig:
     """What a trained model's latent space is measured over, and how.
 
@@ -155,6 +173,7 @@ class EvaluationConfig:
         rank_tiles: How many training tiles RankMe reads, each cut to the budget.
         tiles: The tiles drawn as reconstructions and attention maps, by what they show.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
+        lavaflow: How the SHARAD crops of buried lava flows are retrieved and drawn.
     """
 
     build: str
@@ -163,6 +182,7 @@ class EvaluationConfig:
     rank_tiles: int
     tiles: dict[str, DrawnTile]
     ranging: list[str]
+    lavaflow: LavaFlowConfig
 
 
 @dataclass

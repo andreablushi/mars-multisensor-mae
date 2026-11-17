@@ -100,23 +100,32 @@ def ranked_neighbours(similarities: np.ndarray) -> np.ndarray:
 
 
 def retrieval_metrics(
-    similarities: np.ndarray, labels: Sequence[str]
+    similarities: np.ndarray,
+    labels: Sequence[str],
+    hidden: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     """Return how early each tile's ranking reaches the tiles sharing its class.
 
     Args:
         similarities: The cosine of every pair of tiles. (T, T)
         labels: The class each tile carries, in the same order.
+        hidden: Which tiles each tile's ranking leaves out, or None for none. (T, T)
 
     Returns:
         scores: Every tile's average precision over the whole ranking. (T,)
     """
     held = np.asarray(labels)
-    relevant = held[ranked_neighbours(similarities)] == held[:, None]  # (T, T-1)
+    ranked = ranked_neighbours(similarities)  # (T, T-1)
+    kept = (
+        np.ones(ranked.shape, bool)
+        if hidden is None
+        else ~np.take_along_axis(hidden, ranked, axis=1)
+    )  # (T, T-1)
+    relevant = (held[ranked] == held[:, None]) & kept  # (T, T-1)
     total = relevant.sum(axis=1)  # (T,)
     found = np.cumsum(relevant, axis=1)  # (T, T-1)
     # The precision at the rank of every classmate, zero at every other rank
-    gained = found / np.arange(1, relevant.shape[1] + 1) * relevant  # (T, T-1)
+    gained = found / np.cumsum(kept, axis=1).clip(min=1) * relevant  # (T, T-1)
     return {"mAP": gained.sum(axis=1) / total}
 
 

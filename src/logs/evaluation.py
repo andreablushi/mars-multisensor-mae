@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -10,11 +10,14 @@ import wandb
 from wandb.sdk.wandb_run import Run
 
 from evaluation.metrics import Metrics
+from logs.benchmark import RESULTS_STEP
 from logs.images.attention import attention_image
 from logs.images.ranging import ranging_image
 from logs.tracker import artifact_name
 
 EVALUATION = "evaluation"
+
+LAVAFLOW = "lavaflow"
 
 
 def log_evaluation(
@@ -84,3 +87,40 @@ def log_evaluation(
     artifact = wandb.Artifact(artifact_name(EVALUATION, run_name), type=EVALUATION)
     artifact.add_dir(str(directory))
     run.log_artifact(artifact)
+
+
+def log_lavaflow(
+    run: Run,
+    scores: Mapping[tuple[str, str], float],
+    images: Sequence[tuple[np.ndarray, str]],
+) -> None:
+    """Log the lava flow retrieval's mAP and the drawn queries beside what they found.
+
+    Args:
+        run: The tracked run.
+        scores: The reflector queries' mAP, keyed by pooling and by which crops
+            the gallery leaves out.
+        images: Each drawn query's image and caption, logged as qualitative 1 on.
+    """
+    run.summary.update(
+        {
+            f"{LAVAFLOW}/{pooling}/{gallery}/mAP": value
+            for (pooling, gallery), value in scores.items()
+        }
+    )
+    run.log(
+        {
+            f"{LAVAFLOW}/scores": wandb.Table(
+                columns=["pooling", "view", "metric", "value"],
+                data=[
+                    [pooling, gallery, "mAP", value]
+                    for (pooling, gallery), value in scores.items()
+                ],
+            ),
+            **{
+                f"{LAVAFLOW}/qualitative-{at}": wandb.Image(image, caption=caption)
+                for at, (image, caption) in enumerate(images, 1)
+            },
+        },
+        step=max(RESULTS_STEP, run.step),
+    )
