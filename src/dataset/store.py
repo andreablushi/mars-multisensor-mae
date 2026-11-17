@@ -12,6 +12,12 @@ from typing import Any
 
 import numpy as np
 from mars_multisensor_dataset.analysis import paths as labelled
+from mars_multisensor_dataset.analysis.ground_truth.lavaflow.labels import (
+    read_lavaflow_labels,
+)
+from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import (
+    LavaFlowLabel,
+)
 from mars_multisensor_dataset.analysis.ground_truth.nomenclature.catalogue import LABELS
 from mars_multisensor_dataset.analysis.ground_truth.nomenclature.models.label import (
     Label,
@@ -120,6 +126,14 @@ class DatasetBuild:
         """
         held = self.local_root(labelled.LABELS_NAME) / labelled.LABELS_NAME
         return {one.tile: one.label for one in parquet.read_rows(Label, LABELS, held)}
+
+    def read_lavaflow_crops(self) -> list[LavaFlowLabel]:
+        """Return every SHARAD crop of a lava flow build, with the review's verdict.
+
+        Returns:
+            crops: Every crop the build holds, a track over a tile, as written.
+        """
+        return read_lavaflow_labels(self.local_root(labelled.LAVAFLOW_LABELS_NAME))
 
     def read_observation(self, path: str) -> Observation:
         """Return one stored observation, read out of the object it was written as.

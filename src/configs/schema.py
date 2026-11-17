@@ -142,6 +142,48 @@ class DrawnTile:
 
 
 @dataclass
+class ReconstructionConfig:
+    """Which tiles are rebuilt and drawn with where CMR looked, and what is ranged.
+
+    Attributes:
+        tiles: The tiles drawn as reconstructions and attention maps, by what they show.
+        ranging: The two ranging instruments, each also rebuilt from the other alone.
+    """
+
+    tiles: dict[str, DrawnTile]
+    ranging: list[str]
+
+
+@dataclass
+class LavaFlowQualitativeConfig:
+    """Which lava flow queries are drawn beside what they retrieve, read by no score.
+
+    Attributes:
+        queries: How many reflector crops are drawn beside what they retrieve.
+        top_k: How many crops each drawn query shows it retrieved.
+        pooling: What the drawn queries are ranked by, "CLS", "GAP" or "GAP-surface".
+    """
+
+    queries: int
+    top_k: int
+    pooling: str
+
+
+@dataclass
+class LavaFlowConfig:
+    """How the SHARAD crops of buried lava flows are retrieved and drawn.
+
+    Attributes:
+        build: The build the crops and verdicts are read from, published as
+            <version>-dataset-<build>, or None to skip the retrieval.
+        qualitative: Which queries are drawn beside what they retrieve.
+    """
+
+    build: str | None
+    qualitative: LavaFlowQualitativeConfig
+
+
+@dataclass
 class EvaluationConfig:
     """What a trained model's latent space is measured over, and how.
 
@@ -151,16 +193,16 @@ class EvaluationConfig:
         batch_size: How many tiles one batch of the vector pass holds, each read whole.
         neighbours: How many neighbours the kNN vote reads.
         rank_tiles: How many training tiles RankMe reads, each cut to the budget.
-        tiles: The tiles drawn as reconstructions and attention maps, by what they show.
-        ranging: The two ranging instruments, each also rebuilt from the other alone.
+        reconstruction: Which tiles are rebuilt and drawn, and what is ranged.
+        lavaflow: How the SHARAD crops of buried lava flows are retrieved and drawn.
     """
 
     build: str
     batch_size: int
     neighbours: int
     rank_tiles: int
-    tiles: dict[str, DrawnTile]
-    ranging: list[str]
+    reconstruction: ReconstructionConfig
+    lavaflow: LavaFlowConfig
 
 
 @dataclass

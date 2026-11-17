@@ -9,18 +9,77 @@ import torch
 from mars_multisensor_dataset.building.metadata.observation import ObservationMetadata
 from torch import Tensor
 from torch.nn import functional
+from wandb.sdk.wandb_run import Run
 
 from architecture.components.decoder import Decoder
 from architecture.mae import CrossSensorMAE
 from architecture.models.context import Context
 from architecture.models.tokens import Tokens
 from configs.load import mask_generators
+from configs.schema import DrawnTile
 from dataset.loader import padded_tokens
 from dataset.patches import cut_tile_patches, patch_arrays
 from dataset.store import DatasetBuild
+from evaluation.results import write_reconstructions
+from logs.evaluation import log_reconstruction
 from training.step import masking_random_correspondence
 
 NEAR_M = 3000.0
+
+
+def evaluate_reconstruction(
+    model: CrossSensorMAE,
+    build: DatasetBuild,
+    tiles: Mapping[str, DrawnTile],
+    sizes: Mapping[str, Mapping[str, int]],
+    shapes: Mapping[str, tuple[int, ...]],
+    mask_ratio: float,
+    ranging: Sequence[str],
+    seed: int,
+    device: torch.device,
+    run: Run,
+    run_name: str,
+) -> None:
+    """Write and log a few tiles rebuilt, where CMR looked, and each ranging pair.
+
+    Args:
+        model: The model, on the device.
+        build: The build the tiles are read from.
+        tiles: The tiles drawn as reconstructions and attention maps, by what they
+            show, with each instrument's observation shown.
+        sizes: How far a patch of each sensor runs along each axis it is cut on.
+        shapes: The shape of one patch of each instrument as the model reads it.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        ranging: The two ranging instruments, each also rebuilt from the other alone.
+        seed: What fixes the masks.
+        device: Where the model runs.
+        run: The tracked run.
+        run_name: What the run is called, which names its results and artifact.
+    """
+    by_tile = build.read_observation_metadata()
+    reconstructions, rangings = {}, {}
+    for place, drawn in tiles.items():
+        by_query, ranged = reconstruction_and_attention(
+            model,
+            build,
+            by_tile[drawn.tile],
+            drawn.shown,
+            sizes,
+            shapes,
+            mask_ratio,
+            ranging,
+            seed,
+            device,
+        )
+        reconstructions |= {(place, query): one for query, one in by_query.items()}
+        rangings |= {(place, query): one for query, one in ranged.items()}
+    log_reconstruction(
+        run,
+        run_name,
+        reconstructions,
+        rangings,
+        write_reconstructions(run_name, reconstructions, rangings),
+    )
 
 
 def reconstruction_and_attention(

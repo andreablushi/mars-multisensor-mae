@@ -1,4 +1,4 @@
-"""Embedding the tiles a trained model never read, and logging what it comes to."""
+"""Embedding the tiles a trained model never read, and scoring what it comes to."""
 
 from __future__ import annotations
 
@@ -12,12 +12,10 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE, pooled_tokens
-from configs.schema import DrawnTile
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
 from evaluation.metrics import metrics_by_view
-from evaluation.reconstruct import reconstruction_and_attention
-from evaluation.results import write_results
+from evaluation.results import write_vectors
 from logs.evaluation import log_evaluation
 
 
@@ -32,16 +30,13 @@ def evaluate(
     rank_tiles: Sequence[str],
     budget: Mapping[str, int],
     rank_batch_size: int,
-    tiles: Mapping[str, DrawnTile],
-    mask_ratio: float,
-    ranging: Sequence[str],
     seed: int,
     workers: int,
     device: torch.device,
     run: Run,
     run_name: str,
 ) -> None:
-    """Write and log every tile's vectors, the scores and the drawn tiles.
+    """Write every tile's vectors and log the scores they come to.
 
     Args:
         model: The model, on the device.
@@ -56,11 +51,7 @@ def evaluate(
         budget: How many patches of each instrument a RankMe tile keeps, around a
             fixed centre.
         rank_batch_size: How many RankMe tiles one batch holds.
-        tiles: The tiles drawn as reconstructions and attention maps, by what they
-            show, with each instrument's observation shown.
-        mask_ratio: The share of each instrument's patches hidden from its encoder.
-        ranging: The two ranging instruments, each also rebuilt from the other alone.
-        seed: What fixes the masks.
+        seed: What fixes each RankMe tile's centre.
         workers: How many processes read tiles beside the model.
         device: Where the model runs.
         run: The tracked run.
@@ -90,30 +81,11 @@ def evaluate(
         device,
     )
     classes = build.read_label_by_tile()
-    reconstructions, rangings = {}, {}
-    for place, drawn in tiles.items():
-        by_query, ranged = reconstruction_and_attention(
-            model,
-            build,
-            by_tile[drawn.tile],
-            drawn.shown,
-            sizes,
-            shapes,
-            mask_ratio,
-            ranging,
-            seed,
-            device,
-        )
-        reconstructions |= {(place, query): one for query, one in by_query.items()}
-        rangings |= {(place, query): one for query, one in ranged.items()}
-    directory = write_results(run_name, classes, vectors, reconstructions, rangings)
     log_evaluation(
         run,
         run_name,
         metrics_by_view(vectors, raw, classes, neighbours),
-        reconstructions,
-        rangings,
-        directory,
+        write_vectors(run_name, classes, vectors),
     )
 
 
