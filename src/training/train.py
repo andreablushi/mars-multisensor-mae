@@ -36,11 +36,11 @@ def train(
     budget_scale: float,
     batch_size: int,
     workers: int,
-    num_steps: int,
+    num_epochs: int,
+    steps_per_epoch: int,
     learning_rate: float,
     weight_decay: float,
     warmup_steps: int,
-    validate_every: int,
     masking: str,
     masking_cell_m: float,
     masking_independent: Sequence[str],
@@ -69,11 +69,11 @@ def train(
         budget_scale: The most a training batch's budget is multiplied by.
         batch_size: How many tiles one batch holds.
         workers: How many processes read tiles beside the training.
-        num_steps: How many steps the run takes.
+        num_epochs: How many epochs the run takes, a validation after each.
+        steps_per_epoch: How many steps one epoch takes.
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
-        validate_every: How many steps between two validations.
         masking: The masking_* strategy, as CSMAE names its correspondence.
         masking_cell_m: The side of one ground cell identical correspondence hides.
         masking_independent: The instruments identical correspondence draws patch
@@ -109,6 +109,7 @@ def train(
         )
         for tiles, shuffled in ((training, True), (validation, False))
     )
+    num_steps = num_epochs * steps_per_epoch
     optimizer, scheduler = pretraining_optimizer_and_schedule(
         model, learning_rate, weight_decay, warmup_steps, num_steps
     )
@@ -130,25 +131,25 @@ def train(
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
-    for step in range(1, num_steps + 1):
-        batch, identities = next(batches)
-        optimizer.zero_grad()
-        terms = step_terms(batch, generators=generators)
-        scaler.scale(terms["loss"]).backward()
-        scaler.unscale_(optimizer)
-        # Stabilize training against exploding gradients
-        norm = clip_grad_norm_(model.parameters(), 10.0)
-        if not scaler.is_enabled() and not torch.isfinite(norm):
-            raise FloatingPointError(
-                f"step {step} has a non-finite gradient: {identities}"
-            )
-        scaler.step(optimizer)
-        scaler.update()
-        scheduler.step()
-        log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
-        # The last step is validated too, so every run ends on a measured loss
-        if step % validate_every and step < num_steps:
-            continue
+    for epoch in range(num_epochs):
+        for step in range(
+            epoch * steps_per_epoch + 1, (epoch + 1) * steps_per_epoch + 1
+        ):
+            batch, identities = next(batches)
+            optimizer.zero_grad()
+            terms = step_terms(batch, generators=generators)
+            scaler.scale(terms["loss"]).backward()
+            scaler.unscale_(optimizer)
+            # Stabilize training against exploding gradients
+            norm = clip_grad_norm_(model.parameters(), 10.0)
+            if not scaler.is_enabled() and not torch.isfinite(norm):
+                raise FloatingPointError(
+                    f"step {step} has a non-finite gradient: {identities}"
+                )
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
         metrics = validation_terms(
             validation, step_terms, mask_generators(model.encoders, seed, device)
         )
