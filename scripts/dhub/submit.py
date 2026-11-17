@@ -13,17 +13,11 @@ import urllib3.connection
 from dotenv import load_dotenv
 
 from configs.load import load_config
-from configs.paths import ENV_PATH
+from configs.paths import ENV_PATH, REPO_ROOT
 from configs.schema import Config
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
 PYTHONPATH = "/shared:/shared/src:/shared/scripts"
-
-HANDLERS = {
-    "training": "scripts.train:run_training",
-    "evaluation": "scripts.evaluate:run_evaluation",
-    "benchmark": "scripts.benchmark:run_benchmark",
-}
 
 SECRETS = [
     "DHCORE_PERSONAL_ACCESS_TOKEN",
@@ -93,14 +87,15 @@ def run_stage(
     load_dotenv(ENV_PATH)
     platform = load_config(arguments["overrides"]).digitalhub
     asked = platform.stages[stage]
-    # The job installs the clone's requirements.txt at start, so no image is built
+    # The job installs the repository's requirements itself, so no image is built
     function = dh.get_or_create_project(platform.project).new_function(
         name=asked.function,
         kind="python",
         python_version=platform.python_version,
         base_image=platform.base_image,
         code_src=f"git+{platform.repository}#{ref}",
-        handler=HANDLERS[stage],
+        handler="scripts.dhub.job:run_installed_stage",
+        requirements=str(REPO_ROOT / "requirements.txt"),
     )
     job = function.run(
         action="job",
@@ -112,7 +107,11 @@ def run_stage(
             {"name": "PYTORCH_CUDA_ALLOC_CONF", "value": "expandable_segments:True"},
             *({"name": name, "value": os.environ[name]} for name in MINTED_FROM),
         ],
-        parameters=arguments,
+        parameters={
+            "stage": stage,
+            "arguments": arguments,
+            "requirements": function.spec.requirements,
+        },
         wait=False,
     )
     print(job.key)
