@@ -111,6 +111,26 @@ def log_checkpoint(run: Run, path: Path, run_name: str, kind: str = "model") -> 
     run.log_artifact(artifact).wait()
 
 
+def reopened_logging(run_name: str, stage: str) -> Run | None:
+    """Return the tracked run of one name and stage, reopened to log more, if any.
+
+    Args:
+        run_name: What the run is called, which names the tracked run.
+        stage: What the stage is called, which tells a training from an evaluation.
+
+    Returns:
+        run: The run reopened, or None when no run of the name and stage is tracked.
+    """
+    load_dotenv(ENV_PATH)
+    for tracked in wandb.Api().runs(
+        f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
+        filters={"display_name": run_name},
+    ):
+        if tracked.job_type == stage:
+            return wandb.init(id=tracked.id, resume="must")
+    return None
+
+
 def resumed_logging(
     run_name: str, stages: Sequence[str], kind: str
 ) -> tuple[Run, Path]:

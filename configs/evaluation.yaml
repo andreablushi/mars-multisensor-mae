@@ -30,3 +30,15 @@ tiles:
 
 # The two ranging instruments, each also rebuilt from the other alone.
 ranging: [MOLA, SHARAD]
+
+# Lava flow retrieval over SHARAD crops, run with every evaluation or alone with
+# --lavaflow.
+lavaflow:
+  # Build the crops and their verdicts are read from, null to skip the retrieval.
+  build: lavaflow
+  # Reflector crops drawn beside what they retrieve.
+  queries: 6
+  # Crops each drawn query shows it retrieved.
+  top_k: 5
+  # Pooling the drawn queries are ranked by, CLS, GAP or GAP-surface.
+  pooling: GAP-surface
