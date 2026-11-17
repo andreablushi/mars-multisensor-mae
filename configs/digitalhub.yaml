@@ -13,7 +13,7 @@ stages:
   training:
     function: train-mae
     profile: 1xv100-shared
-    resources: {cpu: "8", mem: 32Gi, disk: 570Gi}
+    resources: {cpu: "4", mem: 32Gi, disk: 570Gi}
   evaluation:
     function: evaluate-mae
     profile: 1xv100-shared
