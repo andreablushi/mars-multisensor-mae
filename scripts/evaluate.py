@@ -14,15 +14,24 @@ from wandb.sdk.wandb_run import Run
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config, named_generator
 from configs.model import built_model
+from configs.paths import results_directory
 from evaluation.evaluate import evaluate
 from evaluation.lavaflow import evaluate_lavaflow
 from evaluation.reconstruct import evaluate_reconstruction
-from logs.evaluation import EVALUATION
+from logs.evaluation import (
+    EVALUATION,
+    LAVAFLOW,
+    PART_STEPS,
+    RECONSTRUCTION,
+    kept_evaluation_values,
+    log_kept_part,
+    retire_evaluation_run,
+)
 from logs.tracker import (
     console_logger,
     logged_checkpoint,
-    reopened_logging,
     start_logging,
+    tracked_run,
 )
 from training.step import selected_masking
 
@@ -64,7 +73,8 @@ def run_evaluation(
         reconstruction: Whether to rebuild and draw the tiles, every part when no
             part is asked.
         lavaflow: Whether to run the lava flow retrieval, every part when no part
-            is asked.
+            is asked; a part asked alone rebuilds the model's evaluation run, the
+            other parts copied from the old one, which is then deleted.
     """
     config = load_config(overrides or [])
     whole = not (reconstruction or lavaflow)
@@ -76,11 +86,32 @@ def run_evaluation(
     build = published_dataset_build(config, config.evaluation.build)
     model, device, sizes, shapes = built_model(config, build)
     workers = requested_read_workers(config, EVALUATION)
-    run = (not whole and reopened_logging(run_name, EVALUATION)) or start_logging(
-        asdict(config), run_name, EVALUATION, {"device": str(device)}
+    asked = [
+        part
+        for part, on in (
+            (EVALUATION, whole),
+            (RECONSTRUCTION, whole or reconstruction),
+            (LAVAFLOW, (whole or lavaflow) and retrieved),
+        )
+        if on
+    ]
+    old = None if whole else tracked_run(run_name, EVALUATION)
+    kept = (
+        {}
+        if old is None
+        else kept_evaluation_values(old, asked, results_directory(run_name, "kept"))
+    )
+    run = start_logging(
+        asdict(config),
+        run_name,
+        EVALUATION,
+        {"device": str(device)},
+        spared=old and old.id,
     )
     log.info("evaluating %s on %s", run_name, device)
     model = trained_model(model, run, run_name)
+    if EVALUATION in kept:
+        log_kept_part(run, *kept[EVALUATION], PART_STEPS[EVALUATION])
     if whole:
         rank_build = published_dataset_build(config, config.dataset.build)
         rank_tiles = [
@@ -107,7 +138,9 @@ def run_evaluation(
             run,
             run_name,
         )
-    if whole or reconstruction:
+    if RECONSTRUCTION in kept:
+        log_kept_part(run, *kept[RECONSTRUCTION], PART_STEPS[RECONSTRUCTION])
+    if RECONSTRUCTION in asked:
         ranging = config.evaluation.reconstruction.ranging
         evaluate_reconstruction(
             model,
@@ -127,7 +160,9 @@ def run_evaluation(
             run,
             run_name,
         )
-    if (whole or lavaflow) and retrieved:
+    if LAVAFLOW in kept:
+        log_kept_part(run, *kept[LAVAFLOW], PART_STEPS[LAVAFLOW])
+    if LAVAFLOW in asked:
         evaluate_lavaflow(
             model,
             published_dataset_build(config, settings.build),
@@ -143,6 +178,8 @@ def run_evaluation(
             run,
         )
     run.finish()
+    if old is not None:
+        retire_evaluation_run(old, asked)
 
 
 if __name__ == "__main__":

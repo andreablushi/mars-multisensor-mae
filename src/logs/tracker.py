@@ -10,6 +10,7 @@ from pathlib import Path
 import wandb
 from dotenv import load_dotenv
 from torch import Tensor
+from wandb.apis.public import Run as TrackedRun
 from wandb.sdk.wandb_run import Run
 
 from configs.paths import ARTIFACTS_ROOT, ENV_PATH
@@ -40,6 +41,7 @@ def start_logging(
     stage: str,
     facts: Mapping[str, object],
     replaced: Sequence[str] = (),
+    spared: str | None = None,
 ) -> Run:
     """Return the tracked run of one stage, replacing any of its name and stage.
 
@@ -50,6 +52,7 @@ def start_logging(
         stage: What the stage is called, which tells a training from an evaluation.
         facts: What only the assembled run knows, recorded beside the config.
         replaced: The other stages whose runs of the name are deleted too.
+        spared: The id of one run of the name left alone, for its caller to retire.
 
     Returns:
         run: The run, named and grouped by the run name so the training and
@@ -60,7 +63,7 @@ def start_logging(
         f"{os.environ['WANDB_ENTITY']}/{os.environ['WANDB_PROJECT']}",
         filters={"display_name": run_name},
     ):
-        if tracked.job_type in (stage, *replaced):
+        if tracked.job_type in (stage, *replaced) and tracked.id != spared:
             tracked.delete(delete_artifacts=True)
     group = run_name.split("/")[0]
     run = wandb.init(config=dict(config), name=run_name, group=group, job_type=stage)
@@ -111,15 +114,15 @@ def log_checkpoint(run: Run, path: Path, run_name: str, kind: str = "model") -> 
     run.log_artifact(artifact).wait()
 
 
-def reopened_logging(run_name: str, stage: str) -> Run | None:
-    """Return the tracked run of one name and stage, reopened to log more, if any.
+def tracked_run(run_name: str, stage: str) -> TrackedRun | None:
+    """Return the tracked run of one name and stage, as the API reads it, if any.
 
     Args:
         run_name: What the run is called, which names the tracked run.
         stage: What the stage is called, which tells a training from an evaluation.
 
     Returns:
-        run: The run reopened, or None when no run of the name and stage is tracked.
+        run: The run, or None when no run of the name and stage is tracked.
     """
     load_dotenv(ENV_PATH)
     for tracked in wandb.Api().runs(
@@ -127,7 +130,7 @@ def reopened_logging(run_name: str, stage: str) -> Run | None:
         filters={"display_name": run_name},
     ):
         if tracked.job_type == stage:
-            return wandb.init(id=tracked.id, resume="must")
+            return tracked
     return None
 
 
