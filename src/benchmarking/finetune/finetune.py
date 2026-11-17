@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from itertools import chain, repeat
 
@@ -15,13 +14,13 @@ from mars_multisensor_dataset.analysis.ground_truth.swim.sample import (
 )
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
-from torch.optim.lr_scheduler import LambdaLR
 from wandb.sdk.wandb_run import Run
 
 from benchmarking.architecture.model import BenchmarkModel
 from benchmarking.evaluation.metrics import rmse_and_r2
 from benchmarking.finetune.loss import mse
-from benchmarking.finetune.step import batch_step
+from benchmarking.finetune.optimizer import finetune_optimizer_and_schedule
+from benchmarking.finetune.step import batch_step, scored_swim_points
 from benchmarking.finetune.validate import validate
 from dataset.loader import tile_loader
 from dataset.store import DatasetBuild
@@ -115,31 +114,14 @@ def finetune(
             (validation, None, batch_size, False),
         )
     )
-    groups = defaultdict(list)
-    for model in models.values():
-        for name, one in model.named_parameters():
-            if one.requires_grad:
-                rate = (
-                    head_learning_rate
-                    if name.startswith("probe.")
-                    else encoder_learning_rate
-                )
-                groups[rate, weight_decay if one.ndim > 1 else 0.0].append(one)
-    optimizer = torch.optim.AdamW(
-        [
-            {"params": held, "lr": rate, "weight_decay": decay}
-            for (rate, decay), held in groups.items()
-        ]
+    optimizer, scheduler = finetune_optimizer_and_schedule(
+        models,
+        head_learning_rate,
+        encoder_learning_rate,
+        weight_decay,
+        warmup_steps,
+        num_steps,
     )
-
-    def lambda_lr_schedule(step: int) -> float:
-        """Return the share of the peak rate one step runs at."""
-        if step < warmup_steps:
-            return (step + 1) / warmup_steps
-        progress = (step - warmup_steps) / max(num_steps - warmup_steps, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))
-
-    scheduler = LambdaLR(optimizer, lambda_lr_schedule)
     scaler = torch.amp.GradScaler(
         device.type, enabled=autocast_dtype(device) == torch.float16
     )
@@ -154,11 +136,7 @@ def finetune(
         target = torch.as_tensor(
             np.stack([targets[tile] for tile in identities]), device=device
         )
-        # A point is scored where a patch the tile was cut to stands near it
-        spots = torch.cat([one.position[..., :2] for one in batch.values()], 1)
-        read = torch.cat([one.present for one in batch.values()], 1)  # (B, S)
-        apart = torch.cdist(points.expand(len(spots), -1, -1), spots)  # (B, P * P, S)
-        scored = apart.masked_fill(~read[:, None], math.inf).amin(-1) <= REACH_M
+        scored = scored_swim_points(batch, points, REACH_M)
         losses = {
             protocol: mse(prediction, target, scale, scored.to(device))
             for protocol, prediction in predictions.items()
