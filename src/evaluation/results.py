@@ -10,7 +10,13 @@ from pathlib import Path
 import numpy as np
 from mars_multisensor_dataset.common.disk import parquet
 
-from configs.paths import RANGING_FILE, RECONSTRUCTION_FILE, results_path
+from configs.paths import (
+    RANGING_FILE,
+    RECONSTRUCTION_FILE,
+    RESULTS_FILE,
+    results_directory,
+)
+from logs.evaluation import EVALUATION, RECONSTRUCTION
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,28 +41,22 @@ class TileVector:
 RESULTS_SCHEMA = parquet.schema_of(TileVector)
 
 
-def write_results(
+def write_vectors(
     run_name: str,
     classes: Mapping[str, str],
     vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-    reconstructions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
-    rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
 ) -> Path:
-    """Return where one run's evaluation was written, its vectors and drawn tiles.
+    """Return where one run's tile vectors were written, any earlier ones removed.
 
     Args:
         run_name: What the run is called, which names its results.
         classes: The class each tile earned, keyed by the tile.
         vectors: Each tile's vector, keyed by pooling, then view, then tile.
-        reconstructions: Each tile's instrument masked and rebuilt from the others
-            whole, keyed by what the tile shows and the instrument.
-        rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
-            alike.
 
     Returns:
-        directory: The run's results, emptied of any earlier evaluation first.
+        directory: The folder holding the vectors alone.
     """
-    directory = results_path(run_name).parent
+    directory = results_directory(run_name, EVALUATION)
     shutil.rmtree(directory, ignore_errors=True)
     parquet.write_rows(
         [
@@ -66,8 +66,31 @@ def write_results(
             for tile, vector in sorted(by_tile.items())
         ],
         RESULTS_SCHEMA,
-        results_path(run_name),
+        directory / RESULTS_FILE,
     )
+    return directory
+
+
+def write_reconstructions(
+    run_name: str,
+    reconstructions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+) -> Path:
+    """Return where one run's drawn tiles were written, any earlier ones removed.
+
+    Args:
+        run_name: What the run is called, which names its results.
+        reconstructions: Each tile's instrument masked and rebuilt from the others
+            whole, keyed by what the tile shows and the instrument.
+        rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
+            alike.
+
+    Returns:
+        directory: The folder holding the drawn tiles alone.
+    """
+    directory = results_directory(run_name, RECONSTRUCTION)
+    shutil.rmtree(directory, ignore_errors=True)
+    directory.mkdir(parents=True)
     drawn = {
         **{
             RECONSTRUCTION_FILE.format(*key): one
@@ -77,7 +100,7 @@ def write_results(
     }
     for name, by_instrument in drawn.items():
         np.savez(
-            results_path(run_name, name),
+            directory / name,
             **{
                 f"{instrument}/{key}": array
                 for instrument, arrays in by_instrument.items()

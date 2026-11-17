@@ -10,35 +10,39 @@ neighbours: 5
 # Training tiles RankMe reads, each cut to the dataset's budget around a fixed centre.
 rank_tiles: 13000
 
-# Tiles drawn as reconstructions and attention maps, and each instrument's
-# observation shown.
-tiles:
-  crater:
-    tile: b209_c0352
-    shown:
-      CTX: p01_001538_2035_xi_23n152w
-      CRISM: msp000055e9_03_if214_trr3
-      MOLA: megdr128
-      SHARAD: s_02228601
-  ice_rich:
-    tile: b327_c0013
-    shown:
-      CTX: p17_007787_2670_xn_87n184w
-      CRISM: msp00003212_01_if214_trr3
-      MOLA: megdr128
-      SHARAD: s_01356201
-
-# The two ranging instruments, each also rebuilt from the other alone.
-ranging: [MOLA, SHARAD]
+# Reconstructions, CMR attention and MOLA <-> SHARAD ranging over a few tiles, run
+# with every evaluation or alone with --reconstruction.
+reconstruction:
+  # Tiles drawn as reconstructions and attention maps, and each instrument's
+  # observation shown.
+  tiles:
+    crater:
+      tile: b209_c0352
+      shown:
+        CTX: p01_001538_2035_xi_23n152w
+        CRISM: msp000055e9_03_if214_trr3
+        MOLA: megdr128
+        SHARAD: s_02228601
+    ice_rich:
+      tile: b327_c0013
+      shown:
+        CTX: p17_007787_2670_xn_87n184w
+        CRISM: msp00003212_01_if214_trr3
+        MOLA: megdr128
+        SHARAD: s_01356201
+  # The two ranging instruments, each also rebuilt from the other alone.
+  ranging: [MOLA, SHARAD]
 
 # Lava flow retrieval over SHARAD crops, run with every evaluation or alone with
 # --lavaflow.
 lavaflow:
   # Build the crops and their verdicts are read from, null to skip the retrieval.
   build: lavaflow
-  # Reflector crops drawn beside what they retrieve.
-  queries: 6
-  # Crops each drawn query shows it retrieved.
-  top_k: 5
-  # Pooling the drawn queries are ranked by, CLS, GAP or GAP-surface.
-  pooling: GAP-surface
+  # The images of a few queries beside what they retrieve, which no score reads.
+  qualitative:
+    # Reflector crops drawn beside what they retrieve.
+    queries: 6
+    # Crops each drawn query shows it retrieved.
+    top_k: 5
+    # Pooling the drawn queries are ranked by, CLS, GAP or GAP-surface.
+    pooling: GAP-surface

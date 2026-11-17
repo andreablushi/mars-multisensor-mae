@@ -17,6 +17,8 @@ from logs.tracker import artifact_name
 
 EVALUATION = "evaluation"
 
+RECONSTRUCTION = "reconstruction"
+
 LAVAFLOW = "lavaflow"
 
 
@@ -24,21 +26,15 @@ def log_evaluation(
     run: Run,
     run_name: str,
     metrics: Mapping[tuple[str, str], Metrics],
-    reconstructions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
-    rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
     directory: Path,
 ) -> None:
-    """Log every score, the class distances, the rebuilt tiles and where CMR looked.
+    """Log every score and the class distances, the vectors as the run's artifact.
 
     Args:
         run: The tracked run.
         run_name: What the run is called, which names its artifact.
         metrics: Each view's metrics, keyed by its pooling and view.
-        reconstructions: Each tile's instrument masked and rebuilt from the others
-            whole, keyed by what the tile shows and the instrument.
-        rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
-            alike.
-        directory: Where the evaluation wrote its files, logged as its artifact.
+        directory: Where the evaluation wrote its vectors, logged as its artifact.
     """
     scores = [
         [pooling, view, name, value]
@@ -57,16 +53,6 @@ def log_evaluation(
             for pooling, view, name, value in scores
         }
     )
-    media = {}
-    for section, drawn, by_query in (
-        ("reconstruction", attention_image, reconstructions),
-        ("ranging", ranging_image, rangings),
-    ):
-        for (place, query), attention in by_query.items():
-            image, caption = drawn(attention, query)
-            media[f"{EVALUATION}/{section}/{query}/{place}"] = wandb.Image(
-                image, caption=caption
-            )
     run.log(
         {
             f"{EVALUATION}/scores": wandb.Table(
@@ -81,10 +67,45 @@ def log_evaluation(
                     for column, value in zip(one.classes, held, strict=True)
                 ],
             ),
-            **media,
         }
     )
     artifact = wandb.Artifact(artifact_name(EVALUATION, run_name), type=EVALUATION)
+    artifact.add_dir(str(directory))
+    run.log_artifact(artifact)
+
+
+def log_reconstruction(
+    run: Run,
+    run_name: str,
+    reconstructions: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    rangings: Mapping[tuple[str, str], Mapping[str, Mapping[str, np.ndarray]]],
+    directory: Path,
+) -> None:
+    """Log the rebuilt tiles and where CMR looked, their arrays as the run's artifact.
+
+    Args:
+        run: The tracked run.
+        run_name: What the run is called, which names its artifact.
+        reconstructions: Each tile's instrument masked and rebuilt from the others
+            whole, keyed by what the tile shows and the instrument.
+        rangings: Each tile's ranging instrument rebuilt from the other alone, keyed
+            alike.
+        directory: Where the drawn tiles were written, logged as its artifact.
+    """
+    media = {}
+    for section, drawn, by_query in (
+        ("reconstruction", attention_image, reconstructions),
+        ("ranging", ranging_image, rangings),
+    ):
+        for (place, query), attention in by_query.items():
+            image, caption = drawn(attention, query)
+            media[f"{EVALUATION}/{section}/{query}/{place}"] = wandb.Image(
+                image, caption=caption
+            )
+    run.log(media)
+    artifact = wandb.Artifact(
+        artifact_name(RECONSTRUCTION, run_name), type=RECONSTRUCTION
+    )
     artifact.add_dir(str(directory))
     run.log_artifact(artifact)
 

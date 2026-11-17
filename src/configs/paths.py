@@ -44,9 +44,9 @@ def checkpoint_path(checkpoints: str, name: str) -> Path:
     return REPO_ROOT / checkpoints / f"{name}.pt"
 
 
-def results_path(run_name: str, name: str = RESULTS_FILE) -> Path:
-    """Return where one of a run's evaluation files is written on this machine."""
-    return RESULTS_ROOT / run_name / name
+def results_directory(run_name: str, part: str) -> Path:
+    """Return where one part of a run's evaluation is written on this machine."""
+    return RESULTS_ROOT / run_name / part
 
 
 def heads_path(run_name: str) -> Path:
