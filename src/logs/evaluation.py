@@ -13,6 +13,7 @@ from wandb.apis.public import Run as TrackedRun
 from wandb.sdk.wandb_run import Run
 
 from evaluation.metrics import Metrics
+from logs.benchmark import RESULTS_STEP
 from logs.images.attention import attention_image
 from logs.images.ranging import ranging_image
 from logs.tracker import artifact_name
@@ -23,7 +24,7 @@ RECONSTRUCTION = "reconstruction"
 
 LAVAFLOW = "lavaflow"
 
-PART_STEPS = {EVALUATION: 0, RECONSTRUCTION: 1, LAVAFLOW: 2}
+PART_STEPS = {EVALUATION: 0, RECONSTRUCTION: 0, LAVAFLOW: RESULTS_STEP}
 
 
 def log_evaluation(
