@@ -55,6 +55,9 @@ def named_rng(seed: int, name: str) -> Iterator[None]:
     Args:
         seed: The run's seed.
         name: What is drawn, such as `encoders.CTX`.
+
+    Yields:
+        None: Torch seeded by that draw, for the draws inside the block.
     """
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(named_seed(seed, name))

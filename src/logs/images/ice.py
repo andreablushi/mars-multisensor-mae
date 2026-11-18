@@ -12,8 +12,8 @@ from mars_multisensor_dataset.analysis.ground_truth.swim.sample import (
 from mars_multisensor_dataset.common.maths.physics import METRES_PER_KM
 
 from dataset.loader import TARGETS
-from logs.images.attention import centred_rows, grey_patches, laid_patches, map_places
-from logs.images.reconstruction import colour_bar, scaled_values, spaced_row
+from logs.images.maps import grey_patches, laid_patches, map_places
+from logs.images.panels import centred_rows, colour_bar, scaled_values, spaced_row
 
 TITLES = {"attentive-probe": "Attentive Probe", "fine-tune": "Fine-tuning"}
 

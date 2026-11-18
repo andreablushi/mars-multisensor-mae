@@ -10,11 +10,11 @@ from dhub.store import published_dataset_build, published_ice_labels
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from evaluate import trained_model
+from model import built_benchmark_model, built_model
 
 from benchmarking.evaluation import evaluate as evaluation
 from benchmarking.finetune import finetune as finetuning
 from configs.load import load_config, named_generator
-from configs.model import built_benchmark_model, built_model
 from configs.paths import heads_path
 from dataset.loader import swim_targets_loader, tiles_split_by_square
 from logs.benchmark import BENCHMARK, FINETUNE, HEADS
@@ -47,7 +47,7 @@ def run_benchmark(
     """
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.benchmark.build)
-    model, device, sizes, shapes = built_model(config, build)
+    model, device, layout = built_model(config, build)
     workers = requested_read_workers(config, BENCHMARK)
     left = [
         one
@@ -113,8 +113,7 @@ def run_benchmark(
                 checked,
                 targets,
                 spread,
-                {name: sizes[name] for name in config.benchmark.instruments},
-                shapes,
+                layout.only(config.benchmark.instruments),
                 config.dataset.budget,
                 config.dataset.budget_scale,
                 settings.batch_size,
@@ -147,8 +146,7 @@ def run_benchmark(
             test,
             targets,
             config.benchmark.instruments,
-            sizes,
-            shapes,
+            layout,
             config.dataset.budget,
             finetuning.REACH_M,
             config.benchmark.batch_size,

@@ -23,6 +23,7 @@ from benchmarking.finetune.optimizer import finetune_optimizer_and_schedule
 from benchmarking.finetune.step import batch_step, scored_swim_points
 from benchmarking.finetune.validate import validate
 from dataset.loader import tile_loader
+from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
 from logs.benchmark import log_epoch, log_step
 from logs.tracker import console_logger
@@ -40,8 +41,7 @@ def finetune(
     validation: Sequence[str],
     targets: Mapping[str, np.ndarray],
     spread: np.ndarray,
-    sizes: Mapping[str, Mapping[str, int]],
-    shapes: Mapping[str, tuple[int, ...]],
+    layout: PatchLayout,
     budget: Mapping[str, int],
     budget_scale: float,
     training_batch_size: int,
@@ -70,9 +70,8 @@ def finetune(
         targets: SWIM's value of every point for each target, keyed by the
             tile. (P * P, Z)
         spread: Each target's standard deviation, which the loss divides by. (Z,)
-        sizes: How far a patch of each instrument read runs along each axis it is
-            cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
+        layout: How each instrument read is cut into patches, and the shape the
+            model reads one in.
         budget: How many patches of each instrument a training tile keeps.
         budget_scale: The most a training batch's budget is multiplied by.
         training_batch_size: How many tiles one training batch holds, each cut to
@@ -99,8 +98,7 @@ def finetune(
         tile_loader(
             build,
             tiles,
-            sizes,
-            shapes,
+            layout,
             cut,
             budget_scale,
             seed,
@@ -136,9 +134,9 @@ def finetune(
         target = torch.as_tensor(
             np.stack([targets[tile] for tile in identities]), device=device
         )
-        scored = scored_swim_points(batch, points, REACH_M)
+        scored = scored_swim_points(batch, points, REACH_M).to(device)
         losses = {
-            protocol: mse(prediction, target, scale, scored.to(device))
+            protocol: mse(prediction, target, scale, scored)
             for protocol, prediction in predictions.items()
         }
         scaler.scale(sum(losses.values())).backward()

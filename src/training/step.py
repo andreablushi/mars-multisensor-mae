@@ -103,8 +103,9 @@ def masking_identical_correspondence(
     for name, at in index.items():
         covered.scatter_add_(1, at, shared[name].present.int())
     field = torch.rand(covered.shape, generator=generators["ground"], device=low.device)
-    order = field.masked_fill(covered == 0, 2.0).argsort(dim=1)
-    _, dropped = visible_and_hidden_from_order(order, covered > 0, mask_ratio)
+    reached = covered > 0
+    order = field.masked_fill(~reached, 2.0).argsort(dim=1)
+    _, dropped = visible_and_hidden_from_order(order, reached, mask_ratio)
     for name, tokens in shared.items():
         drawn = dropped.gather(1, index[name])
         visible[name] = tokens.present & ~drawn

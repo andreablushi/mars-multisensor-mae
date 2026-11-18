@@ -1,7 +1,8 @@
-"""One patch of one observation, and everything an embedding places it by."""
+"""One patch of one observation, what an embedding places it by, and the layout."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -33,3 +34,32 @@ class Patch:
     east_m: float
     delay: float
     cell: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PatchLayout:
+    """How each instrument read is cut into patches, and the shape the model reads.
+
+    Attributes:
+        sizes: How far a patch of each instrument runs along each axis it is cut on,
+            its keys the instruments read.
+        shapes: The shape of one patch of each instrument as the model reads it.
+    """
+
+    sizes: Mapping[str, Mapping[str, int]]
+    shapes: Mapping[str, tuple[int, ...]]
+
+    def only(self, instruments: Iterable[str]) -> PatchLayout:
+        """Return the layout of some of the instruments alone.
+
+        Args:
+            instruments: The instruments kept.
+
+        Returns:
+            layout: Their sizes and shapes alone.
+        """
+        kept = list(instruments)
+        return PatchLayout(
+            {name: self.sizes[name] for name in kept},
+            {name: self.shapes[name] for name in kept},
+        )

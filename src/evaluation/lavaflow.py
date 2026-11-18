@@ -16,9 +16,9 @@ from wandb.sdk.wandb_run import Run
 from architecture.mae import CrossSensorMAE, pooled_tokens
 from configs.load import named_generator
 from dataset.loader import tile_loader
+from dataset.patches import drawn_arrays
 from dataset.store import DatasetBuild
-from evaluation.metrics import retrieval_metrics
-from evaluation.reconstruct import drawn_arrays
+from evaluation.metrics import ranked_neighbours, retrieval_metrics
 from logs.evaluation import log_lavaflow
 from logs.images.lavaflow import lavaflow_image
 
@@ -95,11 +95,14 @@ def evaluate_lavaflow(
     for pooled, by_crop_vector in vectors.items():
         stacked = np.array([by_crop_vector[one.crop] for one in crops], np.float64)
         similarities[pooled] = stacked @ stacked.T  # (N, N)
+    neighbours = {
+        pooled: ranked_neighbours(held) for pooled, held in similarities.items()
+    }
     scores = {
         (pooled, gallery): float(
             retrieval_metrics(held, verdicts, hidden)["mAP"][queried].mean()
         )
-        for pooled, held in similarities.items()
+        for pooled, held in neighbours.items()
         for gallery, hidden in galleries.items()
     }
     drawn = np.flatnonzero(queried)[

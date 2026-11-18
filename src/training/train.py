@@ -16,6 +16,7 @@ from architecture.mae import CrossSensorMAE
 from configs.load import mask_generators
 from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
+from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
 from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
 from training.optimizer import pretraining_optimizer_and_schedule
@@ -30,8 +31,7 @@ def train(
     build: DatasetBuild,
     training: Sequence[str],
     validation: Sequence[str],
-    sizes: Mapping[str, Mapping[str, int]],
-    shapes: Mapping[str, tuple[int, ...]],
+    layout: PatchLayout,
     budget: Mapping[str, int],
     budget_scale: float,
     batch_size: int,
@@ -62,8 +62,8 @@ def train(
         build: The build the tiles are read from.
         training: The training tiles.
         validation: The validation tiles.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
         budget: How many patches of each instrument a tile keeps.
         budget_scale: The most a training batch's budget is multiplied by.
         batch_size: How many tiles one batch holds.
@@ -96,8 +96,7 @@ def train(
         tile_loader(
             build,
             tiles,
-            sizes,
-            shapes,
+            layout,
             budget,
             budget_scale,
             seed,

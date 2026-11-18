@@ -28,27 +28,68 @@ HEADS_FILE = "heads.pt"
 
 
 def build_root(build: str, root: str) -> Path:
-    """Return where one build of the dataset sits on this machine."""
+    """Return where one build of the dataset sits on this machine.
+
+    Args:
+        build: The build's name.
+        root: The folder holding the builds, relative to the repository.
+
+    Returns:
+        root: The build's folder.
+    """
     return REPO_ROOT / root / build
 
 
 def ready_array_path(
     identity: str, name: str, setup: Sequence[object], key: str
 ) -> str:
-    """Return where one array of one tile's patches is kept, under its build's root."""
+    """Return where one array of one tile's patches is kept, under its build's root.
+
+    Args:
+        identity: The tile.
+        name: The instrument, as ODE names it.
+        setup: What the patches were cut under, hashed into the folder name.
+        key: Which of the patch arrays.
+
+    Returns:
+        path: The array's file, relative to the build's root.
+    """
     return f"ready/{identity}/{name}-{zlib.crc32(repr(setup).encode()):08x}/{key}.npy"
 
 
 def checkpoint_path(checkpoints: str, name: str) -> Path:
-    """Return where one checkpoint is written on this machine."""
+    """Return where one checkpoint is written on this machine.
+
+    Args:
+        checkpoints: The folder holding the checkpoints, relative to the repository.
+        name: What the checkpoint is called.
+
+    Returns:
+        path: The checkpoint's file.
+    """
     return REPO_ROOT / checkpoints / f"{name}.pt"
 
 
 def results_directory(run_name: str, part: str) -> Path:
-    """Return where one part of a run's evaluation is written on this machine."""
+    """Return where one part of a run's evaluation is written on this machine.
+
+    Args:
+        run_name: What the run is called.
+        part: The part, such as "reconstruction".
+
+    Returns:
+        directory: The part's folder.
+    """
     return RESULTS_ROOT / run_name / part
 
 
 def heads_path(run_name: str) -> Path:
-    """Return where a run's fine-tuned benchmark heads are written on this machine."""
+    """Return where a run's fine-tuned benchmark heads are written on this machine.
+
+    Args:
+        run_name: What the run is called.
+
+    Returns:
+        path: The heads' file.
+    """
     return BENCHMARKS_ROOT / run_name / HEADS_FILE

@@ -12,7 +12,7 @@ import wandb
 from wandb.apis.public import Run as TrackedRun
 from wandb.sdk.wandb_run import Run
 
-from evaluation.metrics import Metrics
+from evaluation.models.metrics import Metrics
 from logs.benchmark import RESULTS_STEP
 from logs.images.attention import attention_image
 from logs.images.ranging import ranging_image
@@ -193,7 +193,8 @@ def kept_evaluation_values(
         }
     kept = {part: ({}, {}) for part in PART_STEPS if part not in asked}
     for key, value in history.items():
-        if evaluation_part(key) not in kept:
+        part = evaluation_part(key)
+        if part not in kept:
             continue
         if isinstance(value, dict) and "path" in value:
             with old.file(value["path"]).download(str(directory), replace=True) as file:
@@ -203,7 +204,7 @@ def kept_evaluation_values(
                 if value.get("_type") == "table-file"
                 else wandb.Image(path, caption=value.get("caption"))
             )
-        kept[evaluation_part(key)][0][key] = value
+        kept[part][0][key] = value
     for key, value in old.summary.items():
         part = evaluation_part(key)
         if (
