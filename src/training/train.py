@@ -44,6 +44,7 @@ def train(
     masking: str,
     masking_cell_m: float,
     masking_independent: Sequence[str],
+    masking_dynamic_range: Sequence[float] | None,
     mask_ratio: float,
     aligned: Sequence[str],
     pooling: str,
@@ -78,6 +79,8 @@ def train(
         masking_cell_m: The side of one ground cell identical correspondence hides.
         masking_independent: The instruments identical correspondence draws patch
             by patch.
+        masking_dynamic_range: The range each training tile draws each instrument's
+            share from, or none for mask_ratio; validation keeps mask_ratio.
         mask_ratio: The share of each instrument's patches hidden, of each tile's ground
             cells under identical correspondence.
         aligned: The instruments MIM aligns, none for no MIM.
@@ -127,6 +130,12 @@ def train(
         measure=measure,
         device=device,
     )
+    training_terms = partial(
+        step_terms,
+        masking=selected_masking(
+            masking, masking_cell_m, masking_independent, masking_dynamic_range
+        ),
+    )
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
@@ -136,7 +145,7 @@ def train(
         ):
             batch, identities = next(batches)
             optimizer.zero_grad()
-            terms = step_terms(batch, generators=generators)
+            terms = training_terms(batch, generators=generators)
             scaler.scale(terms["loss"]).backward()
             scaler.unscale_(optimizer)
             # Stabilize training against exploding gradients
