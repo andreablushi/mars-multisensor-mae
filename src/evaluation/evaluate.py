@@ -11,7 +11,7 @@ from torch.nn import functional
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
-from architecture.mae import CrossSensorMAE, pooled_tokens
+from architecture.mae import CrossSensorMAE, global_tokens
 from dataset.loader import tile_loader
 from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
@@ -123,7 +123,7 @@ def tile_vectors(
                 pooled["GAP"]["all"] = torch.stack(list(pooled["GAP"].values())).mean(0)
             else:
                 pooled = {
-                    pooling: pooled_tokens(contexts, present, pooling)
+                    pooling: global_tokens(contexts, present, pooling)
                     for pooling in ("CLS", "GAP")
                 }
                 pooled["CLS"]["all"] = functional.normalize(cls, dim=-1)

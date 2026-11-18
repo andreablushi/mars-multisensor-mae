@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
@@ -14,7 +16,7 @@ from architecture.models.tokens import Tokens
 from configs.load import named_rng
 
 
-def pooled_tokens(
+def global_tokens(
     contexts: dict[str, Context], readable: dict[str, Tensor], pooling: str
 ) -> dict[str, Tensor]:
     """Return each instrument's tile vector, its CLS or the GAP of its readable tokens.
@@ -36,6 +38,38 @@ def pooled_tokens(
         )
         for name, held in contexts.items()
     }
+
+
+def umr_context(contexts: Mapping[str, Context], cls: Tensor, name: str) -> Context:
+    """Return what UMR rebuilds one instrument from: the overall CLS, then its own.
+
+    Args:
+        contexts: Each instrument's CLS token, then its tokens.
+        cls: The token read over every instrument together. (B, D)
+        name: The instrument rebuilt.
+
+    Returns:
+        context: The overall CLS at the tile centre, then the instrument's own context.
+    """
+    lead = Context(
+        cls.unsqueeze(1),
+        cls.new_zeros(len(cls), 1, 3),
+        cls.new_ones(len(cls), 1, dtype=torch.bool),
+    )
+    return Context.joined([lead, contexts[name]])
+
+
+def cmr_context(contexts: Mapping[str, Context], name: str) -> Context:
+    """Return what CMR rebuilds one instrument from: every other's, no overall CLS.
+
+    Args:
+        contexts: Each instrument's CLS token, then its tokens.
+        name: The instrument rebuilt.
+
+    Returns:
+        context: Every other instrument's context, in their order.
+    """
+    return Context.joined([held for other, held in contexts.items() if other != name])
 
 
 class CrossSensorMAE(nn.Module):
@@ -165,18 +199,13 @@ class CrossSensorMAE(nn.Module):
         seen = {name: kept for name, (kept, _) in read.items()}
         readable = {name: counted for name, (_, counted) in read.items()}
         cls, contexts = self.embed_tokens(seen, readable)
-        lead = Context(
-            cls.unsqueeze(1),
-            cls.new_zeros(len(cls), 1, 3),
-            cls.new_ones(len(cls), 1, dtype=torch.bool),
-        )
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
             # Only the hidden slots are asked, packed to the front, then put back
             asked, packed = one.kept(hidden[name])
             passes = self.decoders[name](
-                Context.joined([lead, contexts[name]]),
-                Context.joined([contexts[other] for other in batch if other != name]),
+                umr_context(contexts, cls, name),
+                cmr_context(contexts, name),
                 asked.position,
                 asked.acquisition,
                 packed,
@@ -185,4 +214,4 @@ class CrossSensorMAE(nn.Module):
                 placed = held.new_zeros(*hidden[name].shape, *held.shape[2:])
                 placed[hidden[name]] = held[packed]
                 predictions[kind][name] = placed  # (B, K, *P)
-        return predictions, pooled_tokens(contexts, readable, pooling)
+        return predictions, global_tokens(contexts, readable, pooling)
