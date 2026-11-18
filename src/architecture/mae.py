@@ -80,6 +80,8 @@ class CrossSensorMAE(nn.Module):
         crossencoder: The shared stack, whose CLS of every sensor each decoder reads
             beside its own tokens, so the UMR loss trains it.
         decoders: One decoder per instrument, writing its patches back from the tokens.
+        projector: The 2-layer MLP, shared by every instrument, from a tile vector to
+            the vector MIM reads.
     """
 
     def __init__(
@@ -94,6 +96,7 @@ class CrossSensorMAE(nn.Module):
         decoder_dim: int,
         decoder_heads: int,
         decoder_depth: int,
+        projector_dim: int,
         seed: int,
     ) -> None:
         """Build every part for the instruments the model reads, each from its own seed.
@@ -111,6 +114,7 @@ class CrossSensorMAE(nn.Module):
             decoder_dim: How wide a token is in the decoders.
             decoder_heads: How many attention heads the decoders run.
             decoder_depth: How many blocks each decoder stacks.
+            projector_dim: How wide the vector MIM reads is, out of the projector.
             seed: What every part's starting weights are drawn from, so a part
                 starts the same in every setup that has it.
         """
@@ -143,6 +147,12 @@ class CrossSensorMAE(nn.Module):
                     decoder_heads,
                     decoder_depth,
                 )
+        with named_rng(seed, "projector"):
+            self.projector = nn.Sequential(
+                nn.Linear(encoder_dim, encoder_dim),
+                nn.GELU(),
+                nn.Linear(encoder_dim, projector_dim),
+            )
 
     def embed_tokens(
         self, batch: dict[str, Tokens], readable: dict[str, Tensor]
@@ -181,7 +191,7 @@ class CrossSensorMAE(nn.Module):
         hidden: dict[str, Tensor],
         pooling: str,
     ) -> tuple[dict[str, dict[str, Tensor]], dict[str, Tensor]]:
-        """Return every instrument's hidden patches and its tile vector.
+        """Return every instrument's hidden patches and its projected tile vector.
 
         Args:
             batch: Each instrument's patches over the batch.
@@ -192,8 +202,8 @@ class CrossSensorMAE(nn.Module):
         Returns:
             predictions: Under "umr" each instrument's patches from its own tokens and
                 every CLS, under "cmr" from every other's tokens alone. (B, K, *P)
-            pooled: Each instrument's tile vector as one unit vector, in float.
-                (B, D)
+            projected: Each instrument's tile vector through the projector, as one
+                unit vector, in float. (B, P)
         """
         read = {name: one.kept(visible[name]) for name, one in batch.items()}
         seen = {name: kept for name, (kept, _) in read.items()}
@@ -214,4 +224,7 @@ class CrossSensorMAE(nn.Module):
                 placed = held.new_zeros(*hidden[name].shape, *held.shape[2:])
                 placed[hidden[name]] = held[packed]
                 predictions[kind][name] = placed  # (B, K, *P)
-        return predictions, global_tokens(contexts, readable, pooling)
+        return predictions, {
+            name: functional.normalize(self.projector(held).float(), dim=-1)
+            for name, held in global_tokens(contexts, readable, pooling).items()
+        }

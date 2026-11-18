@@ -11,3 +11,6 @@ crossencoder_depth: 2
 decoder_dim: 512
 decoder_heads: 8
 decoder_depth: 4
+
+# MIM projector, a 2-layer MLP encoder_dim wide inside, from the tile vector to the vector MIM reads.
+projector_dim: 128

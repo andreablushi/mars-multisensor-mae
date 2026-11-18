@@ -51,6 +51,7 @@ class ModelConfig:
         decoder_dim: How wide a token is in the decoders.
         decoder_heads: How many attention heads the decoders run.
         decoder_depth: How many blocks each decoder stacks.
+        projector_dim: How wide the vector MIM reads is, out of the projector.
     """
 
     instruments: list[str]
@@ -61,6 +62,7 @@ class ModelConfig:
     decoder_dim: int
     decoder_heads: int
     decoder_depth: int
+    projector_dim: int
 
 
 @dataclass

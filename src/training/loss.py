@@ -42,7 +42,7 @@ def mim(
     """Return CSMAE's NT-Xent of every pair of aligned instruments.
 
     Args:
-        pooled: Each instrument's tile vector as one unit vector. (B, D)
+        pooled: Each instrument's projected tile vector as one unit vector. (B, P)
         aligned: The instruments aligned, each pair its own term.
         temperature: What every cosine is divided by.
 
