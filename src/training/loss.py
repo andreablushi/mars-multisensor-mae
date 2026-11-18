@@ -1,4 +1,4 @@
-"""What the model is trained to make small, under the names the paper gives it."""
+"""What the model is trained to make small: the reconstruction error and MIM."""
 
 from __future__ import annotations
 
@@ -36,57 +36,6 @@ def reconstruction_error(
     return error.sqrt() if measure == "RMSE" else error
 
 
-def umr(
-    predictions: Mapping[str, Tensor],
-    batch: Mapping[str, Tokens],
-    hidden: Mapping[str, Tensor],
-    measure: str,
-) -> dict[str, Tensor]:
-    """Return each instrument's UMR error, read from its own tokens.
-
-    Args:
-        predictions: Each instrument's patches read from its own tokens. (B, K, *P)
-        batch: Each instrument's patches over the batch.
-        hidden: Which patches are predicted. (B, K)
-        measure: MSE, or RMSE for its root.
-
-    Returns:
-        errors: Each instrument's error over its hidden patches. ()
-    """
-    return {
-        name: reconstruction_error(
-            predictions[name], batch[name], hidden[name], measure
-        )
-        for name in batch
-    }
-
-
-def cmr(
-    predictions: Mapping[str, Tensor],
-    batch: Mapping[str, Tokens],
-    hidden: Mapping[str, Tensor],
-    measure: str,
-) -> dict[str, Tensor]:
-    """Return each instrument's CMR error, read from every other instrument's tokens.
-
-    Args:
-        predictions: Each instrument's patches read from the others' tokens.
-            (B, K, *P)
-        batch: Each instrument's patches over the batch.
-        hidden: Which patches are predicted. (B, K)
-        measure: MSE, or RMSE for its root.
-
-    Returns:
-        errors: Each instrument's error over its hidden patches. ()
-    """
-    return {
-        name: reconstruction_error(
-            predictions[name], batch[name], hidden[name], measure
-        )
-        for name in batch
-    }
-
-
 def mim(
     pooled: Mapping[str, Tensor], aligned: Sequence[str], temperature: float
 ) -> dict[str, Tensor]:
@@ -114,30 +63,22 @@ def mim(
 
 
 def total(
-    umr_errors: Mapping[str, Tensor],
-    cmr_errors: Mapping[str, Tensor],
-    mim_errors: Mapping[str, Tensor],
+    terms: Mapping[str, Tensor], mim_errors: Mapping[str, Tensor]
 ) -> dict[str, Tensor]:
     """Return every term and the loss, the reconstruction sum plus the mean MIM.
 
     Args:
-        umr_errors: Each instrument's UMR error. ()
-        cmr_errors: Each instrument's CMR error. ()
+        terms: Each reconstruction term, keyed "<term>/<instrument>". ()
         mim_errors: Each aligned pair's MIM error, none when nothing is aligned. ()
 
     Returns:
-        terms: "<term>/<instrument>" or "mim/<pair>" for every term, and "loss". ()
+        terms: The same terms, "mim/<pair>" for every MIM term, and "loss". ()
     """
-    terms = {
-        f"{term}/{name}": error
-        for term, errors in (("umr", umr_errors), ("cmr", cmr_errors))
-        for name, error in errors.items()
-    }
     loss = sum(terms.values())
     if mim_errors:
         loss = loss + sum(mim_errors.values()) / len(mim_errors)
     return (
-        terms
+        dict(terms)
         | {f"mim/{pair}": error for pair, error in mim_errors.items()}
         | {"loss": loss}
     )

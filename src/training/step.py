@@ -10,7 +10,7 @@ from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
 from architecture.models.tokens import Tokens
-from training.loss import cmr, mim, total, umr
+from training.loss import mim, reconstruction_error, total
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype:
@@ -186,8 +186,11 @@ def batch_step(
     visible, hidden = masking(batch, mask_ratio, generators)
     with torch.autocast(device.type, dtype=autocast_dtype(device)):
         predictions, pooled = model(batch, visible, hidden, pooling)
-    return total(
-        umr(predictions["umr"], batch, hidden, measure),
-        cmr(predictions["cmr"], batch, hidden, measure),
-        mim(pooled, aligned, temperature),
-    )
+    terms = {
+        f"{kind}/{name}": reconstruction_error(
+            predictions[kind][name], batch[name], hidden[name], measure
+        )
+        for kind in ("umr", "cmr")
+        for name in batch
+    }
+    return total(terms, mim(pooled, aligned, temperature))
