@@ -12,8 +12,9 @@ from benchmarking.architecture.model import PROTOCOLS, BenchmarkModel
 from benchmarking.evaluation.metrics import rmse_and_r2
 from benchmarking.evaluation.predict import crop_mean_predictions
 from dataset.loader import tile_loader
+from dataset.models.patch import PatchLayout
+from dataset.patches import drawn_arrays
 from dataset.store import DatasetBuild
-from evaluation.reconstruct import drawn_arrays
 from logs.benchmark import log_benchmark
 from logs.images.ice import ice_image
 
@@ -24,8 +25,7 @@ def evaluate(
     test: Sequence[str],
     targets: Mapping[str, np.ndarray],
     instruments: Sequence[str],
-    sizes: Mapping[str, Mapping[str, int]],
-    shapes: Mapping[str, tuple[int, ...]],
+    layout: PatchLayout,
     budget: Mapping[str, int],
     reach_m: float,
     batch_size: int,
@@ -46,8 +46,8 @@ def evaluate(
         targets: SWIM's value of every point for each target, keyed by the
             tile over at least the test tiles. (P * P, Z)
         instruments: The instruments the models read.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
         budget: How many patches of each instrument a test crop keeps.
         reach_m: How near a read patch of a crop a point is predicted, in metres.
         batch_size: How many tiles one batch holds, each read as its covering crops.
@@ -59,12 +59,10 @@ def evaluate(
         device: Where the models run.
         run: The tracked run.
     """
-    read = {name: sizes[name] for name in instruments}
     loader = tile_loader(
         build,
         test,
-        read,
-        shapes,
+        layout.only(instruments),
         budget,
         1.0,
         seed,
@@ -90,7 +88,11 @@ def evaluate(
     images = [
         ice_image(
             drawn_arrays(
-                build, shown, by_tile[tile][shown], sizes[shown], shapes[shown]
+                build,
+                shown,
+                by_tile[tile][shown],
+                layout.sizes[shown],
+                layout.shapes[shown],
             ),
             targets[tile],
             {protocol: held[tile] for protocol, held in drawn.items()},

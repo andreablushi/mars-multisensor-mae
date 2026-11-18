@@ -10,16 +10,12 @@ from mars_multisensor_dataset.building.configs import sharad
 from logs.images.attention import (
     TRACE_RGB,
     attention_image,
-    centred_rows,
-    grey_patches,
-    laid_patches,
-    map_frame,
-    observation_trace,
     overlaid,
     ratio_bar,
     sounder_passes,
 )
-from logs.images.reconstruction import scaled_values, spaced_row, value_bar
+from logs.images.maps import grey_patches, laid_patches, map_frame, observation_trace
+from logs.images.panels import centred_rows, scaled_values, spaced_row, value_bar
 
 
 def ranging_image(
@@ -32,9 +28,8 @@ def ranging_image(
         query: The ranging instrument rebuilt.
 
     Returns:
-        image: The sounder drawn as attention_image draws it, a ground query's two
-            panels with the most attended tracks above those passes' radargrams,
-            each row centred. (H, W, 3)
+        image: The sounder as attention_image draws it, else the two ground panels with
+            the most attended tracks, above those passes' radargrams, centred. (H, W, 3)
         caption: What is rebuilt from what, and each pass's share per token.
     """
     if query == sharad.LAYOUT.instrument:

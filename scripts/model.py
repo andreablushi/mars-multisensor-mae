@@ -12,18 +12,14 @@ from torch import Tensor
 from architecture.mae import CrossSensorMAE
 from benchmarking.architecture.model import PROTOCOLS, BenchmarkModel
 from configs.schema import Config
+from dataset.models.patch import PatchLayout
 from dataset.patches import patch_shapes
 from dataset.store import DatasetBuild
 
 
 def built_model(
     config: Config, build: DatasetBuild
-) -> tuple[
-    CrossSensorMAE,
-    torch.device,
-    dict[str, Mapping[str, int]],
-    dict[str, tuple[int, ...]],
-]:
+) -> tuple[CrossSensorMAE, torch.device, PatchLayout]:
     """Return the model a build's patch layout settles, on the GPU when there is one.
 
     Args:
@@ -33,8 +29,8 @@ def built_model(
     Returns:
         model: The model, on its device.
         device: Where it runs.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
     """
     sizes = {name: config.dataset.patchsize[name] for name in config.model.instruments}
     shapes = patch_shapes(build.read_observation_metadata(), sizes)
@@ -56,7 +52,7 @@ def built_model(
         config.model.decoder_depth,
         config.dataset.seed,
     ).to(device)
-    return model, device, sizes, shapes
+    return model, device, PatchLayout(sizes, shapes)
 
 
 def built_benchmark_model(

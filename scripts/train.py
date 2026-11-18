@@ -10,10 +10,10 @@ from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from evaluate import run_evaluation
+from model import built_model
 from torch.utils.data import random_split
 
 from configs.load import load_config, named_generator
-from configs.model import built_model
 from logs.tracker import TRAINING, console_logger, log_checkpoint, start_logging
 from training.train import train
 
@@ -38,9 +38,12 @@ def run_training(
     """
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.dataset.build)
-    model, device, sizes, shapes = built_model(config, build)
+    model, device, layout = built_model(config, build)
     workers = requested_read_workers(config, TRAINING)
-    tiles = sorted(build.read_observation_metadata())
+    qualitative_tiles = {
+        drawn.tile for drawn in config.evaluation.reconstruction.tiles.values()
+    }
+    tiles = sorted(set(build.read_observation_metadata()) - qualitative_tiles)
     training, validation = random_split(
         tiles, config.dataset.split, named_generator(config.dataset.seed, "split")
     )
@@ -52,7 +55,7 @@ def run_training(
         {
             "device": str(device),
             "parameters": sum(one.numel() for one in model.parameters()),
-            "shapes": shapes,
+            "shapes": layout.shapes,
             "tiles": {"training": len(training), "validation": len(validation)},
         },
     )
@@ -61,8 +64,7 @@ def run_training(
         build,
         training,
         validation,
-        sizes,
-        shapes,
+        layout,
         config.dataset.budget,
         config.dataset.budget_scale,
         config.training.batch_size,

@@ -9,11 +9,11 @@ from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
+from model import built_model
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from configs.load import load_config, named_generator
-from configs.model import built_model
 from configs.paths import results_directory
 from evaluation.evaluate import evaluate
 from evaluation.lavaflow import evaluate_lavaflow
@@ -84,7 +84,7 @@ def run_evaluation(
     if lavaflow and not retrieved:
         raise ValueError("the lava flow retrieval needs a build and SHARAD")
     build = published_dataset_build(config, config.evaluation.build)
-    model, device, sizes, shapes = built_model(config, build)
+    model, device, layout = built_model(config, build)
     workers = requested_read_workers(config, EVALUATION)
     asked = [
         part
@@ -114,18 +114,18 @@ def run_evaluation(
         log_kept_part(run, *kept[EVALUATION], PART_STEPS[EVALUATION])
     if whole:
         rank_build = published_dataset_build(config, config.dataset.build)
+        ordered = sorted(rank_build.read_observation_metadata())
         rank_tiles = [
-            sorted(rank_build.read_observation_metadata())[at]
+            ordered[at]
             for at in torch.randperm(
-                len(rank_build.read_observation_metadata()),
+                len(ordered),
                 generator=named_generator(config.dataset.seed, "rankme"),
             )[: config.evaluation.rank_tiles].tolist()
         ]
         evaluate(
             model,
             build,
-            sizes,
-            shapes,
+            layout,
             config.evaluation.batch_size,
             config.evaluation.neighbours,
             rank_build,
@@ -146,8 +146,7 @@ def run_evaluation(
             model,
             build,
             config.evaluation.reconstruction.tiles,
-            sizes,
-            shapes,
+            layout,
             selected_masking(
                 config.training.masking.strategy,
                 config.training.masking.cell_m,
@@ -166,8 +165,8 @@ def run_evaluation(
         evaluate_lavaflow(
             model,
             published_dataset_build(config, settings.build),
-            sizes[name],
-            shapes[name],
+            layout.sizes[name],
+            layout.shapes[name],
             config.evaluation.batch_size,
             settings.qualitative.queries,
             settings.qualitative.top_k,

@@ -43,8 +43,11 @@ def pooled_tokens(
 class CrossSensorMAE(nn.Module):
     """An encoder and a decoder per sensor, one shared encoder aligning them between.
 
-    The shared encoder also hands back one CLS of every sensor, which every decoder
-    reads beside its own tokens, so the UMR loss trains it.
+    Attributes:
+        encoders: One encoder per instrument, from its patches to tokens.
+        crossencoder: The shared stack, whose CLS of every sensor each decoder reads
+            beside its own tokens, so the UMR loss trains it.
+        decoders: One decoder per instrument, writing its patches back from the tokens.
     """
 
     def __init__(
@@ -128,7 +131,7 @@ class CrossSensorMAE(nn.Module):
             for name, one in batch.items()
         }
         cls, tokens = self.crossencoder(
-            [self.encoders[name](one, readable[name]) for name, one in batch.items()],
+            [self.encoders[name](one, *with_cls[name]) for name, one in batch.items()],
             [counted for counted, _ in with_cls.values()],
             [position for _, position in with_cls.values()],
         )
@@ -170,10 +173,8 @@ class CrossSensorMAE(nn.Module):
             pooling: What a tile vector is, GAP of the visible tokens or the CLS.
 
         Returns:
-            predictions: Under "umr" each instrument's patches read from its own
-                tokens with the CLS of every instrument, under "cmr" from every
-                other instrument's without it (B, K, *P), under "latent_umr" and
-                "latent_cmr" their latents. (B, K, D)
+            predictions: Patches under "umr" from own tokens and every CLS, "cmr" from
+                the others' alone (B, K, *P), their latents under "latent_*". (B, K, D)
             pooled: Each instrument's tile vector as one unit vector, in float.
                 (B, D)
         """

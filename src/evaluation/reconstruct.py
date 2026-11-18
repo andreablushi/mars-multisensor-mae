@@ -18,7 +18,8 @@ from architecture.models.tokens import Tokens
 from configs.load import mask_generators
 from configs.schema import DrawnTile
 from dataset.loader import padded_tokens
-from dataset.patches import cut_tile_patches, patch_arrays
+from dataset.models.patch import PatchLayout
+from dataset.patches import drawn_arrays
 from dataset.store import DatasetBuild
 from evaluation.results import write_reconstructions
 from logs.evaluation import log_reconstruction
@@ -30,8 +31,7 @@ def evaluate_reconstruction(
     model: CrossSensorMAE,
     build: DatasetBuild,
     tiles: Mapping[str, DrawnTile],
-    sizes: Mapping[str, Mapping[str, int]],
-    shapes: Mapping[str, tuple[int, ...]],
+    layout: PatchLayout,
     masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     ranging: Sequence[str],
@@ -47,8 +47,8 @@ def evaluate_reconstruction(
         build: The build the tiles are read from.
         tiles: The tiles drawn as reconstructions and attention maps, by what they
             show, with each instrument's observation shown.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
         masking: The masking_* strategy the run trained with, drawing the masked panels.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
@@ -65,8 +65,7 @@ def evaluate_reconstruction(
             build,
             by_tile[drawn.tile],
             drawn.shown,
-            sizes,
-            shapes,
+            layout,
             masking,
             mask_ratio,
             ranging,
@@ -89,8 +88,7 @@ def reconstruction_and_attention(
     build: DatasetBuild,
     rows: Mapping[str, Sequence[ObservationMetadata]],
     shown: Mapping[str, str],
-    sizes: Mapping[str, Mapping[str, int]],
-    shapes: Mapping[str, tuple[int, ...]],
+    layout: PatchLayout,
     masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     ranging: Sequence[str],
@@ -107,8 +105,8 @@ def reconstruction_and_attention(
         build: The build the tile is read from.
         rows: The tile's index rows of each instrument.
         shown: The observation of each instrument shown, by its identifier.
-        sizes: How far a patch of each sensor runs along each axis it is cut on.
-        shapes: The shape of one patch of each instrument as the model reads it.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
         masking: The masking_* strategy drawing the masked patches.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         ranging: The two ranging instruments, each also rebuilt from the other alone.
@@ -116,33 +114,35 @@ def reconstruction_and_attention(
         device: Where the model runs.
 
     Returns:
-        attention: For each instrument rebuilt from every other whole, keyed by it,
-            what cmr_attention hands back, the query's arrays also holding what
-            masked_reconstruction hands back.
-        ranged: The same for each ranging instrument, rebuilt from the other alone,
-            without the masked patches.
+        attention: Per instrument rebuilt from every other whole, what cmr_attention
+            hands back, the query's arrays with masked_reconstruction's too.
+        ranged: The same for each ranging instrument from the other alone, unmasked.
     """
     alone, every = {}, {}
-    for name in sizes:
+    for name in layout.sizes:
         (row,) = (one for one in rows[name] if one.identifier == shown[name])
-        alone[name] = drawn_arrays(build, name, [row], sizes[name], shapes[name])
+        alone[name] = drawn_arrays(
+            build, name, [row], layout.sizes[name], layout.shapes[name]
+        )
         # Every observation least measured first, so the most measured is laid last
         held = sorted(rows[name], key=lambda one: one.valid_count)
-        every[name] = drawn_arrays(build, name, held, sizes[name], shapes[name])
+        every[name] = drawn_arrays(
+            build, name, held, layout.sizes[name], layout.shapes[name]
+        )
     masked = masked_reconstruction(model, alone, masking, mask_ratio, seed, device)
     # The query's shown observation hidden whole, every source's all read whole
     attention = {
         query: cmr_attention(
             model, every | {query: alone[query] | masked[query]}, query, device
         )
-        for query in sizes
+        for query in layout.sizes
     }
     ranged = {
         query: cmr_attention(
             model,
             {
                 name: (alone if name == query else every)[name]
-                for name in sizes
+                for name in layout.sizes
                 if name in (query, other)
             },
             query,
@@ -151,42 +151,6 @@ def reconstruction_and_attention(
         for query, other in zip(ranging, ranging[::-1], strict=True)
     }
     return attention, ranged
-
-
-def drawn_arrays(
-    build: DatasetBuild,
-    name: str,
-    rows: Sequence[ObservationMetadata],
-    size: Mapping[str, int],
-    shape: tuple[int, ...],
-) -> dict[str, np.ndarray]:
-    """Return some observations of one instrument as the arrays drawn.
-
-    Args:
-        build: The build they are read from.
-        name: The instrument, as ODE names it.
-        rows: The observations' index rows, in the order they are laid.
-        size: How far a patch runs along each axis it is cut on.
-        shape: The shape of one patch as the model reads it.
-
-    Returns:
-        arrays: Their patches as patch_arrays names them, and "cell", the "clip",
-            "mean" and "std" of the z-scores, "spacing", "observation" and
-            "identifier".
-    """
-    read = [cut_tile_patches({name: [row]}, build, {name: size})[name] for row in rows]
-    patches = [patch for held in read for patch in held]
-    counts = [len(held) for held in read]
-    stats = build.read_stats()[name]
-    return patch_arrays(patches, name, shape, rows[0].axes, build.acquisition[name]) | {
-        "cell": np.array([one.cell for one in patches]),
-        "clip": np.array(build.clips[name], dtype=float),
-        "mean": np.array(stats["mean"], dtype=float),
-        "std": np.array(stats["std"], dtype=float),
-        "spacing": np.repeat([row.sample_spacing_m for row in rows], counts, axis=0),
-        "observation": np.repeat(np.arange(len(rows)), counts),
-        "identifier": np.array([row.identifier for row in rows]),
-    }
 
 
 def batch_on_device(
@@ -244,7 +208,7 @@ def cmr_attention(
     query: str,
     device: torch.device,
 ) -> dict[str, dict[str, np.ndarray]]:
-    """Return the query rebuilt from every other instrument of a tile.
+    """Return the query rebuilt from every other instrument, and what each token drew.
 
     Args:
         model: The model, on the device.
@@ -254,11 +218,8 @@ def cmr_attention(
         device: Where the model runs.
 
     Returns:
-        attended: The query's arrays with the rebuilt patches under "cmr", and every
-            other's with their tokens' rolled out attention relative to uniform,
-            from every asked patch under "overall" and from those within NEAR_M
-            on the ground under "attention", NaN where none is, the share all
-            their tokens drew under "share" and their CLS under "cls".
+        attended: The query's arrays plus "cmr", every other's plus rolled_attention's
+            drawn and near over uniform as "overall" and "attention", "share", "cls".
     """
     batch = batch_on_device(sample, device)
     present = {name: one.present for name, one in batch.items()}

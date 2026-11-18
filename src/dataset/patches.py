@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
 
 import numpy as np
 from mars_multisensor_dataset.building.common.layout import Axis
@@ -13,9 +12,7 @@ from mars_multisensor_dataset.building.metadata.observation import ObservationMe
 
 from dataset.models.observation import Observation
 from dataset.models.patch import Patch
-
-if TYPE_CHECKING:
-    from dataset.store import DatasetBuild
+from dataset.store import DatasetBuild
 
 
 def cut_tile_patches(
@@ -250,4 +247,39 @@ def patch_arrays(
         "position": np.array(
             [[one.east_m, one.north_m, one.delay] for one in patches], np.float32
         ).reshape(-1, 3),
+    }
+
+
+def drawn_arrays(
+    build: DatasetBuild,
+    name: str,
+    rows: Sequence[ObservationMetadata],
+    size: Mapping[str, int],
+    shape: tuple[int, ...],
+) -> dict[str, np.ndarray]:
+    """Return some observations of one instrument as the arrays drawn.
+
+    Args:
+        build: The build they are read from.
+        name: The instrument, as ODE names it.
+        rows: The observations' index rows, in the order they are laid.
+        size: How far a patch runs along each axis it is cut on.
+        shape: The shape of one patch as the model reads it.
+
+    Returns:
+        arrays: Their patches as patch_arrays names them, plus "cell", the z-scores'
+            "clip", "mean" and "std", "spacing", "observation" and "identifier".
+    """
+    read = [cut_tile_patches({name: [row]}, build, {name: size})[name] for row in rows]
+    patches = [patch for held in read for patch in held]
+    counts = [len(held) for held in read]
+    stats = build.read_stats()[name]
+    return patch_arrays(patches, name, shape, rows[0].axes, build.acquisition[name]) | {
+        "cell": np.array([one.cell for one in patches]),
+        "clip": np.array(build.clips[name], dtype=float),
+        "mean": np.array(stats["mean"], dtype=float),
+        "std": np.array(stats["std"], dtype=float),
+        "spacing": np.repeat([row.sample_spacing_m for row in rows], counts, axis=0),
+        "observation": np.repeat(np.arange(len(rows)), counts),
+        "identifier": np.array([row.identifier for row in rows]),
     }

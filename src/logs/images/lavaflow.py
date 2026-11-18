@@ -10,7 +10,7 @@ from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import (
     REFLECTOR,
 )
 
-from logs.images.reconstruction import (
+from logs.images.panels import (
     EMPTY_RGB,
     patch_mosaic,
     scaled_values,

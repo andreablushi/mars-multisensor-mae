@@ -184,7 +184,6 @@ pyyaml==6.0.3
     #   digitalhub-runtime-python
     #   donfig
     #   mars-multisensor-dataset
-    #   mars-multisensor-mae
     #   omegaconf
     #   wandb
 rdflib==7.6.0

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 
 import numpy as np
 from sklearn.metrics import (
@@ -13,29 +12,7 @@ from sklearn.metrics import (
     silhouette_samples,
 )
 
-
-@dataclass(frozen=True, slots=True)
-class Metrics:
-    """Everything one view of the tiles comes to.
-
-    Attributes:
-        retrieval: Every tile's retrieval and ranking scores. (T,)
-        knn: Accuracy and balanced accuracy of the kNN vote.
-        classes: The classes, in the order the matrix holds them.
-        distances: The mean cosine distance between the tiles of two classes. (C, C)
-        silhouette: How much nearer each tile sits to its class than to the next. (T,)
-        cross: How early the view finds the same tile in the others, averaged.
-        rank: The RankMe effective rank of the view's raw training vectors and the
-            most it can reach.
-    """
-
-    retrieval: dict[str, np.ndarray]
-    knn: dict[str, float]
-    classes: list[str]
-    distances: np.ndarray
-    silhouette: np.ndarray
-    cross: dict[str, float]
-    rank: dict[str, float]
+from evaluation.models.metrics import Metrics
 
 
 def metrics_by_view(
@@ -70,9 +47,10 @@ def metrics_by_view(
         )
         for view, held in stacked.items():
             similarities = held @ held.T
+            ranked = ranked_neighbours(similarities)
             metrics[pooling, view] = Metrics(
-                retrieval=retrieval_metrics(similarities, labels),
-                knn=knn_metrics(similarities, labels, k),
+                retrieval=retrieval_metrics(ranked, labels),
+                knn=knn_metrics(ranked, labels, k),
                 classes=classed,
                 distances=class_distance_metrics(similarities, labels, classed),
                 silhouette=silhouette_scores(similarities, labels),
@@ -100,14 +78,14 @@ def ranked_neighbours(similarities: np.ndarray) -> np.ndarray:
 
 
 def retrieval_metrics(
-    similarities: np.ndarray,
+    ranked: np.ndarray,
     labels: Sequence[str],
     hidden: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     """Return how early each tile's ranking reaches the tiles sharing its class.
 
     Args:
-        similarities: The cosine of every pair of tiles. (T, T)
+        ranked: Each tile's other tiles, most similar first. (T, T-1)
         labels: The class each tile carries, in the same order.
         hidden: Which tiles each tile's ranking leaves out, or None for none. (T, T)
 
@@ -115,7 +93,6 @@ def retrieval_metrics(
         scores: Every tile's average precision over the whole ranking. (T,)
     """
     held = np.asarray(labels)
-    ranked = ranked_neighbours(similarities)  # (T, T-1)
     kept = (
         np.ones(ranked.shape, bool)
         if hidden is None
@@ -138,9 +115,8 @@ def cross_sensor_metrics(
         vectors: Each instrument's tile vectors, in one order of tiles. (T, D)
 
     Returns:
-        scores: Keyed by view, then by metric. Under "cross-sensor mAP from
-            <query>", the mean of one over the rank the tile's own vector takes
-            among the view's vectors as the gallery, none under "all".
+        scores: By view, then "cross-sensor mAP from <query>": the mean of one over
+            the rank of the tile's own vector among the view's, none under "all".
     """
     scores = {view: {} for view in (*vectors, "all")}
     for query, asked in vectors.items():
@@ -154,20 +130,18 @@ def cross_sensor_metrics(
     return scores
 
 
-def knn_metrics(
-    similarities: np.ndarray, labels: Sequence[str], k: int
-) -> dict[str, float]:
+def knn_metrics(ranked: np.ndarray, labels: Sequence[str], k: int) -> dict[str, float]:
     """Return how well the class each tile's k nearest tiles vote for matches its own.
 
     Args:
-        similarities: The cosine of every pair of tiles. (T, T)
+        ranked: Each tile's other tiles, most similar first. (T, T-1)
         labels: The class each tile carries, in the same order.
         k: How many neighbours vote, a tie going to the nearest.
 
     Returns:
         scores: Accuracy and balanced accuracy.
     """
-    votes = np.asarray(labels)[ranked_neighbours(similarities)[:, :k]]  # (T, k)
+    votes = np.asarray(labels)[ranked[:, :k]]  # (T, k)
     predicted = []
     for row in votes:
         counts = Counter(row)
@@ -229,9 +203,8 @@ def rank_metrics(vectors: np.ndarray) -> dict[str, float]:
         vectors: One vector per tile, not normalised. (T, D)
 
     Returns:
-        scores: "RankMe", the exponential of the entropy of the singular values
-            normalised to sum to one, and "RankMe max", min(T, D), the most it
-            reaches.
+        scores: "RankMe", the exponential of the entropy of the singular values summing
+            to one, and "RankMe max", min(T, D), the most it reaches.
     """
     singular = np.linalg.svd(vectors, compute_uv=False)
     share = singular / singular.sum() + 1e-7

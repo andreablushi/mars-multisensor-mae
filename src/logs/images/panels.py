@@ -1,4 +1,4 @@
-"""One observation's patches beside what UMR and CMR rebuilt of them."""
+"""Drawing patches as panels with their bars, and laying panels out in rows."""
 
 from __future__ import annotations
 
@@ -162,9 +162,8 @@ def panel_image(images: np.ndarray, clip: np.ndarray, stretched: bool) -> np.nda
     """Return the panels of one image side by side, every band over one range.
 
     Args:
-        images: The original, then what is drawn beside it, the second's hidden
-            patches the empty ones the original holds, NaN where nothing is shown, of
-            one channel or three. (N, H, W, C)
+        images: The original, then what is drawn beside it, NaN where none is shown,
+            the second's hidden patches empty as the original's are. (N, H, W, 1 or 3)
         clip: The low and high the z-scores were clipped to, NaN for an open side,
             which the original's own extreme takes.
         stretched: Whether each panel is resampled to half as many columns as rows,
@@ -240,3 +239,23 @@ def instrument_panels(
         )
         for label, wanted in COMPOSITES_NM.items()
     }
+
+
+def centred_rows(rows: list[np.ndarray]) -> np.ndarray:
+    """Return rows ROW_HEIGHT high stacked and centred on white, a gap around each.
+
+    Args:
+        rows: The rows, top first. (ROW_HEIGHT, W, 3) each
+
+    Returns:
+        image: The rows. (H, W', 3)
+    """
+    width, gap = max(row.shape[1] for row in rows), ROW_HEIGHT // SPACE
+    image = np.full(
+        ((len(rows) + 1) * gap + len(rows) * ROW_HEIGHT, width, 3), 255, np.uint8
+    )
+    for at, row in enumerate(rows):
+        left = (width - row.shape[1]) // 2
+        top_row = gap + at * (ROW_HEIGHT + gap)
+        image[top_row : top_row + ROW_HEIGHT, left : left + row.shape[1]] = row
+    return image

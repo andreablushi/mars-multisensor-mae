@@ -142,11 +142,8 @@ class DatasetBuild:
             path: Where that object sits, as the index names it.
 
         Returns:
-            observation: The observation, its values normalised by the instrument's
-                own constants and SHARAD's cluttergram by its own, both clipped, a
-                CRISM pixel missing any band left unmeasured and zeroed, SHARAD
-                cropped below its atmosphere when asked, the rest as the build wrote
-                them.
+            observation: Values and cluttergram each on its own constants, clipped;
+                CRISM gaps unmeasured and zeroed; SHARAD's atmosphere cropped if asked.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)

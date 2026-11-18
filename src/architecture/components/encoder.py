@@ -57,12 +57,13 @@ class Encoder(nn.Module):
         )
         self.acquisition = AcquisitionConditioning(acquired, dim) if acquired else None
 
-    def forward(self, patches: Tokens, visible: Tensor) -> Tensor:
+    def forward(self, patches: Tokens, readable: Tensor, position: Tensor) -> Tensor:
         """Return the encoded tokens.
 
         Args:
             patches: The instrument's patches over the batch.
-            visible: Which patches the encoder may read. (B, K)
+            readable: Which slots the encoder may read, a CLS slot leading. (B, 1 + K)
+            position: Each slot's patch centre, a CLS slot leading. (B, 1 + K, 3)
 
         Returns:
             tokens: The CLS token, then one per slot, meaningful where visible.
@@ -77,7 +78,6 @@ class Encoder(nn.Module):
             keys = self.acquisition(keys, patches.acquisition)
         keys = torch.cat([self.cls.expand(len(keys), 1, -1), keys], 1)  # (B, 1 + K, D)
         # Attend over the visible ones, placed on the ground by the rotary encoding
-        readable, position = patches.readable_and_position_with_cls(visible)
         # The CLS reads every patch and none reads it back, so patches see offsets alone
         heard = torch.ones(
             keys.shape[1], keys.shape[1], dtype=torch.bool, device=keys.device
