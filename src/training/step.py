@@ -10,7 +10,7 @@ from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
 from architecture.models.tokens import Tokens
-from training.loss import cmr, latent_cmr, latent_umr, mim, total, umr
+from training.loss import mim, patch_discrimination, reconstruction_error, total
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype:
@@ -189,10 +189,17 @@ def batch_step(
     with torch.autocast(device.type, dtype=autocast_dtype(device)):
         predictions, pooled = model(batch, visible, hidden, pooling)
     targets = model.target_latents(batch)
-    return total(
-        latent_umr(predictions["latent_umr"], targets, hidden, latent_temperature),
-        latent_cmr(predictions["latent_cmr"], targets, hidden, latent_temperature),
-        umr(predictions["umr"], batch, hidden, measure),
-        cmr(predictions["cmr"], batch, hidden, measure),
-        mim(pooled, aligned, temperature),
-    )
+    terms = {
+        f"{kind}/{name}": patch_discrimination(
+            predictions[kind][name], targets[name], hidden[name], latent_temperature
+        )
+        for kind in ("latent_umr", "latent_cmr")
+        for name in targets
+    } | {
+        f"{kind}/{name}": reconstruction_error(
+            predictions[kind][name], batch[name], hidden[name], measure
+        )
+        for kind in ("umr", "cmr")
+        for name in batch
+    }
+    return total(terms, mim(pooled, aligned, temperature))
