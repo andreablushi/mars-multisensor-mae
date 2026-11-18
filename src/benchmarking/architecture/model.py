@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-
 from torch import Tensor, nn
 
 from architecture.mae import CrossSensorMAE
@@ -46,9 +44,7 @@ class BenchmarkModel(nn.Module):
             seed: What fixes the probe as drawn.
         """
         super().__init__()
-        self.mae = (
-            deepcopy(mae, {id(mae.decoders): nn.ModuleDict()}) if finetuned else mae
-        ).requires_grad_(False)
+        self.mae = (mae.without_decoders() if finetuned else mae).requires_grad_(False)
         self.mae.encoders.requires_grad_(finetuned)
         self.mae.crossencoder.requires_grad_(finetuned)
         with named_rng(seed, "benchmark/probe"):

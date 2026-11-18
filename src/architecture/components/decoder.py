@@ -23,9 +23,7 @@ class Decoder(nn.Module):
         blocks: The transformer the patches read the context through.
         predict: From a token to every sample of its patch, read off the graph.
         acquisition: What tells a hidden patch's query how it was acquired, or None.
-        latent: From a token to its patch's target latent.
-        target: The frozen random projection from a patch to its target latent.
-            (prod P, D)
+        latent: From a token to its patch's target token, I-JEPA's predictor output.
     """
 
     def __init__(
@@ -64,10 +62,8 @@ class Decoder(nn.Module):
         nn.init.zeros_(self.predict.weight)
         nn.init.zeros_(self.predict.bias)
         self.acquisition = AcquisitionConditioning(acquired, dim) if acquired else None
-        # Predict each patch's target latent from its token
+        # Predict each patch's target token from its query
         self.latent = nn.Linear(dim, shared)
-        # OlmoEarth's Latent MIM Lite target, drawn once and never trained
-        self.register_buffer("target", torch.randn(math.prod(shape), shared))
 
     def latents_and_patches(
         self,
@@ -77,8 +73,8 @@ class Decoder(nn.Module):
         position: Tensor,
         acquisition: Tensor,
         hidden: Tensor,
-    ) -> Tensor:
-        """Return the hidden patches' latents and samples as read from one context.
+    ) -> tuple[Tensor, Tensor]:
+        """Return the hidden patches' target tokens and samples, read from one context.
 
         Args:
             context: The tokens the prediction reads. (B, S, D)
@@ -89,7 +85,7 @@ class Decoder(nn.Module):
             hidden: Which of them to predict. (B, K)
 
         Returns:
-            latents: One target latent per slot, meaningful where hidden. (B, K, D)
+            latents: One target token per slot, meaningful where hidden. (B, K, D)
             patches: One patch per slot, written without a gradient to the tokens.
                 (B, K, *P)
         """
@@ -126,7 +122,7 @@ class Decoder(nn.Module):
             hidden: Which of them to predict. (B, K)
 
         Returns:
-            umr: The latents and patches read from the instrument's own tokens.
+            umr: The target tokens and patches read from the instrument's own tokens.
                 (B, K, D), (B, K, *P)
             cmr: The same read from every other instrument's. (B, K, D), (B, K, *P)
         """

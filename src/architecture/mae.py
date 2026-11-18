@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from itertools import chain
 
 import torch
@@ -80,7 +81,8 @@ class CrossSensorMAE(nn.Module):
         encoders: One encoder per instrument, from its patches to tokens.
         crossencoder: The shared stack, whose CLS of every sensor each decoder reads
             beside its own tokens, so the UMR loss trains it.
-        decoders: One decoder per instrument, writing its patches back from the tokens.
+        decoders: One predictor per instrument, from the tokens to its hidden patches'
+            target tokens, a detached head writing the patches too.
     """
 
     def __init__(
@@ -175,20 +177,13 @@ class CrossSensorMAE(nn.Module):
             )
         }
 
-    def target_latents(self, batch: dict[str, Tokens]) -> dict[str, Tensor]:
-        """Return each instrument's patches through its frozen random projection.
-
-        Args:
-            batch: Each instrument's patches over the batch.
+    def without_decoders(self) -> CrossSensorMAE:
+        """Return a copy of the model with its encoders alone, its decoders left out.
 
         Returns:
-            targets: Each patch's target latent, its unmeasured samples read as
-                zero. (B, K, D)
+            copy: The encoders and the cross-sensor encoder copied, no decoder.
         """
-        return {
-            name: (one.values * one.measured).flatten(2) @ self.decoders[name].target
-            for name, one in batch.items()
-        }
+        return deepcopy(self, {id(self.decoders): nn.ModuleDict()})
 
     def forward(
         self,
@@ -207,7 +202,7 @@ class CrossSensorMAE(nn.Module):
 
         Returns:
             predictions: Patches under "umr" from own tokens and every CLS, "cmr" from
-                the others' alone (B, K, *P), their latents under "latent_*". (B, K, D)
+                the others' alone (B, K, *P), target tokens under "latent_*". (B, K, D)
             pooled: Each instrument's tile vector as one unit vector, in float.
                 (B, D)
         """

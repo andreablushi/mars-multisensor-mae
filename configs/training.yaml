@@ -11,8 +11,8 @@ warmup_steps: 1787
 
 # CSMAE's correspondence of hidden patches across instruments.
 masking:
-  # random_correspondence or identical_correspondence.
-  strategy: random_correspondence
+  # random_correspondence, identical_correspondence or multi_block.
+  strategy: multi_block
   # Share of each instrument's patches hidden, of ground cells under identical correspondence.
   mask_ratio: 0.5
   # Ground cell side identical correspondence hides whole, MOLA's patch, in metres.
@@ -23,11 +23,17 @@ masking:
   dynamic: false
   # The range a dynamic share is drawn uniform from.
   dynamic_range: [0.25, 0.75]
+  # I-JEPA's target rectangles multi block hides per instrument and tile.
+  blocks: 4
+  # The range of each rectangle's share of the crop's extent.
+  block_scale: [0.15, 0.2]
+  # The range of each rectangle's north over east side, drawn log-uniform.
+  aspect_range: [0.75, 1.5]
 
-# What latent UMR and CMR divide every cosine by, OlmoEarth's patch discrimination.
-latent_temperature: 0.1
+# I-JEPA's target encoder EMA momentum, linear from the first to the last step.
+ema_momentum: [0.996, 1.0]
 
-# What the pixel heads' UMR and CMR measure, MSE or RMSE.
+# What the detached pixel heads' UMR and CMR measure, MSE or RMSE.
 reconstruction_error: RMSE
 
 # CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.

@@ -19,7 +19,11 @@ from dataset.loader import tile_loader
 from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
 from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
-from training.optimizer import pretraining_optimizer_and_schedule
+from training.optimizer import (
+    ema_momentum,
+    pretraining_optimizer_and_schedule,
+    update_target_encoder,
+)
 from training.step import autocast_dtype, batch_step, selected_masking
 from training.validate import validation_terms
 
@@ -45,11 +49,14 @@ def train(
     masking_cell_m: float,
     masking_independent: Sequence[str],
     masking_dynamic_range: Sequence[float] | None,
+    masking_blocks: int,
+    masking_block_scale: Sequence[float],
+    masking_aspect_range: Sequence[float],
     mask_ratio: float,
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
-    latent_temperature: float,
+    momentum_range: Sequence[float],
     measure: str,
     checkpoints: str,
     seed: int,
@@ -81,13 +88,16 @@ def train(
             by patch.
         masking_dynamic_range: The range each training tile draws each instrument's
             share from, or none for mask_ratio; validation keeps mask_ratio.
+        masking_blocks: How many rectangles multi block hides per instrument and tile.
+        masking_block_scale: The range of each rectangle's share of the crop's extent.
+        masking_aspect_range: The range of each rectangle's north over east side.
         mask_ratio: The share of each instrument's patches hidden, of each tile's ground
             cells under identical correspondence.
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
-        latent_temperature: What latent UMR and CMR divide every cosine by.
-        measure: The reconstruction error, MSE or RMSE.
+        momentum_range: The target encoder's EMA momentum at the start and the end.
+        measure: What the detached pixel heads measure, MSE or RMSE.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
         device: Where the model runs.
@@ -95,7 +105,7 @@ def train(
         config: The run's whole config, saved beside the weights.
 
     Returns:
-        last: The checkpoint the run ended on.
+        last: The checkpoint the run ended on, its encoders the target encoder's.
     """
     training, validation = (
         tile_loader(
@@ -118,22 +128,24 @@ def train(
     scaler = torch.amp.GradScaler(
         device.type, enabled=autocast_dtype(device) == torch.float16
     )
+    target = model.without_decoders().requires_grad_(False)
+    blocks = (masking_blocks, masking_block_scale, masking_aspect_range)
     step_terms = partial(
         batch_step,
         model,
-        masking=selected_masking(masking, masking_cell_m, masking_independent),
+        target,
+        masking=selected_masking(masking, masking_cell_m, masking_independent, *blocks),
         mask_ratio=mask_ratio,
         aligned=aligned,
         pooling=pooling,
         temperature=temperature,
-        latent_temperature=latent_temperature,
         measure=measure,
         device=device,
     )
     training_terms = partial(
         step_terms,
         masking=selected_masking(
-            masking, masking_cell_m, masking_independent, masking_dynamic_range
+            masking, masking_cell_m, masking_independent, *blocks, masking_dynamic_range
         ),
     )
     generators = mask_generators(model.encoders, seed, device)
@@ -157,6 +169,9 @@ def train(
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
+            update_target_encoder(
+                target, model, ema_momentum(step, num_steps, momentum_range)
+            )
             log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
         metrics = validation_terms(
             validation, step_terms, mask_generators(model.encoders, seed, device)
@@ -167,7 +182,7 @@ def train(
     last.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
-            "model": model.state_dict(),
+            "model": model.state_dict() | target.state_dict(),
             "step": num_steps,
             "config": dict(config),
         },

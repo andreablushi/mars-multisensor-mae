@@ -1,8 +1,9 @@
-"""The optimizer and learning rate schedule pretraining steps with."""
+"""The optimizer, the learning rate schedule and the target encoder's EMA."""
 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from functools import partial
 
 import torch
@@ -62,3 +63,36 @@ def pretraining_optimizer_and_schedule(
         optimizer,
         partial(cosine_warmup_share, warmup_steps=warmup_steps, num_steps=num_steps),
     )
+
+
+def ema_momentum(step: int, num_steps: int, momentum_range: Sequence[float]) -> float:
+    """Return I-JEPA's EMA momentum at one step, linear from its first to last value.
+
+    Args:
+        step: The step, from 1.
+        num_steps: How many steps the run takes.
+        momentum_range: The momentum at the start and at the end.
+
+    Returns:
+        momentum: The share of the target encoder's weights kept at this step.
+    """
+    first, last = momentum_range
+    return first + (last - first) * step / num_steps
+
+
+def update_target_encoder(
+    target: CrossSensorMAE, model: CrossSensorMAE, momentum: float
+) -> None:
+    """Move every target encoder weight towards the model's, keeping a share of its own.
+
+    Args:
+        target: The target encoder, updated in place.
+        model: The model whose encoders it follows.
+        momentum: The share of each target weight kept.
+    """
+    online = dict(model.named_parameters())
+    with torch.no_grad():
+        held = dict(target.named_parameters())
+        torch._foreach_lerp_(
+            list(held.values()), [online[name] for name in held], 1 - momentum
+        )

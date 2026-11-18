@@ -1,4 +1,4 @@
-"""What the model is trained to make small: the reconstruction error and MIM."""
+"""What the model is trained to make small: the latent and pixel errors and MIM."""
 
 from __future__ import annotations
 
@@ -36,29 +36,19 @@ def reconstruction_error(
     return error.sqrt() if measure == "RMSE" else error
 
 
-def patch_discrimination(
-    prediction: Tensor, target: Tensor, scored: Tensor, temperature: float
-) -> Tensor:
-    """Return OlmoEarth's patch discrimination over the scored patches.
+def latent_error(prediction: Tensor, target: Tensor, scored: Tensor) -> Tensor:
+    """Return I-JEPA's L2 between predicted and target tokens over the scored patches.
 
     Args:
-        prediction: The predicted latents. (B, K, D)
-        target: The patches' target latents. (B, K, D)
+        prediction: The predicted tokens. (B, K, D)
+        target: The target encoder's tokens, layer normed. (B, K, D)
         scored: Which patches are scored. (B, K)
-        temperature: What every cosine is divided by.
 
     Returns:
-        error: The cross-entropy of each scored patch picking its own target among
-            its tile's scored ones, averaged over the patches, times twice the
-            temperature. ()
+        error: Each scored patch's squared error averaged over the width, then
+            over the patches. ()
     """
-    prediction = functional.normalize(prediction.float(), dim=-1)
-    target = functional.normalize(target, dim=-1)
-    logits = prediction @ target.mT / temperature  # (B, K, K)
-    # A patch is told apart from its tile's other scored patches alone
-    logits = logits.masked_fill(~scored.unsqueeze(1), float("-inf"))
-    own = torch.arange(scored.shape[1], device=scored.device).expand_as(scored)
-    return functional.cross_entropy(logits[scored], own[scored]) * 2 * temperature
+    return ((prediction.float() - target) ** 2).mean(-1)[scored].mean()
 
 
 def mim(

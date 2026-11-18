@@ -1,16 +1,18 @@
-"""One step on the model device: patches hidden, then predicted."""
+"""One step on the model device: patches hidden, then their target tokens predicted."""
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 
 import torch
 from torch import Tensor
+from torch.nn import functional
 
 from architecture.mae import CrossSensorMAE
 from architecture.models.tokens import Tokens
-from training.loss import mim, patch_discrimination, reconstruction_error, total
+from training.loss import latent_error, mim, reconstruction_error, total
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype:
@@ -24,6 +26,29 @@ def autocast_dtype(device: torch.device) -> torch.dtype:
     """
     native = device.type != "cuda" or torch.cuda.get_device_capability(device) >= (8, 0)
     return torch.bfloat16 if native else torch.float16
+
+
+def target_tokens(
+    target: CrossSensorMAE, batch: dict[str, Tokens]
+) -> dict[str, Tensor]:
+    """Return I-JEPA's targets: each patch's token from every patch, layer normed.
+
+    Args:
+        target: The target encoder, the model's encoders followed by EMA.
+        batch: Each instrument's patches over the batch, on the device.
+
+    Returns:
+        targets: Each patch's token as read with its whole crop, without a
+            gradient, in float. (B, K, D)
+    """
+    with torch.no_grad():
+        _, contexts = target.embed_tokens(
+            batch, {name: one.present for name, one in batch.items()}
+        )
+    return {
+        name: functional.layer_norm(held.tokens[:, 1:].float(), held.tokens.shape[-1:])
+        for name, held in contexts.items()
+    }
 
 
 def masking_random_correspondence(
@@ -123,6 +148,52 @@ def masking_identical_correspondence(
     return visible, hidden
 
 
+def masking_multi_block(
+    batch: dict[str, Tokens],
+    mask_ratio: float,
+    generators: Mapping[str, torch.Generator],
+    blocks: int,
+    block_scale: Sequence[float],
+    aspect_range: Sequence[float],
+) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
+    """Return which patches are read and which hidden, I-JEPA's blocks on the ground.
+
+    Args:
+        batch: Each instrument's patches over the batch, on the device.
+        mask_ratio: Unread, the blocks settle the share hidden.
+        generators: What fixes each instrument's blocks, on the device.
+        blocks: How many rectangles each instrument of each tile hides.
+        block_scale: The range of each rectangle's share of the crop's extent.
+        aspect_range: The range of each rectangle's north over east side, log-uniform.
+
+    Returns:
+        visible: Which patches each encoder reads, outside every rectangle. (B, K)
+        hidden: Which patches are predicted, centred in a rectangle. (B, K)
+    """
+    visible, hidden = {}, {}
+    for name, tokens in batch.items():
+        present = tokens.present  # (B, K)
+        ground = tokens.position[..., :2].float()  # (B, K, 2)
+        far = torch.finfo(ground.dtype).max
+        low = ground.masked_fill(~present.unsqueeze(-1), far).amin(1, keepdim=True)
+        high = ground.masked_fill(~present.unsqueeze(-1), -far).amax(1, keepdim=True)
+        placed = (ground - low) / (high - low).clamp(min=1.0)  # (B, K, 2)
+        drawn = torch.rand(
+            (len(present), blocks, 4), generator=generators[name], device=present.device
+        )  # (B, M, 4)
+        low_scale, high_scale = block_scale
+        scale = low_scale + (high_scale - low_scale) * drawn[..., 0]  # (B, M)
+        low_aspect, high_aspect = (math.log(bound) for bound in aspect_range)
+        aspect = torch.exp(low_aspect + (high_aspect - low_aspect) * drawn[..., 1])
+        side = torch.stack([(scale / aspect).sqrt(), (scale * aspect).sqrt()], -1)
+        side = side.clamp(max=1.0)  # (B, M, 2)
+        corner = (1 - side) * drawn[..., 2:]  # (B, M, 2)
+        offset = placed.unsqueeze(2) - corner.unsqueeze(1)  # (B, K, M, 2)
+        inside = ((offset >= 0) & (offset <= side.unsqueeze(1))).all(-1).any(-1)
+        visible[name], hidden[name] = present & ~inside, present & inside
+    return visible, hidden
+
+
 def visible_and_hidden_from_order(
     order: Tensor, present: Tensor, mask_ratio: float | Tensor
 ) -> tuple[Tensor, Tensor]:
@@ -146,14 +217,20 @@ def selected_masking(
     strategy: str,
     cell_m: float,
     independent: Sequence[str],
+    blocks: int,
+    block_scale: Sequence[float],
+    aspect_range: Sequence[float],
     dynamic_range: Sequence[float] | None = None,
 ) -> Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]]:
     """Return the masking_* strategy a run hides patches by, its settings bound.
 
     Args:
-        strategy: The strategy, as CSMAE names its correspondence.
+        strategy: The strategy, as CSMAE names its correspondence, or multi_block.
         cell_m: The side of one ground cell identical correspondence hides whole.
         independent: The instruments identical correspondence draws patch by patch.
+        blocks: How many rectangles multi block hides per instrument and tile.
+        block_scale: The range of each rectangle's share of the crop's extent.
+        aspect_range: The range of each rectangle's north over east side.
         dynamic_range: The range random correspondence draws each tile's shares
             from, or none for the fixed ratio.
 
@@ -169,34 +246,40 @@ def selected_masking(
         "identical_correspondence": partial(
             masking_identical_correspondence, cell_m=cell_m, independent=independent
         ),
+        "multi_block": partial(
+            masking_multi_block,
+            blocks=blocks,
+            block_scale=block_scale,
+            aspect_range=aspect_range,
+        ),
     }[strategy]
 
 
 def batch_step(
     model: CrossSensorMAE,
+    target: CrossSensorMAE,
     batch: dict[str, Tokens],
     masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     aligned: Sequence[str],
     pooling: str,
     temperature: float,
-    latent_temperature: float,
     measure: str,
     generators: Mapping[str, torch.Generator],
     device: torch.device,
 ) -> dict[str, Tensor]:
-    """Return one batch's loss terms, its patches hidden and predicted.
+    """Return one batch's loss terms, its hidden patches' target tokens predicted.
 
     Args:
         model: The model, on the device.
+        target: The target encoder, the model's encoders followed by EMA.
         batch: Each instrument's patches over the batch, as the loader hands it.
         masking: The masking_* strategy drawing which patches are read and hidden.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
-        latent_temperature: What latent UMR and CMR divide every cosine by.
-        measure: The reconstruction error, MSE or RMSE.
+        measure: What the detached pixel heads measure, MSE or RMSE.
         generators: What fixes each instrument's masks, on the device.
         device: Where the model runs.
 
@@ -207,10 +290,10 @@ def batch_step(
     visible, hidden = masking(batch, mask_ratio, generators)
     with torch.autocast(device.type, dtype=autocast_dtype(device)):
         predictions, pooled = model(batch, visible, hidden, pooling)
-    targets = model.target_latents(batch)
+        targets = target_tokens(target, batch)
     terms = {
-        f"{kind}/{name}": patch_discrimination(
-            predictions[kind][name], targets[name], hidden[name], latent_temperature
+        f"{kind}/{name}": latent_error(
+            predictions[kind][name], targets[name], hidden[name]
         )
         for kind in ("latent_umr", "latent_cmr")
         for name in targets

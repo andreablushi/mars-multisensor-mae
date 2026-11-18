@@ -80,11 +80,14 @@ def run_training(
         config.training.masking.dynamic_range
         if config.training.masking.dynamic
         else None,
+        config.training.masking.blocks,
+        config.training.masking.block_scale,
+        config.training.masking.aspect_range,
         config.training.masking.mask_ratio,
         config.training.contrastive.instruments,
         config.training.contrastive.pooling,
         config.training.contrastive.temperature,
-        config.training.latent_temperature,
+        config.training.ema_momentum,
         config.training.reconstruction_error,
         config.training.checkpoints,
         config.dataset.seed,

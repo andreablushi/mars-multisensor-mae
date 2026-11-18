@@ -83,8 +83,8 @@ class MaskingConfig:
     """Which patches are hidden, by CSMAE's correspondence across instruments.
 
     Attributes:
-        strategy: The masking_* strategy, random_correspondence or
-            identical_correspondence.
+        strategy: The masking_* strategy, random_correspondence,
+            identical_correspondence or multi_block.
         mask_ratio: The share of each instrument's patches hidden, of each tile's
             ground cells under identical correspondence.
         cell_m: The side of one ground cell identical correspondence hides whole.
@@ -92,6 +92,9 @@ class MaskingConfig:
         dynamic: Whether each training tile draws each instrument's share, random
             correspondence only.
         dynamic_range: The range a dynamic share is drawn uniform from.
+        blocks: How many rectangles multi block hides per instrument and tile.
+        block_scale: The range of each rectangle's share of the crop's extent.
+        aspect_range: The range of each rectangle's north over east side.
     """
 
     strategy: str
@@ -100,6 +103,9 @@ class MaskingConfig:
     independent: list[str]
     dynamic: bool
     dynamic_range: list[float]
+    blocks: int
+    block_scale: list[float]
+    aspect_range: list[float]
 
 
 @dataclass
@@ -114,8 +120,8 @@ class TrainingConfig:
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
         masking: Which masking_* strategy hides the patches, and its settings.
-        latent_temperature: What latent UMR and CMR divide every cosine by.
-        reconstruction_error: What UMR and CMR measure, MSE or RMSE.
+        ema_momentum: The target encoder's EMA momentum at the start and the end.
+        reconstruction_error: What the detached pixel heads measure, MSE or RMSE.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the encoders and decoders read the acquisition angles.
         checkpoints: Where checkpoints are written, relative to the repository.
@@ -128,7 +134,7 @@ class TrainingConfig:
     weight_decay: float
     warmup_steps: int
     masking: MaskingConfig
-    latent_temperature: float
+    ema_momentum: list[float]
     reconstruction_error: str
     contrastive: ContrastiveConfig
     acquisition: bool

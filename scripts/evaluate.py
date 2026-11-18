@@ -151,6 +151,9 @@ def run_evaluation(
                 config.training.masking.strategy,
                 config.training.masking.cell_m,
                 config.training.masking.independent,
+                config.training.masking.blocks,
+                config.training.masking.block_scale,
+                config.training.masking.aspect_range,
                 config.training.masking.dynamic_range
                 if config.training.masking.dynamic
                 else None,
