@@ -30,6 +30,7 @@ def masking_random_correspondence(
     batch: dict[str, Tokens],
     mask_ratio: float,
     generators: Mapping[str, torch.Generator],
+    dynamic_range: Sequence[float] | None = None,
 ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
     """Return which patches are read and which hidden, each instrument drawn alone.
 
@@ -37,6 +38,8 @@ def masking_random_correspondence(
         batch: Each instrument's patches over the batch, on the device.
         mask_ratio: The share of each instrument's patches hidden from its encoder.
         generators: What fixes each instrument's mask, on the device.
+        dynamic_range: The range each tile draws each instrument's share from
+            instead, uniform, or none for mask_ratio.
 
     Returns:
         visible: Which patches each encoder reads, drawn for each on its own. (B, K)
@@ -50,8 +53,15 @@ def masking_random_correspondence(
         )
         # Padding is given the highest noise, so only present patches are hidden.
         order = noise.masked_fill(~present, 2.0).argsort(dim=1)  # (B, K)
+        share = mask_ratio
+        if dynamic_range is not None:
+            low, high = dynamic_range
+            drawn = torch.rand(
+                (present.shape[0], 1), generator=generators[name], device=present.device
+            )
+            share = low + (high - low) * drawn  # (B, 1)
         visible[name], hidden[name] = visible_and_hidden_from_order(
-            order, present, mask_ratio
+            order, present, share
         )
     return visible, hidden
 
@@ -114,14 +124,14 @@ def masking_identical_correspondence(
 
 
 def visible_and_hidden_from_order(
-    order: Tensor, present: Tensor, mask_ratio: float
+    order: Tensor, present: Tensor, mask_ratio: float | Tensor
 ) -> tuple[Tensor, Tensor]:
     """Return which patches are read and which hidden, the first of an order hidden.
 
     Args:
         order: Each tile's slots in the order they are hidden, padding last. (B, K)
         present: Which slots hold a patch rather than padding. (B, K)
-        mask_ratio: The share of each tile's patches hidden.
+        mask_ratio: The share of each tile's patches hidden, or one per tile. (B, 1)
 
     Returns:
         visible: Which patches are read. (B, K)
@@ -133,7 +143,10 @@ def visible_and_hidden_from_order(
 
 
 def selected_masking(
-    strategy: str, cell_m: float, independent: Sequence[str]
+    strategy: str,
+    cell_m: float,
+    independent: Sequence[str],
+    dynamic_range: Sequence[float] | None = None,
 ) -> Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]]:
     """Return the masking_* strategy a run hides patches by, its settings bound.
 
@@ -141,12 +154,18 @@ def selected_masking(
         strategy: The strategy, as CSMAE names its correspondence.
         cell_m: The side of one ground cell identical correspondence hides whole.
         independent: The instruments identical correspondence draws patch by patch.
+        dynamic_range: The range random correspondence draws each tile's shares
+            from, or none for the fixed ratio.
 
     Returns:
         masking: The strategy, called with the batch, the ratio and the generators.
     """
+    if dynamic_range is not None and strategy != "random_correspondence":
+        raise ValueError(f"dynamic masking takes random correspondence, not {strategy}")
     return {
-        "random_correspondence": masking_random_correspondence,
+        "random_correspondence": partial(
+            masking_random_correspondence, dynamic_range=dynamic_range
+        ),
         "identical_correspondence": partial(
             masking_identical_correspondence, cell_m=cell_m, independent=independent
         ),

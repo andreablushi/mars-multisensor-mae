@@ -89,12 +89,17 @@ class MaskingConfig:
             ground cells under identical correspondence.
         cell_m: The side of one ground cell identical correspondence hides whole.
         independent: The instruments identical correspondence draws patch by patch.
+        dynamic: Whether each training tile draws each instrument's share, random
+            correspondence only.
+        dynamic_range: The range a dynamic share is drawn uniform from.
     """
 
     strategy: str
     mask_ratio: float
     cell_m: float
     independent: list[str]
+    dynamic: bool
+    dynamic_range: list[float]
 
 
 @dataclass

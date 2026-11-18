@@ -19,6 +19,10 @@ masking:
   cell_m: 926
   # Instruments identical correspondence still draws patch by patch.
   independent: []
+  # Whether each training tile draws each instrument's share, random correspondence only.
+  dynamic: false
+  # The range a dynamic share is drawn uniform from.
+  dynamic_range: [0.25, 0.75]
 
 # What UMR and CMR measure, MSE or RMSE.
 reconstruction_error: RMSE
