@@ -12,7 +12,7 @@ from torch.nn import functional
 from wandb.sdk.wandb_run import Run
 
 from architecture.components.decoder import Decoder
-from architecture.mae import CrossSensorMAE
+from architecture.mae import CrossSensorMAE, cmr_context
 from architecture.models.context import Context
 from architecture.models.tokens import Tokens
 from configs.load import mask_generators
@@ -227,7 +227,7 @@ def cmr_attention(
         _, contexts = model.embed_tokens(batch, present)
     sources = [name for name in sample if name != query]
     # CMR reads the others without the CLS of every instrument
-    context = Context.joined([contexts[name] for name in sources])
+    context = cmr_context(contexts, query)
     cmr, drawn, near = rolled_attention(
         model.decoders[query],
         context,
