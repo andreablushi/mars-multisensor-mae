@@ -15,7 +15,7 @@ from architecture.mae import CrossSensorMAE, global_tokens
 from dataset.loader import tile_loader
 from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
-from evaluation.metrics import metrics_by_view
+from evaluation.metrics import metrics_by_view, modality_gap_by_pooling
 from evaluation.results import write_vectors
 from logs.evaluation import log_evaluation
 
@@ -85,6 +85,8 @@ def evaluate(
         run,
         run_name,
         metrics_by_view(vectors, raw, classes, neighbours),
+        modality_gap_by_pooling(vectors),
+        vectors,
         write_vectors(run_name, classes, vectors),
     )
 

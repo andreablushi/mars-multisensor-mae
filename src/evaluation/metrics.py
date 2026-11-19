@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from itertools import combinations
 
 import numpy as np
 from sklearn.metrics import (
@@ -128,6 +129,39 @@ def cross_sensor_metrics(
             ahead = (similarities > np.diag(similarities)[:, None]).sum(axis=1)
             scores[gallery][metric] = float((1 / (1 + ahead)).mean())
     return scores
+
+
+def modality_gap_by_pooling(
+    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+) -> dict[tuple[str, str], float]:
+    """Return the RMG of every pair of instruments (Schrodi et al. 2025, Eq. 1).
+
+    Args:
+        vectors: Each tile's unit vector, keyed by pooling, then view, then tile.
+
+    Returns:
+        gaps: RMG from 0 to 1, keyed by pooling and "<one>-<other>"; none for "all".
+    """
+    gaps = {}
+    for pooling, by_view in vectors.items():
+        tiles = sorted(next(iter(by_view.values())))
+        total = len(tiles)
+        stacked = {
+            view: np.array([by_tile[tile] for tile in tiles], np.float64)
+            for view, by_tile in by_view.items()
+            if view != "all"
+        }
+        spread = {
+            view: (1 - (held.sum(0) @ held.sum(0) - total) / (total * (total - 1))) / 2
+            for view, held in stacked.items()
+        }
+        for one, other in combinations(stacked, 2):
+            cosines = (stacked[one] * stacked[other]).sum(1)  # (T,)
+            matched = max(float(np.mean((1 - cosines) / 2)), 1e-3)
+            gaps[pooling, f"{one}-{other}"] = matched / (
+                (spread[one] + spread[other]) / 2 + matched
+            )
+    return gaps
 
 
 def knn_metrics(ranked: np.ndarray, labels: Sequence[str], k: int) -> dict[str, float]:

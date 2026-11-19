@@ -15,6 +15,7 @@ from wandb.sdk.wandb_run import Run
 from evaluation.models.metrics import Metrics
 from logs.benchmark import RESULTS_STEP
 from logs.images.attention import attention_image
+from logs.images.modality_gap import modality_gap_image
 from logs.images.ranging import ranging_image
 from logs.tracker import artifact_name
 
@@ -31,14 +32,18 @@ def log_evaluation(
     run: Run,
     run_name: str,
     metrics: Mapping[tuple[str, str], Metrics],
+    gaps: Mapping[tuple[str, str], float],
+    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
     directory: Path,
 ) -> None:
-    """Log every score and the class distances, the vectors as the run's artifact.
+    """Log the scores, class distances and modality gap, the vectors as an artifact.
 
     Args:
         run: The tracked run.
         run_name: What the run is called, which names its artifact.
         metrics: Each view's metrics, keyed by its pooling and view.
+        gaps: Each pair of instruments' RMG, keyed by pooling and pair.
+        vectors: Each tile's unit vector, keyed by pooling, then view, then tile.
         directory: Where the evaluation wrote its vectors, logged as its artifact.
     """
     scores = [
@@ -51,7 +56,10 @@ def log_evaluation(
             **one.cross,
             **one.rank,
         }.items()
-    ]
+    ] + [[pooling, pair, "RMG", value] for (pooling, pair), value in gaps.items()]
+    drawn = {
+        pooling: modality_gap_image(by_view) for pooling, by_view in vectors.items()
+    }
     run.summary.update(
         {
             f"{EVALUATION}/{pooling}/{view}/{name}": value
@@ -72,6 +80,12 @@ def log_evaluation(
                     for column, value in zip(one.classes, held, strict=True)
                 ],
             ),
+            **{
+                f"{EVALUATION}/modality_gap/{pooling}": wandb.Image(
+                    image, caption=caption
+                )
+                for pooling, (image, caption) in drawn.items()
+            },
         },
         step=PART_STEPS[EVALUATION],
     )
