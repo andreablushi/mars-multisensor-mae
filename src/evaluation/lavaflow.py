@@ -14,11 +14,14 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE, global_tokens
+from architecture.models.context import Pooling
 from configs.load import named_sample
 from dataset.loader import tile_loader
 from dataset.patches import drawn_arrays
 from dataset.store import DatasetBuild
 from evaluation.metrics import ranked_neighbours, retrieval_metrics
+from evaluation.models.metrics import Score
+from evaluation.models.vectors import TileVectors
 from logs.evaluation import log_lavaflow
 from logs.images.lavaflow import lavaflow_image
 
@@ -31,7 +34,7 @@ def evaluate_lavaflow(
     batch_size: int,
     queries: int,
     top_k: int,
-    pooling: str,
+    pooling: Pooling,
     seed: int,
     workers: int,
     device: torch.device,
@@ -92,19 +95,25 @@ def evaluate_lavaflow(
     }
     queried = verdicts == REFLECTOR  # (N,)
     similarities = {}
-    for pooled, by_crop_vector in vectors.items():
-        stacked = np.array([by_crop_vector[one.crop] for one in crops], np.float64)
-        similarities[pooled] = stacked @ stacked.T  # (N, N)
+    for pooled in vectors:
+        row = {crop: at for at, crop in enumerate(pooled.identities)}
+        stacked = pooled.instruments[name][[row[one.crop] for one in crops]].astype(
+            np.float64
+        )
+        similarities[pooled.pooling] = stacked @ stacked.T  # (N, N)
     neighbours = {
         pooled: ranked_neighbours(held) for pooled, held in similarities.items()
     }
-    scores = {
-        (pooled, gallery): float(
-            retrieval_metrics(held, verdicts, hidden)["mAP"][queried].mean()
+    scores = [
+        Score(
+            pooled,
+            gallery,
+            "mAP",
+            float(retrieval_metrics(held, verdicts, hidden)["mAP"][queried].mean()),
         )
         for pooled, held in neighbours.items()
         for gallery, hidden in galleries.items()
-    }
+    ]
     drawn = named_sample(
         np.flatnonzero(queried).tolist(), queries, seed, "lavaflow/queries"
     )
@@ -129,7 +138,7 @@ def evaluate_lavaflow(
 
 def crop_vectors(
     model: CrossSensorMAE, loader: DataLoader, device: torch.device
-) -> dict[str, dict[str, np.ndarray]]:
+) -> list[TileVectors]:
     """Return one unit vector per SHARAD crop and pooling, its ground centred on itself.
 
     Args:
@@ -138,12 +147,14 @@ def crop_vectors(
         device: Where the model runs.
 
     Returns:
-        vectors: Each crop's unit vector, keyed by "CLS", "GAP" or "GAP-surface",
-            the mean of its top row of patches, then by crop. (D,)
+        vectors: CLS, GAP and GAP-surface, the mean of each crop's top row of
+            patches, their one view SHARAD, rows in the order read.
     """
-    vectors = defaultdict(dict)
+    crops = []
+    rows = defaultdict(list)
     with torch.no_grad():
         for batch, identities in loader:
+            crops.extend(identities)
             ((name, tokens),) = batch.items()
             tokens = tokens.to(device)
             present = tokens.present  # (B, K)
@@ -159,12 +170,15 @@ def crop_vectors(
             delay = tokens.position[..., 2].masked_fill(~present, torch.inf)  # (B, K)
             surface = present & (delay == delay.min(dim=1, keepdim=True).values)
             pooled = {
-                "CLS": global_tokens(contexts, {name: present}, "CLS"),
-                "GAP": global_tokens(contexts, {name: present}, "GAP"),
-                "GAP-surface": global_tokens(contexts, {name: surface}, "GAP"),
+                Pooling.CLS: global_tokens(contexts, {name: present}, Pooling.CLS),
+                Pooling.GAP: global_tokens(contexts, {name: present}, Pooling.GAP),
+                Pooling.GAP_SURFACE: global_tokens(
+                    contexts, {name: surface}, Pooling.GAP
+                ),
             }
             for pooling, held in pooled.items():
-                vectors[pooling].update(
-                    zip(identities, held[name].cpu().numpy(), strict=True)
-                )
-    return dict(vectors)
+                rows[pooling].append(held[name].cpu().numpy())
+    return [
+        TileVectors(pooling, crops, {name: np.concatenate(held)}, None)
+        for pooling, held in rows.items()
+    ]

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from configs.load import load_config
 from configs.paths import ENV_PATH, REPO_ROOT
 from configs.schema import Config
+from logs.tracker import flat_run_name
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
 PYTHONPATH = "/shared:/shared/src:/shared/scripts"
@@ -99,6 +100,7 @@ def run_stage(
     )
     job = function.run(
         action="job",
+        name=flat_run_name(arguments["run_name"]),
         profile=asked.profile,
         resources=asked.resources,
         secrets=SECRETS,

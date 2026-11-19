@@ -13,13 +13,13 @@ from torch.nn import functional
 from architecture.components.crossencoder import CrossSensorEncoder
 from architecture.components.decoder import Decoder
 from architecture.components.encoder import Encoder
-from architecture.models.context import Context
+from architecture.models.context import Context, Pooling
 from architecture.models.tokens import Tokens
 from configs.load import named_rng
 
 
 def global_tokens(
-    contexts: dict[str, Context], readable: dict[str, Tensor], pooling: str
+    contexts: dict[str, Context], readable: dict[str, Tensor], pooling: Pooling
 ) -> dict[str, Tensor]:
     """Return each instrument's tile vector, its CLS or the GAP of its readable tokens.
 
@@ -34,7 +34,7 @@ def global_tokens(
     return {
         name: functional.normalize(
             held.tokens[:, 0].float()
-            if pooling == "CLS"
+            if pooling == Pooling.CLS
             else (held.tokens[:, 1:].float() * readable[name].unsqueeze(-1)).sum(1),
             dim=-1,
         )
@@ -190,7 +190,7 @@ class CrossSensorMAE(nn.Module):
         batch: dict[str, Tokens],
         visible: dict[str, Tensor],
         hidden: dict[str, Tensor],
-        pooling: str,
+        pooling: Pooling,
     ) -> tuple[dict[str, dict[str, Tensor]], dict[str, Tensor]]:
         """Return every instrument's hidden patches and its tile vector.
 

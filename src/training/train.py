@@ -13,6 +13,7 @@ from torch.nn.utils import clip_grad_norm_
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
+from architecture.models.context import Pooling
 from configs.load import mask_generators
 from configs.paths import checkpoint_path
 from dataset.loader import tile_loader
@@ -54,7 +55,7 @@ def train(
     masking_aspect_range: Sequence[float],
     mask_ratio: float,
     aligned: Sequence[str],
-    pooling: str,
+    pooling: Pooling,
     temperature: float,
     momentum_range: Sequence[float],
     measure: str,

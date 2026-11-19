@@ -16,6 +16,7 @@ from logs.images.maps import (
 )
 from logs.images.panels import (
     EMPTY_RGB,
+    DrawnImage,
     centred_rows,
     colour_bar,
     instrument_panels,
@@ -138,7 +139,7 @@ def ratio_bar() -> np.ndarray:
 
 def attention_image(
     attention: Mapping[str, Mapping[str, np.ndarray]], query: str
-) -> tuple[np.ndarray, str]:
+) -> DrawnImage:
     """Return the query's original, masked, UMR and CMR above every other's attention.
 
     Args:
@@ -194,4 +195,6 @@ def attention_image(
     caption = f"{' | '.join(shown)}, {query} from {', '.join(sources)}: " + ", ".join(
         drew
     )
-    return centred_rows([*tops.values(), spaced_row([*panels, ratio_bar()])]), caption
+    return DrawnImage(
+        centred_rows([*tops.values(), spaced_row([*panels, ratio_bar()])]), caption
+    )
