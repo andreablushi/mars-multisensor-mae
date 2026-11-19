@@ -9,7 +9,11 @@ antlr4-python3-runtime==4.9.3
     #   hydra-core
     #   omegaconf
 anyio==4.15.1
-    # via httpx
+    # via
+    #   httpx
+    #   httpx2
+asn1crypto==1.5.1
+    # via scramp
 boto3==1.43.89
     # via digitalhub
 botocore==1.43.89
@@ -26,25 +30,30 @@ certifi==2026.7.22
 charset-normalizer==3.5.1
     # via requests
 click==8.5.0
-    # via wandb
+    # via
+    #   huggingface-hub
+    #   wandb
 cloudpickle==3.1.2
     # via joblib
 colorama==0.4.6 ; sys_platform == 'win32'
     # via tqdm
 decorator==5.3.1
     # via jsonpath-rw
-digitalhub==0.15.11
+digitalhub==0.16.0
     # via digitalhub-runtime-python
-digitalhub-runtime-python==0.15.2
+digitalhub-runtime-python==0.16.0
 donfig==0.8.1.post1
     # via zarr
 etils==1.14.0
     # via mlcroissant
 filelock==3.32.6
-    # via torch
+    # via
+    #   huggingface-hub
+    #   torch
 fsspec==2026.7.0
     # via
     #   etils
+    #   huggingface-hub
     #   torch
 gitdb==4.0.12
     # via gitpython
@@ -55,17 +64,30 @@ google-crc32c==1.8.0
 greenlet==3.5.5 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
     # via sqlalchemy
 h11==0.16.0
-    # via httpcore
+    # via
+    #   httpcore
+    #   httpcore2
+hf-xet==1.8.0 ; platform_machine == 'AMD64' or platform_machine == 'ARM64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+    # via huggingface-hub
 httpcore==1.0.9
     # via httpx
+httpcore2==2.16.2 ; sys_platform != 'emscripten'
+    # via httpx2
 httpx==0.28.1
     # via mars-multisensor-dataset
+httpx2==2.16.2
+    # via huggingface-hub
+httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
+    # via httpx2
+huggingface-hub==2.4.0
+    # via digitalhub
 hydra-core==1.3.7
     # via mars-multisensor-dataset
 idna==3.19
     # via
     #   anyio
     #   httpx
+    #   httpx2
     #   requests
 jinja2==3.1.6
     # via torch
@@ -122,6 +144,7 @@ opentelemetry-api==1.44.0
     # via wandb
 packaging==26.3
     # via
+    #   huggingface-hub
     #   hydra-core
     #   wandb
     #   zarr
@@ -131,6 +154,8 @@ pandas==3.0.5
     #   mlcroissant
 pandas-stubs==3.0.5.260730
     # via mlcroissant
+pg8000==1.31.6
+    # via digitalhub
 pillow==13.0.0
     # via mars-multisensor-mae
 pip==26.2.1
@@ -145,12 +170,6 @@ polars-runtime-32==1.44.1
     # via polars
 protobuf==7.36.1
     # via wandb
-psycopg==3.3.5
-    # via digitalhub
-psycopg-binary==3.3.5 ; implementation_name != 'pypy'
-    # via psycopg
-psycopg2-binary==2.9.12
-    # via digitalhub
 pyarrow==25.0.1
     # via
     #   digitalhub
@@ -172,6 +191,7 @@ python-dateutil==2.9.0.post0
     #   botocore
     #   mlcroissant
     #   pandas
+    #   pg8000
 python-dotenv==1.2.3
     # via
     #   digitalhub
@@ -183,6 +203,7 @@ pyyaml==6.0.3
     #   digitalhub
     #   digitalhub-runtime-python
     #   donfig
+    #   huggingface-hub
     #   mars-multisensor-dataset
     #   omegaconf
     #   wandb
@@ -204,6 +225,8 @@ scipy==1.18.1
     #   mars-multisensor-dataset
     #   mlcroissant
     #   scikit-learn
+scramp==1.5.0
+    # via pg8000
 sentry-sdk==2.69.0
     # via wandb
 setuptools==84.0.0
@@ -229,13 +252,20 @@ tifffile==2026.8.23
 torch @ https://download.pytorch.org/whl/cu126/torch-2.14.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl
     # via mars-multisensor-mae
 tqdm==4.70.0
-    # via mlcroissant
+    # via
+    #   huggingface-hub
+    #   mlcroissant
 triton==3.8.0 ; python_full_version < '3.15' and sys_platform == 'linux'
     # via torch
+truststore==0.10.5 ; sys_platform != 'emscripten'
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.16.0
     # via
     #   anyio
     #   etils
+    #   huggingface-hub
     #   numcodecs
     #   opentelemetry-api
     #   pydantic
@@ -248,9 +278,7 @@ typing-extensions==4.16.0
 typing-inspection==0.4.4
     # via pydantic
 tzdata==2026.3 ; sys_platform == 'emscripten' or sys_platform == 'win32'
-    # via
-    #   pandas
-    #   psycopg
+    # via pandas
 urllib3==2.7.0
     # via
     #   botocore

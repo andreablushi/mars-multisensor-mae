@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE, global_tokens
-from configs.load import named_generator
+from configs.load import named_sample
 from dataset.loader import tile_loader
 from dataset.patches import drawn_arrays
 from dataset.store import DatasetBuild
@@ -105,11 +105,9 @@ def evaluate_lavaflow(
         for pooled, held in neighbours.items()
         for gallery, hidden in galleries.items()
     }
-    drawn = np.flatnonzero(queried)[
-        torch.randperm(
-            int(queried.sum()), generator=named_generator(seed, "lavaflow/queries")
-        )[:queries].numpy()
-    ]
+    drawn = named_sample(
+        np.flatnonzero(queried).tolist(), queries, seed, "lavaflow/queries"
+    )
     ranked = np.where(same_track, -np.inf, similarities[pooling])  # (N, N)
     images = []
     for query in drawn:

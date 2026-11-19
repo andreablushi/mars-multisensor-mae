@@ -1,4 +1,4 @@
-"""Building the model a config and a build's patch layout settle."""
+"""Building the model a config and a build settle, and loading its logged weights."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from collections.abc import Mapping
 import torch
 from mars_multisensor_dataset.building.configs import sharad
 from torch import Tensor
+from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE
 from benchmarking.architecture.model import PROTOCOLS, BenchmarkModel
@@ -15,9 +16,12 @@ from configs.schema import Config
 from dataset.models.patch import PatchLayout
 from dataset.patches import patch_shapes
 from dataset.store import DatasetBuild
+from logs.tracker import console_logger, logged_checkpoint
+
+log = console_logger(__name__)
 
 
-def built_model(
+def built_pretrained_model(
     config: Config, build: DatasetBuild
 ) -> tuple[CrossSensorMAE, torch.device, PatchLayout]:
     """Return the model a build's patch layout settles, on the GPU when there is one.
@@ -54,6 +58,25 @@ def built_model(
         config.dataset.seed,
     ).to(device)
     return model, device, PatchLayout(sizes, shapes)
+
+
+def trained_model(model: CrossSensorMAE, run: Run, run_name: str) -> CrossSensorMAE:
+    """Return the model with a logged run's latest weights, a "random" run's as drawn.
+
+    Args:
+        model: The model, as built.
+        run: The tracked run that reads the weights.
+        run_name: What the trained run is called, which names its model, a last
+            part of "random" keeping the seed's own weights.
+
+    Returns:
+        model: The same model, its weights loaded.
+    """
+    if run_name.split("/")[-1] != "random":
+        held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")
+        model.load_state_dict(held["model"])
+        log.info("%s trained for %d steps", run_name, held["step"])
+    return model
 
 
 def built_benchmark_model(
