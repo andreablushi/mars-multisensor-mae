@@ -12,6 +12,7 @@ from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import (
 
 from logs.images.panels import (
     EMPTY_RGB,
+    DrawnImage,
     patch_mosaic,
     scaled_values,
     sounder_resampled,
@@ -29,7 +30,7 @@ def lavaflow_image(
     crops: Sequence[str],
     verdicts: Sequence[str],
     cosines: Sequence[float],
-) -> tuple[np.ndarray, str]:
+) -> DrawnImage:
     """Return a query's radargram beside those it retrieved, framed green or red.
 
     Args:
@@ -68,4 +69,4 @@ def lavaflow_image(
         f"{crop} {cosine:.3f} {verdict}"
         for crop, cosine, verdict in zip(crops[1:], cosines, verdicts, strict=True)
     )
-    return spaced_row([*rgb, value_bar(images, clip)]), caption
+    return DrawnImage(spaced_row([*rgb, value_bar(images, clip)]), caption)

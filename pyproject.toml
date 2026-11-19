@@ -16,6 +16,7 @@ dependencies = [
     "torch>=2.14.0",
     "wandb>=0.22",
     "pillow>=13.0.0",
+    "matplotlib>=3.10",
 ]
 
 [tool.uv.sources]
@@ -41,8 +42,8 @@ dev = [
     "ruff>=0.16.2",
 ]
 digitalhub = [
-    "digitalhub>=0.15.11,<0.16",
-    "digitalhub-runtime-python>=0.15.2,<0.16",
+    "digitalhub>=0.16,<0.17",
+    "digitalhub-runtime-python>=0.16,<0.17",
 ]
 
 [tool.ruff]

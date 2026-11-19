@@ -15,12 +15,18 @@ from logs.images.attention import (
     sounder_passes,
 )
 from logs.images.maps import grey_patches, laid_patches, map_frame, observation_trace
-from logs.images.panels import centred_rows, scaled_values, spaced_row, value_bar
+from logs.images.panels import (
+    DrawnImage,
+    centred_rows,
+    scaled_values,
+    spaced_row,
+    value_bar,
+)
 
 
 def ranging_image(
     attention: Mapping[str, Mapping[str, np.ndarray]], query: str
-) -> tuple[np.ndarray, str]:
+) -> DrawnImage:
     """Return one ranging instrument's original and CMR from the other alone.
 
     Args:
@@ -64,4 +70,4 @@ def ranging_image(
     caption = f"{query} from {sharad.LAYOUT.instrument}: " + ", ".join(
         f"pass {identifier} {share:.0%}" for *_, identifier, share in passes
     )
-    return centred_rows([spaced_row(top), spaced_row(radargrams)]), caption
+    return DrawnImage(centred_rows([spaced_row(top), spaced_row(radargrams)]), caption)

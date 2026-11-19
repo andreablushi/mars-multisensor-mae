@@ -9,6 +9,7 @@ import torch
 from torch import Tensor
 
 from architecture.mae import CrossSensorMAE
+from architecture.models.context import Pooling
 from architecture.models.tokens import Tokens
 from training.loss import mim, patch_discrimination, reconstruction_error, total
 
@@ -178,7 +179,7 @@ def batch_step(
     masking: Callable[..., tuple[dict[str, Tensor], dict[str, Tensor]]],
     mask_ratio: float,
     aligned: Sequence[str],
-    pooling: str,
+    pooling: Pooling,
     temperature: float,
     latent_temperature: float,
     measure: str,
