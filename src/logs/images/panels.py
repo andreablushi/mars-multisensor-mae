@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import NamedTuple
 
 import numpy as np
 from mars_multisensor_dataset.building.configs import sharad
@@ -18,6 +19,18 @@ COMPOSITES_NM = {
 EMPTY_RGB = (255, 255, 255)
 SPACE = 12
 ROW_HEIGHT = 512
+
+
+class DrawnImage(NamedTuple):
+    """One image drawn for a W&B media panel and its caption.
+
+    Attributes:
+        image: The image. (H, W, 3)
+        caption: What the caption under it says.
+    """
+
+    image: np.ndarray
+    caption: str
 
 
 def patch_mosaic(
