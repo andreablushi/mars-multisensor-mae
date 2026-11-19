@@ -17,6 +17,7 @@ from architecture.mae import CrossSensorMAE, global_tokens
 from architecture.models.context import Pooling
 from configs.load import named_sample
 from dataset.loader import tile_loader
+from dataset.models.patch import PatchLayout
 from dataset.patches import drawn_arrays
 from dataset.store import DatasetBuild
 from evaluation.metrics import ranked_neighbours, retrieval_metrics
@@ -73,8 +74,7 @@ def evaluate_lavaflow(
         tile_loader(
             by_crop,
             rows,
-            {name: size},
-            {name: shape},
+            PatchLayout({name: size}, {name: shape}),
             None,
             1.0,
             seed,
