@@ -10,8 +10,8 @@ from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from evaluate import run_evaluation
-from model import built_model
 from torch.utils.data import random_split
+from utils.model import built_pretrained_model
 
 from configs.load import load_config, named_generator
 from logs.tracker import TRAINING, console_logger, log_checkpoint, start_logging
@@ -38,7 +38,7 @@ def run_training(
     """
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.dataset.build)
-    model, device, layout = built_model(config, build)
+    model, device, layout = built_pretrained_model(config, build)
     workers = requested_read_workers(config, TRAINING)
     qualitative_tiles = {
         drawn.tile for drawn in config.evaluation.reconstruction.tiles.values()

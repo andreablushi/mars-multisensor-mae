@@ -80,6 +80,22 @@ def named_generator(
     return torch.Generator(device=device).manual_seed(named_seed(seed, name))
 
 
+def named_sample[T](items: Sequence[T], count: int, seed: int, name: str) -> list[T]:
+    """Return the first items of one named draw's shuffle, the same for every count.
+
+    Args:
+        items: What is drawn from.
+        count: How many are kept, all of them when there are fewer.
+        seed: The run's seed.
+        name: What is drawn, such as `rankme`.
+
+    Returns:
+        drawn: The kept items, in the order drawn.
+    """
+    order = torch.randperm(len(items), generator=named_generator(seed, name))
+    return [items[at] for at in order[:count].tolist()]
+
+
 def mask_generators(
     names: Iterable[str], seed: int, device: torch.device
 ) -> dict[str, torch.Generator]:

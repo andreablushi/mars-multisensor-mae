@@ -9,12 +9,11 @@ import torch
 from dhub.store import published_dataset_build, published_ice_labels
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
-from evaluate import trained_model
-from model import built_benchmark_model, built_model
+from utils.model import built_benchmark_model, built_pretrained_model, trained_model
 
 from benchmarking.evaluation import evaluate as evaluation
 from benchmarking.finetune import finetune as finetuning
-from configs.load import load_config, named_generator
+from configs.load import load_config, named_sample
 from configs.paths import heads_path
 from dataset.loader import swim_targets_loader, tiles_split_by_square
 from logs.benchmark import BENCHMARK, FINETUNE, HEADS
@@ -47,7 +46,7 @@ def run_benchmark(
     """
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.benchmark.build)
-    model, device, layout = built_model(config, build)
+    model, device, layout = built_pretrained_model(config, build)
     workers = requested_read_workers(config, BENCHMARK)
     left = [
         one
@@ -69,26 +68,22 @@ def run_benchmark(
     spread = np.stack([targets[tile] for tile in training]).std(axis=(0, 1))  # (Z,)
     settings = config.benchmark.finetune
     # Each share is the first tiles of one draw, so a larger share holds the smaller
-    order = torch.randperm(
-        len(training),
-        generator=named_generator(config.dataset.seed, "benchmark/fraction"),
-    ).tolist()
+    drawn = named_sample(
+        training, len(training), config.dataset.seed, "benchmark/fraction"
+    )
     shares = {
-        f"{round(100 * fraction)}pct": [
-            training[at] for at in order[: round(fraction * len(training))]
-        ]
+        f"{round(100 * fraction)}pct": drawn[: round(fraction * len(training))]
         for fraction in sorted(config.benchmark.fractions)
     }
     share_steps = dict(zip(shares, settings.fraction_steps, strict=True))
     pass_steps = len(training) // settings.batch_size
     # Every share is validated on the same first tiles of one draw
-    checked = [
-        validation[at]
-        for at in torch.randperm(
-            len(validation),
-            generator=named_generator(config.dataset.seed, "benchmark/validation"),
-        ).tolist()[: config.benchmark.validation_sample_size]
-    ]
+    checked = named_sample(
+        validation,
+        config.benchmark.validation_sample_size,
+        config.dataset.seed,
+        "benchmark/validation",
+    )
 
     # Both phases log to one tracked run, which the evaluation alone reopens
     path = heads_path(tracked)

@@ -4,16 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-import torch
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
-from model import built_model
-from wandb.sdk.wandb_run import Run
+from utils.model import built_pretrained_model, trained_model
 
-from architecture.mae import CrossSensorMAE
-from configs.load import load_config, named_generator
+from configs.load import load_config, named_sample
 from configs.paths import results_directory
 from evaluation.evaluate import evaluate
 from evaluation.lavaflow import evaluate_lavaflow
@@ -27,34 +24,10 @@ from logs.evaluation import (
     log_kept_part,
     retire_evaluation_run,
 )
-from logs.tracker import (
-    console_logger,
-    logged_checkpoint,
-    start_logging,
-    tracked_run,
-)
+from logs.tracker import console_logger, start_logging, tracked_run
 from training.step import selected_masking
 
 log = console_logger(__name__)
-
-
-def trained_model(model: CrossSensorMAE, run: Run, run_name: str) -> CrossSensorMAE:
-    """Return the model with a logged run's latest weights, a "random" run's as drawn.
-
-    Args:
-        model: The model, as built.
-        run: The tracked run that reads the weights.
-        run_name: What the trained run is called, which names its model, a last
-            part of "random" keeping the seed's own weights.
-
-    Returns:
-        model: The same model, its weights loaded.
-    """
-    if run_name.split("/")[-1] != "random":
-        held = torch.load(logged_checkpoint(run, run_name), map_location="cpu")
-        model.load_state_dict(held["model"])
-        log.info("%s trained for %d steps", run_name, held["step"])
-    return model
 
 
 @handler()
@@ -84,7 +57,7 @@ def run_evaluation(
     if lavaflow and not retrieved:
         raise ValueError("the lava flow retrieval needs a build and SHARAD")
     build = published_dataset_build(config, config.evaluation.build)
-    model, device, layout = built_model(config, build)
+    model, device, layout = built_pretrained_model(config, build)
     workers = requested_read_workers(config, EVALUATION)
     asked = [
         part
@@ -114,14 +87,12 @@ def run_evaluation(
         log_kept_part(run, *kept[EVALUATION], PART_STEPS[EVALUATION])
     if whole:
         rank_build = published_dataset_build(config, config.dataset.build)
-        ordered = sorted(rank_build.read_observation_metadata())
-        rank_tiles = [
-            ordered[at]
-            for at in torch.randperm(
-                len(ordered),
-                generator=named_generator(config.dataset.seed, "rankme"),
-            )[: config.evaluation.rank_tiles].tolist()
-        ]
+        rank_tiles = named_sample(
+            sorted(rank_build.read_observation_metadata()),
+            config.evaluation.rank_tiles,
+            config.dataset.seed,
+            "rankme",
+        )
         evaluate(
             model,
             build,
