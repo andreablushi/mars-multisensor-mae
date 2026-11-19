@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-import numpy as np
 import wandb
 from wandb.sdk.wandb_run import Run
+
+from logs.images.panels import DrawnImage
 
 BENCHMARK = "benchmark"
 
@@ -83,7 +84,7 @@ def log_epoch(
 def log_benchmark(
     run: Run,
     scores: Mapping[str, Mapping[str, Mapping[str, Mapping[str, float]]]],
-    images: Sequence[tuple[np.ndarray, str]],
+    images: Sequence[DrawnImage],
 ) -> None:
     """Log the test scores and drawn tiles at one step for every run, or after it.
 

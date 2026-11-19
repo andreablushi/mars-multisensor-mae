@@ -12,10 +12,12 @@ import wandb
 from wandb.apis.public import Run as TrackedRun
 from wandb.sdk.wandb_run import Run
 
-from evaluation.models.metrics import Metrics
+from evaluation.models.metrics import Metrics, Score
+from evaluation.models.vectors import TileVectors
 from logs.benchmark import RESULTS_STEP
 from logs.images.attention import attention_image
 from logs.images.modality_gap import modality_gap_image
+from logs.images.panels import DrawnImage
 from logs.images.ranging import ranging_image
 from logs.tracker import artifact_name
 
@@ -31,9 +33,9 @@ PART_STEPS = {EVALUATION: 0, RECONSTRUCTION: 0, LAVAFLOW: RESULTS_STEP}
 def log_evaluation(
     run: Run,
     run_name: str,
-    metrics: Mapping[tuple[str, str], Metrics],
-    gaps: Mapping[tuple[str, str], float],
-    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    metrics: Sequence[Metrics],
+    gaps: Sequence[Score],
+    vectors: Sequence[TileVectors],
     directory: Path,
 ) -> None:
     """Log the scores, class distances and modality gap, the vectors as an artifact.
@@ -41,41 +43,26 @@ def log_evaluation(
     Args:
         run: The tracked run.
         run_name: What the run is called, which names its artifact.
-        metrics: Each view's metrics, keyed by its pooling and view.
-        gaps: Each pair of instruments' RMG, keyed by pooling and pair.
-        vectors: Each tile's unit vector, keyed by pooling, then view, then tile.
+        metrics: Each pooling and view's metrics.
+        gaps: Each pooling and pair of instruments' RMG.
+        vectors: Each pooling's unit tile vectors.
         directory: Where the evaluation wrote its vectors, logged as its artifact.
     """
-    scores = [
-        [pooling, view, name, value]
-        for (pooling, view), one in metrics.items()
-        for name, value in {
-            "mAP": float(one.retrieval["mAP"].mean()),
-            **one.knn,
-            "silhouette": float(one.silhouette.mean()),
-            **one.cross,
-            **one.rank,
-        }.items()
-    ] + [[pooling, pair, "RMG", value] for (pooling, pair), value in gaps.items()]
+    scores = [score for one in metrics for score in one.scores()] + list(gaps)
     drawn = {
-        pooling: modality_gap_image(by_view) for pooling, by_view in vectors.items()
+        pooled.pooling: modality_gap_image(pooled.instruments) for pooled in vectors
     }
-    run.summary.update(
-        {
-            f"{EVALUATION}/{pooling}/{view}/{name}": value
-            for pooling, view, name, value in scores
-        }
-    )
+    run.summary.update(score_summary(EVALUATION, scores))
     run.log(
         {
             f"{EVALUATION}/scores": wandb.Table(
-                columns=["pooling", "view", "metric", "value"], data=scores
+                columns=list(Score._fields), data=[list(score) for score in scores]
             ),
             f"{EVALUATION}/distances": wandb.Table(
                 columns=["pooling", "view", "row", "column", "value"],
                 data=[
-                    [pooling, view, row, column, float(value)]
-                    for (pooling, view), one in metrics.items()
+                    [one.pooling, one.view, row, column, float(value)]
+                    for one in metrics
                     for row, held in zip(one.classes, one.distances, strict=True)
                     for column, value in zip(one.classes, held, strict=True)
                 ],
@@ -132,31 +119,22 @@ def log_reconstruction(
 
 def log_lavaflow(
     run: Run,
-    scores: Mapping[tuple[str, str], float],
-    images: Sequence[tuple[np.ndarray, str]],
+    scores: Sequence[Score],
+    images: Sequence[DrawnImage],
 ) -> None:
     """Log the lava flow retrieval's mAP and the drawn queries beside what they found.
 
     Args:
         run: The tracked run.
-        scores: The reflector queries' mAP, keyed by pooling and by which crops
-            the gallery leaves out.
+        scores: The reflector queries' mAP per pooling, its view the crops the
+            gallery leaves out.
         images: Each drawn query's image and caption, logged as qualitative 1 on.
     """
-    run.summary.update(
-        {
-            f"{LAVAFLOW}/{pooling}/{gallery}/mAP": value
-            for (pooling, gallery), value in scores.items()
-        }
-    )
+    run.summary.update(score_summary(LAVAFLOW, scores))
     run.log(
         {
             f"{LAVAFLOW}/scores": wandb.Table(
-                columns=["pooling", "view", "metric", "value"],
-                data=[
-                    [pooling, gallery, "mAP", value]
-                    for (pooling, gallery), value in scores.items()
-                ],
+                columns=list(Score._fields), data=[list(score) for score in scores]
             ),
             **{
                 f"{LAVAFLOW}/qualitative-{at}": wandb.Image(image, caption=caption)
@@ -165,6 +143,22 @@ def log_lavaflow(
         },
         step=PART_STEPS[LAVAFLOW],
     )
+
+
+def score_summary(section: str, scores: Sequence[Score]) -> dict[str, float]:
+    """Return some scores as run summary values.
+
+    Args:
+        section: The section the keys sit under, such as "evaluation".
+        scores: The scores.
+
+    Returns:
+        summary: Each value keyed "<section>/<pooling>/<view>/<metric>".
+    """
+    return {
+        f"{section}/{score.pooling}/{score.view}/{score.metric}": score.value
+        for score in scores
+    }
 
 
 def evaluation_part(key: str) -> str:

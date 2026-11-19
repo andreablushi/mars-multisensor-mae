@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +16,7 @@ from configs.paths import (
     RESULTS_FILE,
     results_directory,
 )
+from evaluation.models.vectors import TileVectors
 from logs.evaluation import EVALUATION, RECONSTRUCTION
 
 
@@ -44,14 +45,14 @@ RESULTS_SCHEMA = parquet.schema_of(TileVector)
 def write_vectors(
     run_name: str,
     classes: Mapping[str, str],
-    vectors: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+    vectors: Sequence[TileVectors],
 ) -> Path:
     """Return where one run's tile vectors were written, any earlier ones removed.
 
     Args:
         run_name: What the run is called, which names its results.
         classes: The class each tile earned, keyed by the tile.
-        vectors: Each tile's vector, keyed by pooling, then view, then tile.
+        vectors: Each pooling's unit tile vectors, rows sorted by tile.
 
     Returns:
         directory: The folder holding the vectors alone.
@@ -60,10 +61,12 @@ def write_vectors(
     shutil.rmtree(directory, ignore_errors=True)
     parquet.write_rows(
         [
-            TileVector(tile, classes[tile], pooling, view, tuple(vector.tolist()))
-            for pooling, by_view in vectors.items()
-            for view, by_tile in by_view.items()
-            for tile, vector in sorted(by_tile.items())
+            TileVector(
+                tile, classes[tile], pooled.pooling, view, tuple(vector.tolist())
+            )
+            for pooled in vectors
+            for view, held in pooled.views().items()
+            for tile, vector in zip(pooled.identities, held, strict=True)
         ],
         RESULTS_SCHEMA,
         directory / RESULTS_FILE,

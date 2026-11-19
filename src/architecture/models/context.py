@@ -1,12 +1,21 @@
-"""Some instruments' tokens side by side, as a decoder reads them."""
+"""Some instruments' tokens side by side, as a decoder reads them, and how they pool."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import NamedTuple
 
 import torch
 from torch import Tensor
+
+
+class Pooling(StrEnum):
+    """What one tile vector is made of an instrument's tokens."""
+
+    CLS = "CLS"
+    GAP = "GAP"
+    GAP_SURFACE = "GAP-surface"
 
 
 class Context(NamedTuple):

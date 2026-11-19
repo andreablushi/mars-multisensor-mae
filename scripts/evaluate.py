@@ -10,6 +10,7 @@ from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
 from utils.model import built_pretrained_model, trained_model
 
+from architecture.models.context import Pooling
 from configs.load import load_config, named_sample
 from configs.paths import results_directory
 from evaluation.evaluate import evaluate
@@ -144,7 +145,7 @@ def run_evaluation(
             config.evaluation.batch_size,
             settings.qualitative.queries,
             settings.qualitative.top_k,
-            settings.qualitative.pooling,
+            Pooling(settings.qualitative.pooling),
             config.dataset.seed,
             workers,
             device,

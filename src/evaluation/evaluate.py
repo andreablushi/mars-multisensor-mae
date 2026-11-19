@@ -12,10 +12,12 @@ from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
 from architecture.mae import CrossSensorMAE, global_tokens
+from architecture.models.context import Pooling
 from dataset.loader import tile_loader
 from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
 from evaluation.metrics import metrics_by_view, modality_gap_by_pooling
+from evaluation.models.vectors import TileVectors
 from evaluation.results import write_vectors
 from logs.evaluation import log_evaluation
 
@@ -61,7 +63,10 @@ def evaluate(
     loader = tile_loader(
         build, by_tile, layout, None, 1.0, seed, batch_size, workers, False
     )
-    vectors = tile_vectors(model, loader, device, False)
+    vectors = [
+        pooled.sorted_by_identity()
+        for pooled in tile_vectors(model, loader, device, False)
+    ]
     # RankMe reads training samples, cut as training cuts them and not kept
     raw = tile_vectors(
         model,
@@ -93,7 +98,7 @@ def evaluate(
 
 def tile_vectors(
     model: CrossSensorMAE, loader: DataLoader, device: torch.device, raw: bool
-) -> dict[str, dict[str, dict[str, np.ndarray]]]:
+) -> list[TileVectors]:
     """Return one vector per tile, pooling and view, unit or raw: each instrument, all.
 
     Args:
@@ -103,38 +108,57 @@ def tile_vectors(
         raw: Whether the vectors are kept before any normalisation, as RankMe reads.
 
     Returns:
-        vectors: Keyed by CLS or GAP, then instrument or "all", then tile; "all" is the
-            model's CLS, and for GAP the mean of the instruments' vectors. (D,)
+        vectors: CLS, then GAP, rows in the order read; fused is the model's CLS, and
+            for GAP the mean of the instruments'.
     """
-    vectors = defaultdict(lambda: defaultdict(dict))
+    tiles = []
+    rows = defaultdict(lambda: defaultdict(list))
+    fused = defaultdict(list)
     with torch.no_grad():
         for batch, identities in loader:
+            tiles.extend(identities)
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
             present = {name: tokens.present for name, tokens in batch.items()}
             cls, contexts = model.embed_tokens(batch, present)
             if raw:
                 pooled = {
-                    "CLS": {name: held.tokens[:, 0] for name, held in contexts.items()},
-                    "GAP": {
+                    Pooling.CLS: {
+                        name: held.tokens[:, 0] for name, held in contexts.items()
+                    },
+                    Pooling.GAP: {
                         name: (held.tokens[:, 1:] * present[name].unsqueeze(-1)).sum(1)
                         / present[name].sum(1, keepdim=True).clamp(min=1)
                         for name, held in contexts.items()
                     },
                 }
-                pooled["CLS"]["all"] = cls
-                pooled["GAP"]["all"] = torch.stack(list(pooled["GAP"].values())).mean(0)
+                overall = {
+                    Pooling.CLS: cls,
+                    Pooling.GAP: torch.stack(list(pooled[Pooling.GAP].values())).mean(
+                        0
+                    ),
+                }
             else:
                 pooled = {
                     pooling: global_tokens(contexts, present, pooling)
-                    for pooling in ("CLS", "GAP")
+                    for pooling in (Pooling.CLS, Pooling.GAP)
                 }
-                pooled["CLS"]["all"] = functional.normalize(cls, dim=-1)
-                pooled["GAP"]["all"] = functional.normalize(
-                    torch.stack(list(pooled["GAP"].values()), dim=1).sum(1), dim=-1
-                )
-            for pooling, by_view in pooled.items():
-                for view, held in by_view.items():
-                    vectors[pooling][view].update(
-                        zip(identities, held.float().cpu().numpy(), strict=True)
-                    )
-    return {pooling: dict(by_view) for pooling, by_view in vectors.items()}
+                overall = {
+                    Pooling.CLS: functional.normalize(cls, dim=-1),
+                    Pooling.GAP: functional.normalize(
+                        torch.stack(list(pooled[Pooling.GAP].values()), dim=1).sum(1),
+                        dim=-1,
+                    ),
+                }
+            for pooling, by_name in pooled.items():
+                for name, held in by_name.items():
+                    rows[pooling][name].append(held.float().cpu().numpy())
+                fused[pooling].append(overall[pooling].float().cpu().numpy())
+    return [
+        TileVectors(
+            pooling,
+            tiles,
+            {name: np.concatenate(held) for name, held in by_name.items()},
+            np.concatenate(fused[pooling]),
+        )
+        for pooling, by_name in rows.items()
+    ]

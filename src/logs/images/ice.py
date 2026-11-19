@@ -13,7 +13,13 @@ from mars_multisensor_dataset.common.maths.physics import METRES_PER_KM
 
 from dataset.loader import TARGETS
 from logs.images.maps import grey_patches, laid_patches, map_places
-from logs.images.panels import centred_rows, colour_bar, scaled_values, spaced_row
+from logs.images.panels import (
+    DrawnImage,
+    centred_rows,
+    colour_bar,
+    scaled_values,
+    spaced_row,
+)
 
 TITLES = {"attentive-probe": "Attentive Probe", "fine-tune": "Fine-tuning"}
 
@@ -48,7 +54,7 @@ def ice_image(
     arrays: Mapping[str, np.ndarray],
     target: np.ndarray,
     predictions: Mapping[str, np.ndarray],
-) -> tuple[np.ndarray, str]:
+) -> DrawnImage:
     """Return SWIM's grid beside each protocol's over one instrument, and its caption.
 
     Args:
@@ -89,4 +95,6 @@ def ice_image(
         )
         panels = [coloured(grey, grid[point, at], low, high) for grid in grids.values()]
         rows.append(spaced_row([*panels, legend]))
-    return centred_rows(rows), f"{' | '.join(grids)}, rows {', '.join(TARGETS)}"
+    return DrawnImage(
+        centred_rows(rows), f"{' | '.join(grids)}, rows {', '.join(TARGETS)}"
+    )
