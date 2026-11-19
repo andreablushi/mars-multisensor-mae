@@ -87,6 +87,18 @@ def log_terms(
     )
 
 
+def flat_run_name(run_name: str) -> str:
+    """Return the run name with its slashes made dots, for names that refuse slashes.
+
+    Args:
+        run_name: What the run is called.
+
+    Returns:
+        name: The same name, its slashes made dots.
+    """
+    return run_name.replace("/", ".")
+
+
 def artifact_name(kind: str, run_name: str) -> str:
     """Return what one run's artifact of a kind is called.
 
@@ -97,7 +109,7 @@ def artifact_name(kind: str, run_name: str) -> str:
     Returns:
         name: The kind and the run name, its slashes made dots.
     """
-    return f"{kind}-{run_name.replace('/', '.')}"
+    return f"{kind}-{flat_run_name(run_name)}"
 
 
 def log_checkpoint(run: Run, path: Path, run_name: str, kind: str = "model") -> None:
