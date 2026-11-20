@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 import numpy as np
-from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import (
+from lavaflow.models import (
     NONE,
     REFLECTOR,
 )

@@ -181,8 +181,8 @@ class LavaFlowConfig:
     """How the SHARAD crops of buried lava flows are retrieved and drawn.
 
     Attributes:
-        build: The build the crops and verdicts are read from, published as
-            <version>-dataset-<build>, or None to skip the retrieval.
+        build: The benchmark part the crops and verdicts are read from, published
+            as <version>-<build>/dataset/, or None to skip the retrieval.
         qualitative: Which queries are drawn beside what they retrieve.
     """
 

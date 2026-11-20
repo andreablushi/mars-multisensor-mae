@@ -11,13 +11,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from mars_multisensor_dataset.analysis import paths as labelled
-from mars_multisensor_dataset.analysis.ground_truth.lavaflow.labels import (
+from lavaflow.labels import (
     read_lavaflow_labels,
 )
-from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import (
+from lavaflow.models import (
     LavaFlowLabel,
 )
+from lavaflow.paths import LAVAFLOW_LABELS_NAME
+from mars_multisensor_dataset.analysis import paths as labelled
 from mars_multisensor_dataset.analysis.ground_truth.nomenclature.catalogue import LABELS
 from mars_multisensor_dataset.analysis.ground_truth.nomenclature.models.label import (
     Label,
@@ -133,7 +134,7 @@ class DatasetBuild:
         Returns:
             crops: Every crop the build holds, a track over a tile, as written.
         """
-        return read_lavaflow_labels(self.local_root(labelled.LAVAFLOW_LABELS_NAME))
+        return read_lavaflow_labels(self.local_root(LAVAFLOW_LABELS_NAME))
 
     def read_observation(self, path: str) -> Observation:
         """Return one stored observation, read out of the object it was written as.
