@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 import numpy as np
-from lavaflow.models import (
+from lavaflow.configs import (
     NONE,
     REFLECTOR,
 )
