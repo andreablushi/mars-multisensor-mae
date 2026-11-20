@@ -8,7 +8,7 @@ from itertools import chain, repeat
 
 import numpy as np
 import torch
-from mars_multisensor_dataset.analysis.ground_truth.swim.sample import (
+from ice_consistency.sample import (
     GRID_SPACING_KM,
     METRES_PER_KM,
 )

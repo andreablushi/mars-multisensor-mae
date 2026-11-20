@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import numpy as np
 import torch
-from mars_multisensor_dataset.analysis.ground_truth.lavaflow.models import REFLECTOR
+from lavaflow.models import REFLECTOR
 from mars_multisensor_dataset.building.configs import sharad
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
