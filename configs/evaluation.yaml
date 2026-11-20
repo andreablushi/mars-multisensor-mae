@@ -36,7 +36,7 @@ reconstruction:
 # Lava flow retrieval over SHARAD crops, run with every evaluation or alone with
 # --lavaflow.
 lavaflow:
-  # Build the crops and their verdicts are read from, null to skip the retrieval.
+  # Benchmark part the crops and their verdicts are read from, null to skip the retrieval.
   build: lavaflow
   # The images of a few queries beside what they retrieve, which no score reads.
   qualitative:
