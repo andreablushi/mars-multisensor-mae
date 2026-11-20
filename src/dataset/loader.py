@@ -10,8 +10,8 @@ from functools import partial
 
 import numpy as np
 import torch
+from ice_consistency.analysis.position import grid_offsets_from_tile_centre
 from ice_consistency.models import IceLabel
-from ice_consistency.sample import grid_offsets
 from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.configs import mola, sharad
 from mars_multisensor_dataset.common.disk.files import atomic_path
@@ -235,7 +235,7 @@ def read_covering_crops_batch(
         scored: Which points each crop predicts: those within reach of its read
             patches, and those of no crop in the crop centred nearest them. (C, P * P)
     """
-    points = np.stack(grid_offsets(), -1).reshape(-1, 2)  # (P * P, 2)
+    points = np.stack(grid_offsets_from_tile_centre(), -1).reshape(-1, 2)  # (P * P, 2)
     samples, tiles, scored = [], [], []
     for identity in identities:
         sample = read_cached_tile(build, identity, layout, cache)

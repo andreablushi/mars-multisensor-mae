@@ -8,9 +8,9 @@ from urllib.parse import urlparse
 
 import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
-from ice_consistency.labels import ICE_LABELS
+from ice_consistency.analysis.artifacts import ICE_LABELS
+from ice_consistency.configs import ICE_LABELS_NAME
 from ice_consistency.models import IceLabel
-from ice_consistency.paths import ICE_LABELS_NAME
 from mars_multisensor_dataset.common.disk import parquet
 from urllib3.exceptions import SSLError
 

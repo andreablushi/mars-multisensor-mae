@@ -8,10 +8,8 @@ from itertools import chain, repeat
 
 import numpy as np
 import torch
-from ice_consistency.sample import (
-    GRID_SPACING_KM,
-    METRES_PER_KM,
-)
+from ice_consistency.configs import GRID_SPACING_KM
+from mars_multisensor_dataset.common.maths.physics import METRES_PER_KM
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
 from wandb.sdk.wandb_run import Run
