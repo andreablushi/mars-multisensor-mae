@@ -11,13 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from lavaflow.labels import (
-    read_lavaflow_labels,
-)
+from lavaflow.analysis.artifacts import read_lavaflow_labels
+from lavaflow.configs import LAVAFLOW_LABELS_NAME
 from lavaflow.models import (
     LavaFlowLabel,
 )
-from lavaflow.paths import LAVAFLOW_LABELS_NAME
 from mars_multisensor_dataset.analysis import paths as labelled
 from mars_multisensor_dataset.analysis.ground_truth.nomenclature.catalogue import LABELS
 from mars_multisensor_dataset.analysis.ground_truth.nomenclature.models.label import (

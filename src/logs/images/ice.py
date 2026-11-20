@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import numpy as np
-from ice_consistency.sample import (
+from ice_consistency.configs import (
     GRID_POINTS,
     GRID_SPACING_KM,
 )

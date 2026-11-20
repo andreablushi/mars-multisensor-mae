@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from ice_consistency.sample import grid_offsets
+from ice_consistency.analysis.position import grid_offsets_from_tile_centre
 from torch import Tensor, nn
 from torch.nn import functional
 
@@ -35,7 +35,9 @@ class AttentiveProbe(nn.Module):
         super().__init__()
         self.query = nn.Parameter(torch.zeros(dim))  # (D)
         nn.init.normal_(self.query, std=0.02)
-        points = torch.as_tensor(np.stack(grid_offsets(), -1), dtype=torch.float32)
+        points = torch.as_tensor(
+            np.stack(grid_offsets_from_tile_centre(), -1), dtype=torch.float32
+        )
         self.register_buffer("points", functional.pad(points, (0, 1)).flatten(0, 1))
         self.blocks = Transformer(dim, heads, depth)
         self.predict = nn.Linear(dim, targets)
