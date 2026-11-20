@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from dhub.store import published_dataset_build
+from dhub.store import published_build, published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
@@ -142,7 +142,9 @@ def run_evaluation(
     if LAVAFLOW in asked:
         evaluate_lavaflow(
             model,
-            published_dataset_build(config, settings.build),
+            published_build(
+                config, f"{config.dataset.version}-{settings.build}", "dataset"
+            ),
             layout.sizes[name],
             layout.shapes[name],
             config.evaluation.batch_size,

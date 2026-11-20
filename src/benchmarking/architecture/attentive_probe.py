@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from mars_multisensor_dataset.analysis.ground_truth.swim.sample import grid_offsets
+from ice_consistency.sample import grid_offsets
 from torch import Tensor, nn
 from torch.nn import functional
 

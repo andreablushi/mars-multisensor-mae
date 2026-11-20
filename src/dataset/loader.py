@@ -10,8 +10,8 @@ from functools import partial
 
 import numpy as np
 import torch
-from mars_multisensor_dataset.analysis.ground_truth.swim.models import IceLabel
-from mars_multisensor_dataset.analysis.ground_truth.swim.sample import grid_offsets
+from ice_consistency.models import IceLabel
+from ice_consistency.sample import grid_offsets
 from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.configs import mola, sharad
 from mars_multisensor_dataset.common.disk.files import atomic_path
