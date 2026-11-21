@@ -52,6 +52,7 @@ def train(
     aligned: Sequence[str],
     pooling: Pooling,
     temperature: float,
+    uniformity_weight: float,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -81,6 +82,7 @@ def train(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        uniformity_weight: What the mean uniformity is multiplied by in the loss.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
         device: Where the model runs.
@@ -118,6 +120,7 @@ def train(
         aligned=aligned,
         pooling=pooling,
         temperature=temperature,
+        uniformity_weight=uniformity_weight,
         device=device,
     )
     generators = mask_generators(model.encoders, seed, device)

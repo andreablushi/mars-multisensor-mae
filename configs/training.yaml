@@ -23,6 +23,9 @@ contrastive:
   instruments: ${model.instruments}
   temperature: 0.5
 
+# Weight of U-MAE's uniformity (mean squared cosine of each instrument's tile vectors).
+uniformity_weight: 0.0
+
 # Whether the decoders read the acquisition angles the dataset lists.
 acquisition: true
 # Whether the encoders read them too; false conditions the decoders alone, as AlphaEarth.

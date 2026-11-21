@@ -103,6 +103,7 @@ class TrainingConfig:
         max_grad_norm: The norm every step's gradient is clipped to.
         masking: Which patches are hidden.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
+        uniformity_weight: What U-MAE's mean uniformity is multiplied by in the loss.
         acquisition: Whether the decoders read the acquisition angles.
         acquisition_in_encoders: Whether the encoders read them too, when the
             decoders do.
@@ -118,6 +119,7 @@ class TrainingConfig:
     max_grad_norm: float
     masking: MaskingConfig
     contrastive: ContrastiveConfig
+    uniformity_weight: float
     acquisition: bool
     acquisition_in_encoders: bool
     checkpoints: str

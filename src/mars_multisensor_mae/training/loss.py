@@ -1,4 +1,4 @@
-"""What the model is trained to make small: the reconstruction error and MIM."""
+"""What the model is trained to make small: reconstruction, MIM and uniformity."""
 
 from __future__ import annotations
 
@@ -59,23 +59,46 @@ def mim(
     return errors
 
 
+def uniformity(pooled: Mapping[str, Tensor]) -> dict[str, Tensor]:
+    """Return U-MAE's uniformity of each instrument, its mean squared cosine.
+
+    Args:
+        pooled: Each instrument's tile vector as one unit vector. (B, D)
+
+    Returns:
+        errors: Each instrument's mean squared cosine over every pair of tiles. ()
+    """
+    return {
+        name: (vectors @ vectors.T).pow(2).mean() for name, vectors in pooled.items()
+    }
+
+
 def total(
-    terms: Mapping[str, Tensor], mim_errors: Mapping[str, Tensor]
+    terms: Mapping[str, Tensor],
+    mim_errors: Mapping[str, Tensor],
+    uniformity_errors: Mapping[str, Tensor],
+    uniformity_weight: float,
 ) -> dict[str, Tensor]:
-    """Return every term and the loss, the reconstruction sum plus the mean MIM.
+    """Return every term and the loss: reconstruction, mean MIM, weighted uniformity.
 
     Args:
         terms: Each reconstruction term, keyed "<term>/<instrument>". ()
         mim_errors: Each aligned pair's MIM error, none when nothing is aligned. ()
+        uniformity_errors: Each instrument's uniformity. ()
+        uniformity_weight: What the mean uniformity is multiplied by in the loss.
 
     Returns:
-        terms: The same terms, "mim/<pair>" for every MIM term, and "loss". ()
+        terms: The same terms, "mim/<pair>", "unif/<instrument>" and "loss". ()
     """
     loss = sum(terms.values())
     if mim_errors:
         loss = loss + sum(mim_errors.values()) / len(mim_errors)
+    loss = loss + uniformity_weight * sum(uniformity_errors.values()) / len(
+        uniformity_errors
+    )
     return (
         dict(terms)
         | {f"mim/{pair}": error for pair, error in mim_errors.items()}
+        | {f"unif/{name}": error for name, error in uniformity_errors.items()}
         | {"loss": loss}
     )

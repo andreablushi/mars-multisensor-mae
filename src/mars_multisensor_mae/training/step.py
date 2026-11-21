@@ -10,7 +10,12 @@ from torch import Tensor
 from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.architecture.models.tokens import Tokens
-from mars_multisensor_mae.training.loss import mim, reconstruction_error, total
+from mars_multisensor_mae.training.loss import (
+    mim,
+    reconstruction_error,
+    total,
+    uniformity,
+)
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype:
@@ -63,6 +68,7 @@ def batch_step(
     aligned: Sequence[str],
     pooling: Pooling,
     temperature: float,
+    uniformity_weight: float,
     generators: Mapping[str, torch.Generator],
     device: torch.device,
 ) -> dict[str, Tensor]:
@@ -75,6 +81,7 @@ def batch_step(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
+        uniformity_weight: What the mean uniformity is multiplied by in the loss.
         generators: What fixes each instrument's masks, on the device.
         device: Where the model runs.
 
@@ -92,4 +99,9 @@ def batch_step(
         for kind in ("umr", "cmr")
         for name in batch
     }
-    return total(terms, mim(pooled, aligned, temperature))
+    return total(
+        terms,
+        mim(pooled, aligned, temperature),
+        uniformity(pooled),
+        uniformity_weight,
+    )
