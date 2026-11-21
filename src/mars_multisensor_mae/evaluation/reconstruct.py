@@ -17,11 +17,8 @@ from mars_multisensor_mae.architecture.models.context import Context
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import mask_generators
 from mars_multisensor_mae.configs.schema import DrawnTile
-from mars_multisensor_mae.dataset.loader import padded_tokens
 from mars_multisensor_mae.dataset.models.patch import (
-    InstrumentPatches,
     PatchLayout,
-    TileSample,
 )
 from mars_multisensor_mae.dataset.patches import drawn_arrays
 from mars_multisensor_mae.dataset.store import DatasetBuild
@@ -149,27 +146,6 @@ def reconstruction_and_attention(
     return attention, ranged
 
 
-def batch_on_device(
-    sample: Mapping[str, Mapping[str, np.ndarray]], device: torch.device
-) -> dict[str, Tokens]:
-    """Return one tile's arrays as a batch of one, on the device.
-
-    Args:
-        sample: Each instrument's arrays, as drawn_arrays names them.
-        device: Where the model runs.
-
-    Returns:
-        batch: Each instrument's patches, a batch of one.
-    """
-    patches = TileSample(
-        {
-            name: InstrumentPatches(*(held[key] for key in InstrumentPatches._fields))
-            for name, held in sample.items()
-        }
-    )
-    return {name: one.to(device) for name, one in padded_tokens([patches]).items()}
-
-
 def masked_reconstruction(
     model: CrossSensorMAE,
     sample: Mapping[str, Mapping[str, np.ndarray]],
@@ -189,7 +165,12 @@ def masked_reconstruction(
     Returns:
         masked: Each instrument's "hidden" patches, and those rebuilt under "umr".
     """
-    batch = batch_on_device(sample, device)
+    batch = {
+        name: Tokens(*(torch.as_tensor(held[key])[None] for key in Tokens._fields)).to(
+            device
+        )
+        for name, held in sample.items()
+    }
     visible, hidden = masking_random_correspondence(
         batch, mask_ratio, mask_generators(batch, seed, device)
     )
@@ -223,10 +204,14 @@ def cross_modal_reconstruction_attention(
         attended: The query's arrays plus "cmr", every other's plus rolled_attention's
             drawn and near over uniform as "overall" and "attention", "share", "cls".
     """
-    batch = batch_on_device(sample, device)
-    present = {name: one.present for name, one in batch.items()}
+    batch = {
+        name: Tokens(*(torch.as_tensor(held[key])[None] for key in Tokens._fields)).to(
+            device
+        )
+        for name, held in sample.items()
+    }
     with torch.no_grad():
-        encoded = model.embed_tokens(batch, present)
+        encoded = model.embed_tokens(batch)
     sources = [name for name in sample if name != query]
     # CMR reads the others without the CLS of every instrument
     context = encoded.cross_modal_reconstruction_context(query)
@@ -235,7 +220,7 @@ def cross_modal_reconstruction_attention(
         context,
         batch[query].position,
         batch[query].acquisition,
-        present[query],
+        batch[query].present,
     )
     readable = int(context.readable.sum())
     # Each instrument's CLS, then its tokens

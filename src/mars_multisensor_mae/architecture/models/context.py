@@ -88,7 +88,10 @@ class EncodedBatch(NamedTuple):
         )
 
     def pooled_tile_vectors(
-        self, pooling: Pooling, readable: Mapping[str, Tensor] | None = None
+        self,
+        pooling: Pooling,
+        readable: Mapping[str, Tensor] | None = None,
+        unit: bool = True,
     ) -> dict[str, Tensor]:
         """Return each instrument's tile vector, the CLS or GAP of its readable tokens.
 
@@ -96,9 +99,10 @@ class EncodedBatch(NamedTuple):
             pooling: What a tile vector is, "CLS" or "GAP".
             readable: Which of each instrument's tokens GAP averages, by default the
                 ones its context counts. (B, K)
+            unit: Whether each vector is normalised, else kept raw, GAP their mean.
 
         Returns:
-            pooled: Each instrument's tile vector as one unit vector, in float. (B, D)
+            pooled: Each instrument's tile vector, in float. (B, D)
         """
         pooled = {}
         for name, held in self.instruments.items():
@@ -107,5 +111,7 @@ class EncodedBatch(NamedTuple):
             else:
                 counted = held.readable[:, 1:] if readable is None else readable[name]
                 vector = (held.tokens[:, 1:].float() * counted.unsqueeze(-1)).sum(1)
-            pooled[name] = functional.normalize(vector, dim=-1)
+                if not unit:
+                    vector = vector / counted.sum(1, keepdim=True).clamp(min=1)
+            pooled[name] = functional.normalize(vector, dim=-1) if unit else vector
         return pooled
