@@ -18,25 +18,20 @@ from torch.utils.data import DataLoader
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import named_generator
 from mars_multisensor_mae.configs.paths import ready_array_path
-from mars_multisensor_mae.dataset.models.patch import PatchLayout
-from mars_multisensor_mae.dataset.patches import (
-    cut_tile_patches,
-    patch_arrays,
-    patch_budget_selection,
-    patch_ground_spots,
+from mars_multisensor_mae.dataset.models.patch import (
+    InstrumentPatches,
+    PatchLayout,
+    TileSample,
 )
+from mars_multisensor_mae.dataset.patches import cut_tile_patches
 from mars_multisensor_mae.dataset.store import DatasetBuild
 
-HALVED = ("values", "condition")
 
-
-def padded_tokens(
-    samples: Sequence[Mapping[str, Mapping[str, np.ndarray]]],
-) -> dict[str, Tokens]:
+def padded_tokens(samples: Sequence[TileSample]) -> dict[str, Tokens]:
     """Return every instrument's patches over some tiles, padded to one count.
 
     Args:
-        samples: Each tile's patch arrays of each instrument.
+        samples: Each tile's patches.
 
     Returns:
         batch: Each instrument's patches over the tiles, keyed as ODE names it, what
@@ -44,11 +39,14 @@ def padded_tokens(
     """
     batch = {}
     # Pad each instrument's patches across the batch's tiles
-    for name in samples[0]:
+    for name in samples[0].instruments:
         # Every array a model reads padded with zeros to the most patches any tile has
         padded = {
             key: pad_sequence(
-                [torch.as_tensor(one[name][key]) for one in samples],
+                [
+                    torch.as_tensor(getattr(one.instruments[name], key))
+                    for one in samples
+                ],
                 batch_first=True,
             )
             for key in Tokens._fields
@@ -62,8 +60,8 @@ def read_cached_tile(
     identity: str,
     layout: PatchLayout,
     cache: bool = True,
-) -> dict[str, dict[str, np.ndarray]]:
-    """Return one tile's patch arrays from the run's cache, cut into it when missing.
+) -> TileSample:
+    """Return one tile's patches from the run's cache, cut into it when missing.
 
     Args:
         build: The build the tile is read from.
@@ -74,8 +72,8 @@ def read_cached_tile(
             in memory alone.
 
     Returns:
-        sample: Each instrument's patch arrays, keyed as ODE names it, values and
-            condition in the build's half precision except MOLA's elevations.
+        sample: Each instrument's patches, values and condition in the build's half
+            precision except MOLA's elevations.
     """
     paths = {
         name: {
@@ -92,31 +90,33 @@ def read_cached_tile(
                 ),
                 key,
             )
-            for key in Tokens._fields
+            for key in InstrumentPatches._fields
         }
         for name, size in layout.sizes.items()
     }
     rows = build.read_observation_metadata()[identity]
     if not all(path.is_file() for held in paths.values() for path in held.values()):
-        cut = {
-            name: {
-                key: array.astype(np.float16)
-                if key in HALVED and name != mola.LAYOUT.instrument
-                else array
-                for key, array in patch_arrays(
-                    patches,
-                    name,
-                    layout.shapes[name],
-                    rows[name][0].axes,
-                    build.acquisition[name],
-                ).items()
-            }
-            for name, patches in cut_tile_patches(rows, build, layout.sizes).items()
-        }
+        cut = {}
+        for name, patches in cut_tile_patches(rows, build, layout).items():
+            stacked = InstrumentPatches.stacked(
+                patches,
+                name,
+                layout.shapes[name],
+                rows[name][0].axes,
+                build.acquisition[name],
+            )
+            cut[name] = (
+                stacked
+                if name == mola.LAYOUT.instrument
+                else stacked._replace(
+                    values=stacked.values.astype(np.float16),
+                    condition=stacked.condition.astype(np.float16),
+                )
+            )
         if not cache:
-            return cut
-        for name, arrays in cut.items():
-            for key, array in arrays.items():
+            return TileSample(cut)
+        for name, held in cut.items():
+            for key, array in held._asdict().items():
                 if key == "measured":
                     array = np.packbits(array, axis=-1)
                 with (
@@ -124,17 +124,16 @@ def read_cached_tile(
                     written.open("wb") as file,
                 ):
                     np.save(file, array)
-    sample = {
-        name: {key: np.load(path, mmap_mode="c") for key, path in held.items()}
-        for name, held in paths.items()
-    }
-    for name, held in sample.items():
+    loaded = {}
+    for name, held in paths.items():
+        arrays = {key: np.load(path, mmap_mode="c") for key, path in held.items()}
         # What is measured is kept a bit a sample, along the last axis it runs on
         last = layout.shapes[name][-1] if rows[name][0].axes[-1] == Axis.GROUND else 1
-        held["measured"] = np.unpackbits(held["measured"], axis=-1, count=last).view(
-            bool
-        )
-    return sample
+        arrays["measured"] = np.unpackbits(
+            arrays["measured"], axis=-1, count=last
+        ).view(bool)
+        loaded[name] = InstrumentPatches(**arrays)
+    return TileSample(loaded)
 
 
 def read_cached_batch(
@@ -174,9 +173,9 @@ def read_cached_batch(
                 random.random() if seed is None else f"{seed}/{identity}"
             )
             # One patch spot of any instrument is the centre all are cut around
-            grounds = patch_ground_spots(sample)
+            grounds = sample.ground_spots
             centre = grounds[draw.randrange(len(grounds))]
-            sample = patch_budget_selection(sample, budget, centre)
+            sample = sample.budget_cut(budget, centre)
         samples.append(sample)
     return padded_tokens(samples), list(identities)
 

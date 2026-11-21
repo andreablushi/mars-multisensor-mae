@@ -12,7 +12,6 @@ from wandb.sdk.wandb_run import Run
 
 from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
-from mars_multisensor_mae.dataset.patches import patch_shapes
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from mars_multisensor_mae.logs.tracker import console_logger, logged_checkpoint
 
@@ -55,8 +54,11 @@ def built_cross_sensor_mae(
         layout: How each instrument is cut into patches, and the shape the model
             reads one in.
     """
-    sizes = {name: patchsize[name] for name in instruments}
-    shapes = patch_shapes(build.read_observation_metadata(), sizes)
+    layout = PatchLayout.from_index(
+        build.read_observation_metadata(),
+        {name: patchsize[name] for name in instruments},
+    )
+    shapes = layout.shapes
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.set_float32_matmul_precision("high")
     model = CrossSensorMAE(
@@ -76,7 +78,7 @@ def built_cross_sensor_mae(
         decoder_depth,
         seed,
     ).to(device)
-    return model, device, PatchLayout(sizes, shapes)
+    return model, device, layout
 
 
 def cross_sensor_mae_with_logged_weights(
