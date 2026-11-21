@@ -24,9 +24,6 @@ masking:
   # The range a dynamic share is drawn uniform from.
   dynamic_range: [0.25, 0.75]
 
-# What UMR and CMR measure, MSE or RMSE.
-reconstruction_error: RMSE
-
 # CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.
 contrastive:
   pooling: GAP

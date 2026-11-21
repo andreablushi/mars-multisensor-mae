@@ -12,20 +12,17 @@ from torch.nn import functional
 from architecture.models.tokens import Tokens
 
 
-def reconstruction_error(
-    prediction: Tensor, target: Tokens, scored: Tensor, measure: str
-) -> Tensor:
-    """Return the mean squared error over the scored patches, or its root.
+def reconstruction_error(prediction: Tensor, target: Tokens, scored: Tensor) -> Tensor:
+    """Return the root mean squared error over the scored patches.
 
     Args:
         prediction: The predicted patches. (B, K, *P)
         target: The instrument's patches over the batch.
         scored: Which patches are scored. (B, K)
-        measure: MSE, or RMSE for its root.
 
     Returns:
         error: Each scored patch's squared error over its measured samples,
-            averaged over the patches, rooted for RMSE. ()
+            averaged over the patches, then rooted. ()
     """
     measured = target.measured.to(target.values.dtype).expand_as(target.values)
     samples = tuple(range(2, target.values.dim()))
@@ -33,7 +30,7 @@ def reconstruction_error(
     error = ((prediction - target.values) ** 2 * measured).sum(dim=samples)
     error = error / measured.sum(dim=samples).clamp(min=1)  # (B, K)
     error = error[scored].mean()  # ()
-    return error.sqrt() if measure == "RMSE" else error
+    return error.sqrt()
 
 
 def mim(

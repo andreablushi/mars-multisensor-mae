@@ -50,7 +50,6 @@ def train(
     aligned: Sequence[str],
     pooling: Pooling,
     temperature: float,
-    measure: str,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -86,7 +85,6 @@ def train(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
-        measure: The reconstruction error, MSE or RMSE.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
         device: Where the model runs.
@@ -125,7 +123,6 @@ def train(
         aligned=aligned,
         pooling=pooling,
         temperature=temperature,
-        measure=measure,
         device=device,
     )
     training_terms = partial(
@@ -138,6 +135,7 @@ def train(
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
     for epoch in range(num_epochs):
+        model.train()
         for step in range(
             epoch * steps_per_epoch + 1, (epoch + 1) * steps_per_epoch + 1
         ):
@@ -156,6 +154,7 @@ def train(
             scaler.update()
             scheduler.step()
             log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
+        model.eval()
         metrics = validation_terms(
             validation, step_terms, mask_generators(model.encoders, seed, device)
         )

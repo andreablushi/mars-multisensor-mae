@@ -94,18 +94,18 @@ uv run --group digitalhub python scripts/benchmark.py --dh --ref main default/ma
   neither runs both.
 - The probe regresses SWIM's three targets at every grid point of a tile, each tile
   cut to the dataset's budget around one centre in training, up to
-  `benchmark.budget_scale` times it (1, the size the test reads), with only the
+  `benchmark.finetune.budget_scale` times it (1, the size the test reads), with only the
   points near a read patch scored. Validation and test read each tile as the budget
   crops that cover its points. Fine-tuning trains the encoders and the cross-sensor
   encoder whole, so on `random` it is training from scratch. The loss divides each
   target by its spread over the training tiles.
-- Each share trains for `benchmark.finetune.passes` over its tiles, kept between
-  `min_steps` and `max_steps`, and each protocol has its own optimizer, schedule
+- Each share trains for `benchmark.finetune.passes` over its tiles, never fewer
+  than `min_steps` steps, and each protocol has its own optimizer, schedule
   and gradient scaler.
 - RMSE and R2 measure the fit over every SWIM cell of the test tiles. Each protocol
   is kept at its best validation R2, averaged over the targets, measured
-  `benchmark.finetune.validations_per_share` times a share on
-  `benchmark.validation_sample_size` validation tiles.
+  `benchmark.validation.per_share` times a share on
+  `benchmark.validation.sample_size` validation tiles.
 - The drawn tiles show SWIM's targets beside the head's, a row per target, each
   coloured in viridis over the range its panels span.
 - Fewer `benchmark.instruments` than the model reads name the run for those left

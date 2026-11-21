@@ -76,21 +76,18 @@ def run_benchmark(
         f"{round(100 * fraction)}pct": drawn[: round(fraction * len(training))]
         for fraction in sorted(config.benchmark.fractions)
     }
-    # Each share trains for its passes, kept within the fewest and the most steps
+    # Each share trains for its passes, never fewer than the fewest steps
     share_steps = {
-        share: min(
-            max(
-                round(settings.passes * len(tiles) / settings.batch_size),
-                settings.min_steps,
-            ),
-            settings.max_steps,
+        share: max(
+            round(settings.passes * len(tiles) / settings.batch_size),
+            settings.min_steps,
         )
         for share, tiles in shares.items()
     }
     # Every share is validated on the same first tiles of one draw
     checked = named_sample(
         validation,
-        config.benchmark.validation_sample_size,
+        config.benchmark.validation.sample_size,
         config.dataset.seed,
         "benchmark/validation",
     )
@@ -119,13 +116,13 @@ def run_benchmark(
                 spread,
                 layout.only(config.benchmark.instruments),
                 config.dataset.budget,
-                config.benchmark.budget_scale,
+                settings.budget_scale,
                 settings.batch_size,
-                config.benchmark.batch_size,
+                config.benchmark.evaluation.batch_size,
                 workers,
                 num_steps,
                 round(num_steps * settings.warmup_share),
-                math.ceil(num_steps / settings.validations_per_share),
+                math.ceil(num_steps / config.benchmark.validation.per_share),
                 settings.head_learning_rate,
                 settings.encoder_learning_rate,
                 settings.weight_decay,
@@ -153,7 +150,7 @@ def run_benchmark(
             layout,
             config.dataset.budget,
             finetuning.REACH_M,
-            config.benchmark.batch_size,
+            config.benchmark.evaluation.batch_size,
             config.benchmark.evaluation.tiles,
             config.benchmark.evaluation.shown,
             config.dataset.seed,
