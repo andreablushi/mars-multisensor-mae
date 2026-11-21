@@ -82,7 +82,7 @@ def built_cross_sensor_mae(
     return model, device, PatchLayout(sizes, shapes)
 
 
-def trained_model(
+def cross_sensor_mae_with_logged_weights(
     model: CrossSensorMAE, run: Run, run_name: str, artifacts_root: Path
 ) -> CrossSensorMAE:
     """Return the model with a logged run's latest weights, a "random" run's as drawn.

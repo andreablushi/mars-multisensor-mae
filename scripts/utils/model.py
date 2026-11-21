@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from mars_multisensor_mae.architecture.load import built_cross_sensor_mae
 from mars_multisensor_mae.architecture.mae import CrossSensorMAE
-from mars_multisensor_mae.architecture.pretrained import built_cross_sensor_mae
 from mars_multisensor_mae.configs.schema import Config
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
 from mars_multisensor_mae.dataset.store import DatasetBuild

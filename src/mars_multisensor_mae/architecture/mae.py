@@ -2,74 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
-import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
 from mars_multisensor_mae.architecture.components.crossencoder import CrossSensorEncoder
 from mars_multisensor_mae.architecture.components.decoder import Decoder
 from mars_multisensor_mae.architecture.components.encoder import Encoder
-from mars_multisensor_mae.architecture.models.context import Context, Pooling
+from mars_multisensor_mae.architecture.models.context import (
+    Context,
+    EncodedBatch,
+    Pooling,
+)
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import named_rng
-
-
-def global_tokens(
-    contexts: dict[str, Context], readable: dict[str, Tensor], pooling: Pooling
-) -> dict[str, Tensor]:
-    """Return each instrument's tile vector, its CLS or the GAP of its readable tokens.
-
-    Args:
-        contexts: Each instrument's CLS token, then its tokens. (B, 1 + K, D)
-        readable: Which of each instrument's tokens hold something. (B, K)
-        pooling: What a tile vector is, "CLS" or "GAP".
-
-    Returns:
-        pooled: Each instrument's tile vector as one unit vector, in float. (B, D)
-    """
-    return {
-        name: functional.normalize(
-            held.tokens[:, 0].float()
-            if pooling == Pooling.CLS
-            else (held.tokens[:, 1:].float() * readable[name].unsqueeze(-1)).sum(1),
-            dim=-1,
-        )
-        for name, held in contexts.items()
-    }
-
-
-def umr_context(contexts: Mapping[str, Context], cls: Tensor, name: str) -> Context:
-    """Return what UMR rebuilds one instrument from: the overall CLS, then its own.
-
-    Args:
-        contexts: Each instrument's CLS token, then its tokens.
-        cls: The token read over every instrument together. (B, D)
-        name: The instrument rebuilt.
-
-    Returns:
-        context: The overall CLS at the tile centre, then the instrument's own context.
-    """
-    lead = Context(
-        cls.unsqueeze(1),
-        cls.new_zeros(len(cls), 1, 3),
-        cls.new_ones(len(cls), 1, dtype=torch.bool),
-    )
-    return Context.joined([lead, contexts[name]])
-
-
-def cmr_context(contexts: Mapping[str, Context], name: str) -> Context:
-    """Return what CMR rebuilds one instrument from: every other's, no overall CLS.
-
-    Args:
-        contexts: Each instrument's CLS token, then its tokens.
-        name: The instrument rebuilt.
-
-    Returns:
-        context: Every other instrument's context, in their order.
-    """
-    return Context.joined([held for other, held in contexts.items() if other != name])
 
 
 class CrossSensorMAE(nn.Module):
@@ -158,7 +103,7 @@ class CrossSensorMAE(nn.Module):
 
     def embed_tokens(
         self, batch: dict[str, Tokens], readable: dict[str, Tensor]
-    ) -> tuple[Tensor, dict[str, Context]]:
+    ) -> EncodedBatch:
         """Return the CLS of every instrument, and each one's tokens in shared space.
 
         Args:
@@ -166,9 +111,8 @@ class CrossSensorMAE(nn.Module):
             readable: Which patches each encoder may read. (B, K)
 
         Returns:
-            cls: The token read over every instrument together. (B, D)
-            contexts: Each instrument's CLS token, then its tokens, meaningful where
-                readable, with their centres and which of them count. (B, 1 + K, D)
+            encoded: The token read over every instrument together, and each one's
+                CLS token, then its tokens, meaningful where readable.
         """
         with_cls = {
             name: one.readable_and_position_with_cls(readable[name])
@@ -179,12 +123,15 @@ class CrossSensorMAE(nn.Module):
             [counted for counted, _ in with_cls.values()],
             [position for _, position in with_cls.values()],
         )
-        return cls, {
-            name: Context(token, position, counted)
-            for (name, (counted, position)), token in zip(
-                with_cls.items(), tokens, strict=True
-            )
-        }
+        return EncodedBatch(
+            cls,
+            {
+                name: Context(token, position, counted)
+                for (name, (counted, position)), token in zip(
+                    with_cls.items(), tokens, strict=True
+                )
+            },
+        )
 
     def forward(
         self,
@@ -203,30 +150,34 @@ class CrossSensorMAE(nn.Module):
 
         Returns:
             predictions: Under "umr" each instrument's patches from its own tokens and
-                every CLS, under "cmr" from every other's tokens alone. (B, K, *P)
+                the overall CLS, under "cmr" from every other's tokens alone. (B, K, *P)
             projected: Each instrument's tile vector through the projector, as one
                 unit vector, in float. (B, P)
         """
-        read = {name: one.kept(visible[name]) for name, one in batch.items()}
-        seen = {name: kept for name, (kept, _) in read.items()}
-        readable = {name: counted for name, (_, counted) in read.items()}
-        cls, contexts = self.embed_tokens(seen, readable)
+        read = {
+            name: one.selected_slots_packed_to_front(visible[name])
+            for name, one in batch.items()
+        }
+        seen = {name: packed for name, (packed, _) in read.items()}
+        readable = {name: filled for name, (_, filled) in read.items()}
+        encoded = self.embed_tokens(seen, readable)
         predictions = {"umr": {}, "cmr": {}}
         for name, one in batch.items():
             # Only the hidden slots are asked, packed to the front, then put back
-            asked, packed = one.kept(hidden[name])
-            passes = self.decoders[name](
-                umr_context(contexts, cls, name),
-                cmr_context(contexts, name),
-                asked.position,
-                asked.acquisition,
-                packed,
-            )  # (B, K', *P) each
-            for kind, held in zip(("umr", "cmr"), passes, strict=True):
-                placed = held.new_zeros(*hidden[name].shape, *held.shape[2:])
-                placed[hidden[name]] = held[packed]
+            asked, filled = one.selected_slots_packed_to_front(hidden[name])
+            # UMR reads the overall CLS and its own tokens, CMR every other instrument's
+            contexts = {
+                "umr": encoded.unimodal_reconstruction_context(name),
+                "cmr": encoded.cross_modal_reconstruction_context(name),
+            }
+            for kind, context in contexts.items():
+                written = self.decoders[name](
+                    context, asked.position, asked.acquisition, filled
+                )  # (B, K', *P)
+                placed = written.new_zeros(*hidden[name].shape, *written.shape[2:])
+                placed[hidden[name]] = written[filled]
                 predictions[kind][name] = placed  # (B, K, *P)
         return predictions, {
             name: functional.normalize(self.projector(held).float(), dim=-1)
-            for name, held in global_tokens(contexts, readable, pooling).items()
+            for name, held in encoded.pooled_tile_vectors(pooling).items()
         }
