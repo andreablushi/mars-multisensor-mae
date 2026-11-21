@@ -99,7 +99,7 @@ def named_sample[T](items: Sequence[T], count: int, seed: int, name: str) -> lis
 def mask_generators(
     names: Iterable[str], seed: int, device: torch.device
 ) -> dict[str, torch.Generator]:
-    """Return one mask generator per instrument and the ground, each on its own stream.
+    """Return one mask generator per instrument, each on its own stream.
 
     Args:
         names: The instruments.
@@ -108,9 +108,6 @@ def mask_generators(
 
     Returns:
         generators: Each instrument's generator, so its own draws stay put whatever
-            other instruments a setup reads, and the ground's under "ground".
+            other instruments a setup reads.
     """
-    return {
-        name: named_generator(seed, f"masks/{name}", device)
-        for name in (*names, "ground")
-    }
+    return {name: named_generator(seed, f"masks/{name}", device) for name in names}
