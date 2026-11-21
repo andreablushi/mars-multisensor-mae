@@ -18,7 +18,3 @@ stages:
     function: evaluate-mae
     profile: 1xv100-shared
     resources: {cpu: "4", mem: 16Gi, disk: 30Gi}
-  benchmark:
-    function: benchmark-mae
-    profile: 1xv100-shared
-    resources: {cpu: "4", mem: 24Gi, disk: 240Gi}
