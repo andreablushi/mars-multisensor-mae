@@ -58,7 +58,6 @@ def train(
     pooling: Pooling,
     temperature: float,
     momentum_range: Sequence[float],
-    measure: str,
     checkpoints: str,
     seed: int,
     device: torch.device,
@@ -98,7 +97,6 @@ def train(
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
         momentum_range: The target encoder's EMA momentum at the start and the end.
-        measure: What the detached pixel heads measure, MSE or RMSE.
         checkpoints: Where checkpoints are written, relative to the repository.
         seed: What fixes the masks, the order and the validation cuts.
         device: Where the model runs.
@@ -140,7 +138,6 @@ def train(
         aligned=aligned,
         pooling=pooling,
         temperature=temperature,
-        measure=measure,
         device=device,
     )
     training_terms = partial(
@@ -153,6 +150,7 @@ def train(
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
     for epoch in range(num_epochs):
+        model.train()
         for step in range(
             epoch * steps_per_epoch + 1, (epoch + 1) * steps_per_epoch + 1
         ):
@@ -174,6 +172,7 @@ def train(
                 target, model, ema_momentum(step, num_steps, momentum_range)
             )
             log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
+        model.eval()
         metrics = validation_terms(
             validation, step_terms, mask_generators(model.encoders, seed, device)
         )

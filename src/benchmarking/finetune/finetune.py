@@ -17,7 +17,7 @@ from wandb.sdk.wandb_run import Run
 from benchmarking.architecture.model import BenchmarkModel
 from benchmarking.evaluation.metrics import rmse_and_r2
 from benchmarking.finetune.loss import mse
-from benchmarking.finetune.optimizer import finetune_optimizer_and_schedule
+from benchmarking.finetune.optimizer import finetune_optimizers_and_schedules
 from benchmarking.finetune.step import batch_step, scored_swim_points
 from benchmarking.finetune.validate import validate
 from dataset.loader import tile_loader
@@ -74,7 +74,8 @@ def finetune(
         budget_scale: The most a training batch's budget is multiplied by.
         training_batch_size: How many tiles one training batch holds, each cut to
             the budget around one centre.
-        batch_size: How many tiles one validation batch holds, each read whole.
+        batch_size: How many tiles one validation batch holds, each read as the
+            budget crops covering SWIM's points.
         workers: How many processes read tiles beside the training.
         num_steps: How many steps the models train for.
         warmup_steps: How many steps the rate climbs before the cosine decay.
@@ -83,7 +84,7 @@ def finetune(
         encoder_learning_rate: The encoders' peak learning rate.
         weight_decay: The AdamW weight decay.
         max_grad_norm: The norm each model's gradient is clipped to every step.
-        seed: What fixes the order of the training tiles.
+        seed: What fixes the order of the training tiles and the validation crops.
         device: Where the models run.
         run: The tracked run every step is logged to.
         share: What the share of the tiles trained on is logged as.
@@ -92,25 +93,32 @@ def finetune(
         kept: Each model's trained parameters at its highest mean validation R2,
             keyed by protocol, then by parameter.
     """
-    training, validation = (
-        tile_loader(
-            build,
-            tiles,
-            layout,
-            cut,
-            budget_scale,
-            seed,
-            held,
-            workers,
-            shuffled,
-            shuffled,
-        )
-        for tiles, cut, held, shuffled in (
-            (training, budget, training_batch_size, True),
-            (validation, None, batch_size, False),
-        )
+    # Training reads budget crops, validation the covering crops the test reads
+    training = tile_loader(
+        build,
+        training,
+        layout,
+        budget,
+        budget_scale,
+        seed,
+        training_batch_size,
+        workers,
+        True,
+        True,
     )
-    optimizer, scheduler = finetune_optimizer_and_schedule(
+    validation = tile_loader(
+        build,
+        validation,
+        layout,
+        budget,
+        1.0,
+        seed,
+        batch_size,
+        workers,
+        False,
+        reach_m=REACH_M,
+    )
+    optimizers = finetune_optimizers_and_schedules(
         models,
         head_learning_rate,
         encoder_learning_rate,
@@ -118,16 +126,20 @@ def finetune(
         warmup_steps,
         num_steps,
     )
-    scaler = torch.amp.GradScaler(
-        device.type, enabled=autocast_dtype(device) == torch.float16
-    )
+    # Each protocol has its own scaler, so an overflow skips only its own step
+    float16 = autocast_dtype(device) == torch.float16
+    scalers = {
+        protocol: torch.amp.GradScaler(device.type, enabled=float16)
+        for protocol in models
+    }
     scale = torch.as_tensor(spread, device=device)
     best, kept = dict.fromkeys(models, -math.inf), {}
     points = next(iter(models.values())).probe.points[:, :2].cpu()  # (P * P, 2)
     batches = chain.from_iterable(repeat(training))
     for step in range(1, num_steps + 1):
         batch, identities = next(batches)
-        optimizer.zero_grad()
+        for model in models.values():
+            model.train()
         predictions = batch_step(models, batch, device)
         target = torch.as_tensor(
             np.stack([targets[tile] for tile in identities]), device=device
@@ -137,13 +149,14 @@ def finetune(
             protocol: mse(prediction, target, scale, scored)
             for protocol, prediction in predictions.items()
         }
-        scaler.scale(sum(losses.values())).backward()
-        scaler.unscale_(optimizer)
-        for model in models.values():
-            clip_grad_norm_(model.parameters(), max_grad_norm)
-        scaler.step(optimizer)
-        scaler.update()
-        scheduler.step()
+        for protocol, (optimizer, scheduler) in optimizers.items():
+            optimizer.zero_grad()
+            scalers[protocol].scale(losses[protocol]).backward()
+            scalers[protocol].unscale_(optimizer)
+            clip_grad_norm_(models[protocol].parameters(), max_grad_norm)
+            scalers[protocol].step(optimizer)
+            scalers[protocol].update()
+            scheduler.step()
         log_step(run, step, share, {name: float(one) for name, one in losses.items()})
         if step % validate_every and step < num_steps:
             continue

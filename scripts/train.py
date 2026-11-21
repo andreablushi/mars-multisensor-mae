@@ -89,7 +89,6 @@ def run_training(
         Pooling(config.training.contrastive.pooling),
         config.training.contrastive.temperature,
         config.training.ema_momentum,
-        config.training.reconstruction_error,
         config.training.checkpoints,
         config.dataset.seed,
         device,

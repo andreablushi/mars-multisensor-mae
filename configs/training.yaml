@@ -33,9 +33,6 @@ masking:
 # I-JEPA's target encoder EMA momentum, linear from the first to the last step.
 ema_momentum: [0.996, 1.0]
 
-# What the detached pixel heads' UMR and CMR measure, MSE or RMSE.
-reconstruction_error: RMSE
-
 # CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.
 contrastive:
   pooling: GAP

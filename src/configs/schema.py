@@ -121,7 +121,6 @@ class TrainingConfig:
         warmup_steps: How many steps the rate climbs before the cosine decay.
         masking: Which masking_* strategy hides the patches, and its settings.
         ema_momentum: The target encoder's EMA momentum at the start and the end.
-        reconstruction_error: What the detached pixel heads measure, MSE or RMSE.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the encoders and decoders read the acquisition angles.
         checkpoints: Where checkpoints are written, relative to the repository.
@@ -135,7 +134,6 @@ class TrainingConfig:
     warmup_steps: int
     masking: MaskingConfig
     ema_momentum: list[float]
-    reconstruction_error: str
     contrastive: ContrastiveConfig
     acquisition: bool
     checkpoints: str
@@ -219,18 +217,28 @@ class EvaluationConfig:
 
 
 @dataclass
+class ProbeConfig:
+    """The attentive probe read over the model's tokens.
+
+    Attributes:
+        depth: How many cross-attention blocks the attentive probe stacks.
+    """
+
+    depth: int
+
+
+@dataclass
 class FinetuneConfig:
     """How the attentive probe is trained, frozen over the model and fine-tuned.
 
     Attributes:
         batch_size: How many tiles one training batch holds, each cut to the budget.
-        epochs: How many epochs the head trains for over every training tile, kept
-            at its best validation R2.
-        warmup_epochs: How many epochs the rate climbs before the cosine decay.
-        fraction_steps: How many steps the head trains for over each share of the
-            tiles, the smallest first, warmed up in the same proportion.
-        validations_per_share: How many times a share of the tiles is validated,
-            evenly apart, kept at its best R2.
+        budget_scale: The most a training batch's budget is multiplied by.
+        passes: How many passes over a share of the tiles the head trains for, its
+            steps never fewer than min_steps.
+        min_steps: The fewest steps a share of the tiles trains for.
+        warmup_share: The share of a schedule's steps the rate climbs for before
+            the cosine decay.
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
         weight_decay: The AdamW weight decay.
@@ -238,10 +246,10 @@ class FinetuneConfig:
     """
 
     batch_size: int
-    epochs: int
-    warmup_epochs: int
-    fraction_steps: list[int]
-    validations_per_share: int
+    budget_scale: float
+    passes: int
+    min_steps: int
+    warmup_share: float
     head_learning_rate: float
     encoder_learning_rate: float
     weight_decay: float
@@ -249,15 +257,33 @@ class FinetuneConfig:
 
 
 @dataclass
+class ValidationConfig:
+    """How each share's head is picked on the validation tiles.
+
+    Attributes:
+        sample_size: How many tiles of the k-fold validation fold every validation
+            reads, the first of one draw.
+        per_share: How many times a share of the tiles is validated, evenly apart,
+            kept at its best R2.
+    """
+
+    sample_size: int
+    per_share: int
+
+
+@dataclass
 class BenchmarkEvaluationConfig:
     """How the benchmark head is measured on the validation and test tiles.
 
     Attributes:
+        batch_size: How many tiles one validation or test batch holds, each read
+            as the budget crops covering SWIM's points.
         tiles: The test tiles drawn as SWIM's grid beside the predicted ones, in
             qualitative order.
         shown: The instrument whose every observation of a tile is drawn beneath.
     """
 
+    batch_size: int
     tiles: list[str]
     shown: str
 
@@ -274,12 +300,9 @@ class BenchmarkConfig:
             testing, the second validating and the rest training.
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
         fractions: The shares of the training tiles each protocol is trained on.
-        probe_depth: How many cross-attention blocks the attentive probe stacks.
-        batch_size: How many tiles one validation or test batch holds, each read
-            whole.
-        validation_sample_size: How many tiles of the k-fold validation fold every
-            validation reads, the first of one draw.
+        probe: The head's architecture.
         finetune: How the head is trained.
+        validation: How each share's head is picked.
         evaluation: How the head is measured.
     """
 
@@ -288,10 +311,9 @@ class BenchmarkConfig:
     folds: int
     block_deg: float
     fractions: list[float]
-    probe_depth: int
-    batch_size: int
-    validation_sample_size: int
+    probe: ProbeConfig
     finetune: FinetuneConfig
+    validation: ValidationConfig
     evaluation: BenchmarkEvaluationConfig
 
 
