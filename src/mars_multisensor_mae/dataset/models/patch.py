@@ -18,10 +18,10 @@ class Patch:
     """One patch cut from one observation, and what says where and what it is.
 
     Attributes:
-        values: The patch's own values, in the observation's axis order.
+        values: The patch's own values as stored, in the observation's axis order.
         measured: Whether each sample is a measurement, broadcasting over the values.
-        condition: What the model reads beside the values, flattened, zero where
-            unmeasured: the cluttergram for SHARAD, else nothing.
+        condition: What the model reads beside the values, flattened, as stored: the
+            cluttergram for SHARAD, else nothing.
         acquisition: The acquisition angles of its observation the model reads, in
             degrees, NaN where the index holds none.
         north_m: How far north of the tile centre the patch centre sits, in metres.
@@ -35,17 +35,17 @@ class Patch:
     measured: np.ndarray
     condition: np.ndarray
     acquisition: np.ndarray
-    north_m: float
-    east_m: float
+    north_m: np.float32
+    east_m: np.float32
     delay: float
     cell: tuple[int, ...]
 
 
 class InstrumentPatches(NamedTuple):
-    """One instrument's patches over one tile, as cached and read by a model.
+    """One instrument's patches over one tile, as stored or as a model reads them.
 
     Attributes:
-        values: The normalised patches. (N, *P)
+        values: The patches, as stored or normalised. (N, *P)
         measured: Whether each sample is a measurement, broadcasting over the values.
             (N, *P')
         condition: What each patch is conditioned on, flattened, or nothing. (N, C)
@@ -88,13 +88,11 @@ class InstrumentPatches(NamedTuple):
         )
         width = math.prod(shape) if name == sharad.LAYOUT.instrument else 0
         return cls(
-            values=np.array([one.values for one in patches], np.float32).reshape(
-                -1, *shape
-            ),
+            values=np.array([one.values for one in patches]).reshape(-1, *shape),
             measured=np.array([one.measured for one in patches], bool).reshape(
                 -1, *measured_shape
             ),
-            condition=np.array([one.condition for one in patches], np.float32).reshape(
+            condition=np.array([one.condition for one in patches]).reshape(
                 len(patches), width
             ),
             acquisition=np.array(

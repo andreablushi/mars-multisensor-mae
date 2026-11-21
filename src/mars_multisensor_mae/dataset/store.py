@@ -22,7 +22,6 @@ from mars_multisensor_dataset.analysis.ground_truth.nomenclature.models.label im
     Label,
 )
 from mars_multisensor_dataset.building import paths as built
-from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.common.normalize import CLUTTER
 from mars_multisensor_dataset.building.configs import sharad
 from mars_multisensor_dataset.building.metadata.dataset import read_normalization
@@ -44,6 +43,7 @@ from mars_multisensor_dataset.common.disk import parquet
 from mars_multisensor_dataset.common.disk.files import atomic_path
 
 from mars_multisensor_mae.dataset.models.observation import Observation
+from mars_multisensor_mae.dataset.models.patch import TileSample
 
 
 @dataclass(slots=True)
@@ -141,8 +141,8 @@ class DatasetBuild:
             path: Where that object sits, as the index names it.
 
         Returns:
-            observation: Values and cluttergram each on its own constants, clipped;
-                CRISM gaps unmeasured and zeroed; SHARAD's atmosphere cropped if asked.
+            observation: Values and cluttergram as stored, CRISM gaps unmeasured,
+                SHARAD's atmosphere cropped if asked.
         """
         stored = self.root / path
         data = stored.read_bytes() if stored.is_file() else self.fetch(path)
@@ -162,27 +162,11 @@ class DatasetBuild:
             rows = rows_below_atmosphere(values, measured)
             first_row = rows.start
             values, clutter = values[rows], clutter[rows]
-        # Per band constants run along the wavelength axis, a scalar along none.
-        shape = [-1 if holds == Axis.WAVELENGTH else 1 for holds in axes]
-        constants = self.read_stats()[instrument]
-        mean, std = (
-            np.asarray(constants[name], np.float32).reshape(shape)
-            for name in ("mean", "std")
-        )
-        values = (values - mean) / std
         if instrument == centre_wavelengths.LAYOUT.instrument:
             # A pixel missing any band is unmeasured, so no band is read as a zero
             measured = measured & np.isfinite(values).all(axis=-1)
-            values = np.where(measured[..., None], values, 0.0)
-        clip = self.clips[instrument]
-        if clutter is not None:
-            simulated = self.read_stats()[CLUTTER]
-            clutter = (clutter.astype(np.float32) - simulated["mean"]) / simulated[
-                "std"
-            ]
-            clutter = np.clip(clutter, *clip)
         return Observation(
-            values=np.clip(values, *clip),
+            values=values,
             axes=axes,
             measured=measured,
             north=north,
@@ -191,3 +175,38 @@ class DatasetBuild:
             described=described,
             first_row=first_row,
         )
+
+    def normalised_sample(self, sample: TileSample) -> TileSample:
+        """Return stored patches as a model reads them, z-scored on their constants.
+
+        Args:
+            sample: Every instrument's patches as stored, a tile or a cut of it.
+
+        Returns:
+            sample: Values and condition clipped in single precision, per band
+                constants along the last axis, CRISM's unmeasured pixels and the
+                unmeasured condition zeroed.
+        """
+        stats, normalised = self.read_stats(), {}
+        for name, held in sample.instruments.items():
+            clip, constants = self.clips[name], stats[name]
+            mean, std = (
+                np.asarray(constants[key], np.float32) for key in ("mean", "std")
+            )
+            values = (held.values - mean) / std
+            if name == centre_wavelengths.LAYOUT.instrument:
+                values = np.where(held.measured, values, 0.0)
+            condition = held.condition
+            if condition.shape[1]:
+                # Its constants are plain floats, so the half precision is lifted first
+                simulated = stats[CLUTTER]
+                clutter = (
+                    condition.astype(np.float32) - simulated["mean"]
+                ) / simulated["std"]
+                # The cluttergram is cut as the values, so it is zeroed where they are
+                clipped = np.clip(clutter, *clip).reshape(held.values.shape)
+                condition = (clipped * held.measured).reshape(len(condition), -1)
+            normalised[name] = held._replace(
+                values=np.clip(values, *clip), condition=condition
+            )
+        return TileSample(normalised)

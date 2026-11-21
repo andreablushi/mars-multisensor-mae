@@ -10,7 +10,7 @@ from functools import partial
 import numpy as np
 import torch
 from mars_multisensor_dataset.building.common.layout import Axis
-from mars_multisensor_dataset.building.configs import mola, sharad
+from mars_multisensor_dataset.building.configs import sharad
 from mars_multisensor_dataset.common.disk.files import atomic_path
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
@@ -34,8 +34,7 @@ def padded_tokens(samples: Sequence[TileSample]) -> dict[str, Tokens]:
         samples: Each tile's patches.
 
     Returns:
-        batch: Each instrument's patches over the tiles, keyed as ODE names it, what
-            the cache holds in half precision kept so until the device.
+        batch: Each instrument's patches over the tiles, keyed as ODE names it.
     """
     batch = {}
     # Pad each instrument's patches across the batch's tiles
@@ -72,8 +71,7 @@ def read_cached_tile(
             in memory alone.
 
     Returns:
-        sample: Each instrument's patches, values and condition in the build's half
-            precision except MOLA's elevations.
+        sample: Each instrument's patches as stored, read lazily off the cache.
     """
     paths = {
         name: {
@@ -83,7 +81,6 @@ def read_cached_tile(
                 name,
                 (
                     sorted(size.items()),
-                    build.clips[name],
                     build.acquisition[name],
                     build.sharad_atmosphere_cropping
                     and name == sharad.LAYOUT.instrument,
@@ -96,23 +93,16 @@ def read_cached_tile(
     }
     rows = build.read_observation_metadata()[identity]
     if not all(path.is_file() for held in paths.values() for path in held.values()):
-        cut = {}
-        for name, patches in cut_tile_patches(rows, build, layout).items():
-            stacked = InstrumentPatches.stacked(
+        cut = {
+            name: InstrumentPatches.stacked(
                 patches,
                 name,
                 layout.shapes[name],
                 rows[name][0].axes,
                 build.acquisition[name],
             )
-            cut[name] = (
-                stacked
-                if name == mola.LAYOUT.instrument
-                else stacked._replace(
-                    values=stacked.values.astype(np.float16),
-                    condition=stacked.condition.astype(np.float16),
-                )
-            )
+            for name, patches in cut_tile_patches(rows, build, layout).items()
+        }
         if not cache:
             return TileSample(cut)
         for name, held in cut.items():
@@ -176,7 +166,7 @@ def read_cached_batch(
             grounds = sample.ground_spots
             centre = grounds[draw.randrange(len(grounds))]
             sample = sample.budget_cut(budget, centre)
-        samples.append(sample)
+        samples.append(build.normalised_sample(sample))
     return padded_tokens(samples), list(identities)
 
 

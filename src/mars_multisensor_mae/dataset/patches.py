@@ -14,6 +14,7 @@ from mars_multisensor_mae.dataset.models.patch import (
     InstrumentPatches,
     Patch,
     PatchLayout,
+    TileSample,
 )
 from mars_multisensor_mae.dataset.store import DatasetBuild
 
@@ -60,21 +61,18 @@ def cut_tile_patches(
                 for length, holds in zip(lengths, axes, strict=True)
             )
             for index in range(math.prod(counts)):
-                cell = tuple(int(at) for at in np.unravel_index(index, counts))
+                cell = np.unravel_index(index, counts)
                 window = tuple(
                     slice(at * length, (at + 1) * length)
                     for at, length in zip(cell, lengths, strict=True)
                 )
-                measured = (
-                    observation.measured[tuple(window[at] for at in ground)]
-                    .reshape(ground_shape)
-                    .copy()
-                )
+                measured = observation.measured[
+                    tuple(window[at] for at in ground)
+                ].reshape(ground_shape)
                 if not measured.any():
                     continue
                 north_m, east_m = (
-                    float(held_at[tuple(cell[at] for at in ground)])
-                    for held_at in centres
+                    held_at[tuple(cell[at] for at in ground)] for held_at in centres
                 )
                 if Axis.DELAY in axes:
                     # A sounder is placed by the rows it sounded,
@@ -84,15 +82,17 @@ def cut_tile_patches(
                 else:
                     # Every ground patch sits at the areoid row,
                     # so delay only places a sounder
-                    delay = float(sharad.AREOID_ROW)
+                    delay = sharad.AREOID_ROW
                 clutter = observation.clutter
                 # What the instrument is conditioned on, cut as its values and flattened
-                condition = np.array(
-                    [] if clutter is None else clutter[window] * measured, np.float32
-                ).ravel()
+                condition = (
+                    np.empty(0, np.float32)
+                    if clutter is None
+                    else clutter[window].ravel()
+                )
                 held.append(
                     Patch(
-                        values=observation.values[window].copy(),
+                        values=observation.values[window],
                         measured=measured,
                         condition=condition,
                         acquisition=angles,
@@ -133,7 +133,8 @@ def drawn_arrays(
     stacked = InstrumentPatches.stacked(
         patches, name, layout.shapes[name], rows[0].axes, build.acquisition[name]
     )
-    return stacked._asdict() | {
+    normalised = build.normalised_sample(TileSample({name: stacked}))
+    return normalised.instruments[name]._asdict() | {
         "cell": np.array([one.cell for one in patches]),
         "clip": np.array(build.clips[name], dtype=float),
         "mean": np.array(stats["mean"], dtype=float),
