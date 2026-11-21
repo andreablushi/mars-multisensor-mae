@@ -86,7 +86,6 @@ def run_training(
         Pooling(config.training.contrastive.pooling),
         config.training.contrastive.temperature,
         config.training.latent_temperature,
-        config.training.reconstruction_error,
         config.training.checkpoints,
         config.dataset.seed,
         device,

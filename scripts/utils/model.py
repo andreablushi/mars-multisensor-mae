@@ -103,7 +103,7 @@ def built_benchmark_model(
             mae,
             config.model.encoder_dim,
             config.model.encoder_heads,
-            config.benchmark.probe_depth,
+            config.benchmark.probe.depth,
             finetuned,
             config.dataset.seed,
         ).to(device)
