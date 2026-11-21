@@ -148,8 +148,7 @@ def run_evaluation(
             published_build(
                 config, f"{config.dataset.version}-{settings.build}", "dataset"
             ),
-            layout.sizes[name],
-            layout.shapes[name],
+            layout.only([name]),
             config.evaluation.batch_size,
             settings.qualitative.queries,
             settings.qualitative.top_k,

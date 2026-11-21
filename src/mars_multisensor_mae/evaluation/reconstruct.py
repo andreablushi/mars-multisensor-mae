@@ -18,7 +18,11 @@ from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import mask_generators
 from mars_multisensor_mae.configs.schema import DrawnTile
 from mars_multisensor_mae.dataset.loader import padded_tokens
-from mars_multisensor_mae.dataset.models.patch import PatchLayout
+from mars_multisensor_mae.dataset.models.patch import (
+    InstrumentPatches,
+    PatchLayout,
+    TileSample,
+)
 from mars_multisensor_mae.dataset.patches import drawn_arrays
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from mars_multisensor_mae.evaluation.results import write_reconstructions
@@ -121,14 +125,10 @@ def reconstruction_and_attention(
     alone, every = {}, {}
     for name in layout.sizes:
         (row,) = (one for one in rows[name] if one.identifier == shown[name])
-        alone[name] = drawn_arrays(
-            build, name, [row], layout.sizes[name], layout.shapes[name]
-        )
+        alone[name] = drawn_arrays(build, name, [row], layout)
         # Every observation least measured first, so the most measured is laid last
         held = sorted(rows[name], key=lambda one: one.valid_count)
-        every[name] = drawn_arrays(
-            build, name, held, layout.sizes[name], layout.shapes[name]
-        )
+        every[name] = drawn_arrays(build, name, held, layout)
     masked = masked_reconstruction(model, alone, masking, mask_ratio, seed, device)
     # The query's shown observation hidden whole, every source's all read whole
     attention = {
@@ -165,7 +165,13 @@ def batch_on_device(
     Returns:
         batch: Each instrument's patches, a batch of one.
     """
-    return {name: one.to(device) for name, one in padded_tokens([sample]).items()}
+    patches = TileSample(
+        {
+            name: InstrumentPatches(*(held[key] for key in InstrumentPatches._fields))
+            for name, held in sample.items()
+        }
+    )
+    return {name: one.to(device) for name, one in padded_tokens([patches]).items()}
 
 
 def masked_reconstruction(
