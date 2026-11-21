@@ -100,6 +100,7 @@ class TrainingConfig:
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
+        max_grad_norm: The norm every step's gradient is clipped to.
         masking: Which patches are hidden.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
         acquisition: Whether the decoders read the acquisition angles.
@@ -114,6 +115,7 @@ class TrainingConfig:
     learning_rate: float
     weight_decay: float
     warmup_steps: int
+    max_grad_norm: float
     masking: MaskingConfig
     contrastive: ContrastiveConfig
     acquisition: bool

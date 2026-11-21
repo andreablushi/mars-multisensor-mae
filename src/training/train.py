@@ -42,6 +42,7 @@ def train(
     learning_rate: float,
     weight_decay: float,
     warmup_steps: int,
+    max_grad_norm: float,
     mask_ratio: float,
     aligned: Sequence[str],
     pooling: Pooling,
@@ -70,6 +71,7 @@ def train(
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
+        max_grad_norm: The norm every step's gradient is clipped to.
         mask_ratio: The share of each instrument's patches hidden.
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
@@ -127,7 +129,7 @@ def train(
             scaler.scale(terms["loss"]).backward()
             scaler.unscale_(optimizer)
             # Stabilize training against exploding gradients
-            norm = clip_grad_norm_(model.parameters(), 10.0)
+            norm = clip_grad_norm_(model.parameters(), max_grad_norm)
             if not scaler.is_enabled() and not torch.isfinite(norm):
                 raise FloatingPointError(
                     f"step {step} has a non-finite gradient: {identities}"

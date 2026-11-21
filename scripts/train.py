@@ -75,6 +75,7 @@ def run_training(
         config.training.learning_rate,
         config.training.weight_decay,
         config.training.warmup_steps,
+        config.training.max_grad_norm,
         config.training.masking.mask_ratio,
         config.training.contrastive.instruments,
         Pooling(config.training.contrastive.pooling),
