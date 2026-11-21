@@ -23,7 +23,6 @@ __pycache__/
 
 # Runs
 /artifacts
-/benchmarks
 /checkpoints
 /results
 /wandb

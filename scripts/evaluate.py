@@ -8,15 +8,16 @@ from dhub.store import published_build, published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
-from utils.model import built_pretrained_model, trained_model
+from utils.model import built_pretrained_model
 
-from architecture.models.context import Pooling
-from configs.load import load_config, named_sample
-from configs.paths import results_directory
-from evaluation.evaluate import evaluate
-from evaluation.lavaflow import evaluate_lavaflow
-from evaluation.reconstruct import evaluate_reconstruction
-from logs.evaluation import (
+from mars_multisensor_mae.architecture.models.context import Pooling
+from mars_multisensor_mae.architecture.pretrained import trained_model
+from mars_multisensor_mae.configs.load import load_config, named_sample
+from mars_multisensor_mae.configs.paths import ARTIFACTS_ROOT, results_directory
+from mars_multisensor_mae.evaluation.evaluate import evaluate
+from mars_multisensor_mae.evaluation.lavaflow import evaluate_lavaflow
+from mars_multisensor_mae.evaluation.reconstruct import evaluate_reconstruction
+from mars_multisensor_mae.logs.evaluation import (
     EVALUATION,
     LAVAFLOW,
     PART_STEPS,
@@ -25,8 +26,8 @@ from logs.evaluation import (
     log_kept_part,
     retire_evaluation_run,
 )
-from logs.tracker import console_logger, start_logging, tracked_run
-from training.step import selected_masking
+from mars_multisensor_mae.logs.tracker import console_logger, start_logging, tracked_run
+from mars_multisensor_mae.training.step import selected_masking
 
 log = console_logger(__name__)
 
@@ -83,7 +84,7 @@ def run_evaluation(
         spared=old and old.id,
     )
     log.info("evaluating %s on %s", run_name, device)
-    model = trained_model(model, run, run_name).eval()
+    model = trained_model(model, run, run_name, ARTIFACTS_ROOT).eval()
     if EVALUATION in kept:
         log_kept_part(run, *kept[EVALUATION], PART_STEPS[EVALUATION])
     if whole:

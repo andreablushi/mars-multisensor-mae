@@ -12,10 +12,10 @@ import digitalhub as dh
 import urllib3.connection
 from dotenv import load_dotenv
 
-from configs.load import load_config
-from configs.paths import ENV_PATH, REPO_ROOT
-from configs.schema import Config
-from logs.tracker import flat_run_name
+from mars_multisensor_mae.configs.load import load_config
+from mars_multisensor_mae.configs.paths import ENV_PATH, REPO_ROOT
+from mars_multisensor_mae.configs.schema import Config
+from mars_multisensor_mae.logs.tracker import flat_run_name
 
 MINTED_FROM = ("DHCORE_ISSUER", "DHCORE_CLIENT_ID")
 PYTHONPATH = "/shared:/shared/src:/shared/scripts"
@@ -81,11 +81,11 @@ def run_stage(
     )
     arguments = vars(parsed.parse_args())
     dh_run, ref = arguments.pop("dh"), arguments.pop("ref")
+    load_dotenv(ENV_PATH)
     if not dh_run:
         # The platform calls the handler, a run here the function under it.
         run.__wrapped__(**arguments)
         return
-    load_dotenv(ENV_PATH)
     platform = load_config(arguments["overrides"]).digitalhub
     asked = platform.stages[stage]
     # The job installs the repository's requirements itself, so no image is built
