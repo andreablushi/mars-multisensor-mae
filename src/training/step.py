@@ -181,7 +181,6 @@ def batch_step(
     aligned: Sequence[str],
     pooling: Pooling,
     temperature: float,
-    measure: str,
     generators: Mapping[str, torch.Generator],
     device: torch.device,
 ) -> dict[str, Tensor]:
@@ -195,7 +194,6 @@ def batch_step(
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
-        measure: The reconstruction error, MSE or RMSE.
         generators: What fixes each instrument's masks, on the device.
         device: Where the model runs.
 
@@ -208,7 +206,7 @@ def batch_step(
         predictions, pooled = model(batch, visible, hidden, pooling)
     terms = {
         f"{kind}/{name}": reconstruction_error(
-            predictions[kind][name], batch[name], hidden[name], measure
+            predictions[kind][name], batch[name], hidden[name]
         )
         for kind in ("umr", "cmr")
         for name in batch

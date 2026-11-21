@@ -12,29 +12,23 @@ block_deg: 10.0
 # Shares of the training tiles each protocol is trained on, each on its own.
 fractions: [0.01, 0.05, 0.1, 0.5]
 
-# Cross-attention blocks the attentive probe's points read the tokens through.
-probe_depth: 1
-
-# Tiles per batch in validation and test, each read whole.
-batch_size: 8
-
-# Tiles of the k-fold validation fold every validation reads, the first of one
-# draw.
-validation_sample_size: 1000
+# The attentive probe read over the model's tokens.
+probe:
+  # Cross-attention blocks the probe's points read the tokens through.
+  depth: 1
 
 # How the attentive probe is trained, frozen over the model and fine-tuned.
 finetune:
   # Tiles per training batch, each cut to the budget around one centre.
   batch_size: 48
-  # Epochs of the schedule over every training tile, kept at its best validation R2.
-  epochs: 20
-  # Epochs of warmup before the cosine decay.
-  warmup_epochs: 2
-  # Steps of the schedule over each share of the tiles, the smallest first, warmed
-  # up in the same proportion.
-  fraction_steps: [1000, 2000, 3000, 4000]
-  # Validations of each share of the tiles, evenly apart, kept at its best R2.
-  validations_per_share: 4
+  # Largest budget multiplier drawn per training batch, 1 reading crops as the test.
+  budget_scale: 1
+  # Passes over a share of the tiles, its steps never fewer than min_steps.
+  passes: 30
+  # Fewest steps a share of the tiles trains for.
+  min_steps: 1000
+  # Share of each schedule's steps the rate warms up for before the cosine decay.
+  warmup_share: 0.1
   head_learning_rate: 0.001
   # Fine-tuning trains the encoders and the cross-sensor encoder whole.
   encoder_learning_rate: 0.0001
@@ -42,8 +36,18 @@ finetune:
   # Norm every step's gradient is clipped to.
   max_grad_norm: 1.0
 
+# How each share's head is picked on the validation tiles.
+validation:
+  # Tiles of the k-fold validation fold every validation reads, the first of one
+  # draw.
+  sample_size: 1000
+  # Validations of each share of the tiles, evenly apart, kept at its best R2.
+  per_share: 8
+
 # How the head is measured on the validation and test tiles.
 evaluation:
+  # Tiles per batch in validation and test, each read as its covering budget crops.
+  batch_size: 8
   # Test tiles drawn as SWIM's targets beside the predicted, a row per target,
   # over every observation of the instrument shown, as qualitative 1, 2 and 3.
   tiles: [b248_c0436, b252_c0422, b114_c0190]

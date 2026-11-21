@@ -42,7 +42,7 @@ class BenchmarkModel(nn.Module):
             heads: How many attention heads the probe runs.
             depth: How many cross-attention blocks the probe stacks.
             finetuned: Whether the encoders and the cross-sensor encoder are trained,
-                or the MAE is left frozen whole.
+                their activations kept, or the MAE is left frozen whole.
             seed: What fixes the probe as drawn.
         """
         super().__init__()
@@ -51,6 +51,9 @@ class BenchmarkModel(nn.Module):
         ).requires_grad_(False)
         self.mae.encoders.requires_grad_(finetuned)
         self.mae.crossencoder.requires_grad_(finetuned)
+        if finetuned:
+            for encoder in self.mae.encoders.values():
+                encoder.checkpointed = False
         with named_rng(seed, "benchmark/probe"):
             self.probe = AttentiveProbe(dim, heads, depth, len(TARGETS))
 

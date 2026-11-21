@@ -83,7 +83,7 @@ def run_evaluation(
         spared=old and old.id,
     )
     log.info("evaluating %s on %s", run_name, device)
-    model = trained_model(model, run, run_name)
+    model = trained_model(model, run, run_name).eval()
     if EVALUATION in kept:
         log_kept_part(run, *kept[EVALUATION], PART_STEPS[EVALUATION])
     if whole:
