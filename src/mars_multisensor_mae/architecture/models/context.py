@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import NamedTuple
 
 import torch
 from torch import Tensor
+from torch.nn import functional
 
 
 class Pooling(StrEnum):
@@ -42,3 +43,69 @@ class Context(NamedTuple):
             context: Their tokens, centres and which of them count, joined.
         """
         return cls(*(torch.cat(held, 1) for held in zip(*parts, strict=True)))
+
+
+class EncodedBatch(NamedTuple):
+    """Every instrument's tokens in the shared space, and the token read over them all.
+
+    Attributes:
+        cls: The token read over every instrument together. (B, D)
+        instruments: Each instrument's CLS token, then its tokens, with their centres
+            and which of them count. (B, 1 + K, D)
+    """
+
+    cls: Tensor
+    instruments: dict[str, Context]
+
+    def unimodal_reconstruction_context(self, name: str) -> Context:
+        """Return what UMR rebuilds one instrument from: the overall CLS, then its own.
+
+        Args:
+            name: The instrument rebuilt.
+
+        Returns:
+            context: The overall CLS at the tile centre, then the instrument's own
+                context.
+        """
+        lead = Context(
+            self.cls.unsqueeze(1),
+            self.cls.new_zeros(len(self.cls), 1, 3),
+            self.cls.new_ones(len(self.cls), 1, dtype=torch.bool),
+        )
+        return Context.joined([lead, self.instruments[name]])
+
+    def cross_modal_reconstruction_context(self, name: str) -> Context:
+        """Return what CMR rebuilds one instrument from: every other's, no overall CLS.
+
+        Args:
+            name: The instrument rebuilt.
+
+        Returns:
+            context: Every other instrument's context, in their order.
+        """
+        return Context.joined(
+            [held for other, held in self.instruments.items() if other != name]
+        )
+
+    def pooled_tile_vectors(
+        self, pooling: Pooling, readable: Mapping[str, Tensor] | None = None
+    ) -> dict[str, Tensor]:
+        """Return each instrument's tile vector, the CLS or GAP of its readable tokens.
+
+        Args:
+            pooling: What a tile vector is, "CLS" or "GAP".
+            readable: Which of each instrument's tokens GAP averages, by default the
+                ones its context counts. (B, K)
+
+        Returns:
+            pooled: Each instrument's tile vector as one unit vector, in float. (B, D)
+        """
+        pooled = {}
+        for name, held in self.instruments.items():
+            if pooling == Pooling.CLS:
+                vector = held.tokens[:, 0].float()  # (B, D)
+            else:
+                counted = held.readable[:, 1:] if readable is None else readable[name]
+                vector = (held.tokens[:, 1:].float() * counted.unsqueeze(-1)).sum(1)
+            pooled[name] = functional.normalize(vector, dim=-1)
+        return pooled

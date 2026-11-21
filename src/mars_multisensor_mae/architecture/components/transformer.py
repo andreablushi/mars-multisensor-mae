@@ -42,7 +42,7 @@ class Block(nn.Module):
             nn.Linear(dim, 4 * dim), nn.GELU(), nn.Linear(4 * dim, dim)
         )
 
-    def rotated_heads(
+    def rotated_query_key_value(
         self, keys: Tensor, position: Tensor, fixed: int
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Return every head's queries, keys and values, queries and keys rotated.
@@ -70,10 +70,10 @@ class Block(nn.Module):
             value,
         )
 
-    def attention_weights(
+    def head_averaged_attention(
         self, keys: Tensor, mask: Tensor, position: Tensor, fixed: int
     ) -> Tensor:
-        """Return what each query attends to, its heads averaged.
+        """Return each query's head-averaged attention, for the evaluation's rollout.
 
         Args:
             keys: Every token, those past the fixed also asking as queries. (B, N, D)
@@ -84,7 +84,7 @@ class Block(nn.Module):
         Returns:
             weights: Each query's attention over every key. (B, N - fixed, N)
         """
-        query, key, _ = self.rotated_heads(keys, position, fixed)
+        query, key, _ = self.rotated_query_key_value(keys, position, fixed)
         scores = query @ key.transpose(-2, -1) / math.sqrt(query.shape[-1])
         return scores.masked_fill(~mask, -torch.inf).softmax(-1).mean(1)
 
@@ -104,7 +104,7 @@ class Block(nn.Module):
             keys: The keys, the queries among them updated. (B, N, D)
         """
         answered = functional.scaled_dot_product_attention(
-            *self.rotated_heads(keys, position, fixed), attn_mask=mask
+            *self.rotated_query_key_value(keys, position, fixed), attn_mask=mask
         )  # (B, H, N - fixed, D / H)
         queries = keys[:, fixed:] + self.out(answered.transpose(1, 2).flatten(2))
         queries = queries + self.feed(self.feed_norm(queries))  # (B, N - fixed, D)
