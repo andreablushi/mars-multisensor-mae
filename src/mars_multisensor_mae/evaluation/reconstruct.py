@@ -12,7 +12,7 @@ from torch.nn import functional
 from wandb.sdk.wandb_run import Run
 
 from mars_multisensor_mae.architecture.components.decoder import Decoder
-from mars_multisensor_mae.architecture.mae import CrossSensorMAE, cmr_context
+from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Context
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import mask_generators
@@ -224,10 +224,10 @@ def cmr_attention(
     batch = batch_on_device(sample, device)
     present = {name: one.present for name, one in batch.items()}
     with torch.no_grad():
-        _, contexts = model.embed_tokens(batch, present)
+        encoded = model.embed_tokens(batch, present)
     sources = [name for name in sample if name != query]
     # CMR reads the others without the CLS of every instrument
-    context = cmr_context(contexts, query)
+    context = encoded.cross_modal_reconstruction_context(query)
     cmr, drawn, near = rolled_attention(
         model.decoders[query],
         context,
@@ -237,7 +237,7 @@ def cmr_attention(
     )
     readable = int(context.readable.sum())
     # Each instrument's CLS, then its tokens
-    lengths = [contexts[name].tokens.shape[1] for name in sources]
+    lengths = [encoded.instruments[name].tokens.shape[1] for name in sources]
     ends = np.cumsum(lengths)[:-1]
     split = zip(
         sources,
@@ -284,15 +284,13 @@ def rolled_attention(
     weights = []
     hooks = [
         block.register_forward_hook(
-            lambda block, args, _: weights.append(block.attention_weights(*args))
+            lambda block, args, _: weights.append(block.head_averaged_attention(*args))
         )
         for block in decoder.blocks.blocks
     ]
     # The pass itself, the asked patches reading the context
     with torch.no_grad():
-        _, prediction = decoder.latents_and_patches(
-            *context, position, acquisition, hidden
-        )
+        _, prediction = decoder(context, position, acquisition, hidden)
     for hook in hooks:
         hook.remove()
     # Roll out: half of each block passes on what the queries it read had gathered

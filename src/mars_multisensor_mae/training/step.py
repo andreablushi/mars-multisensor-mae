@@ -48,12 +48,12 @@ def target_tokens(
             gradient, in float. (B, K, D)
     """
     with torch.no_grad():
-        _, contexts = target.embed_tokens(
+        encoded = target.embed_tokens(
             batch, {name: one.present for name, one in batch.items()}
         )
     return {
         name: functional.layer_norm(held.tokens[:, 1:].float(), held.tokens.shape[-1:])
-        for name, held in contexts.items()
+        for name, held in encoded.instruments.items()
     }
 
 
