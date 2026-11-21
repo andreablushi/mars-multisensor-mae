@@ -10,7 +10,11 @@ from torch import Tensor
 from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.architecture.models.tokens import Tokens
-from mars_multisensor_mae.training.loss import mim, reconstruction_error, total
+from mars_multisensor_mae.training.loss import (
+    mutual_information_maximization_losses,
+    reconstruction_error,
+    terms_with_total_loss,
+)
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype:
@@ -92,4 +96,6 @@ def batch_step(
         for kind in ("umr", "cmr")
         for name in batch
     }
-    return total(terms, mim(pooled, aligned, temperature))
+    return terms_with_total_loss(
+        terms, mutual_information_maximization_losses(pooled, aligned, temperature)
+    )
