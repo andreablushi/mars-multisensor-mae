@@ -163,7 +163,7 @@ def crop_vectors(
             tokens = tokens._replace(
                 position=torch.cat([ground - centre, tokens.position[..., 2:]], dim=-1)
             )
-            encoded = model.embed_tokens({name: tokens}, {name: present})
+            encoded = model.embed_tokens({name: tokens})
             delay = tokens.position[..., 2].masked_fill(~present, torch.inf)  # (B, K)
             surface = present & (delay == delay.min(dim=1, keepdim=True).values)
             pooled = {
