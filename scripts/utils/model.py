@@ -105,6 +105,7 @@ def built_benchmark_model(
             config.model.encoder_heads,
             config.benchmark.probe_depth,
             finetuned,
+            config.benchmark.finetune.checkpointing,
             config.dataset.seed,
         ).to(device)
         if heads:

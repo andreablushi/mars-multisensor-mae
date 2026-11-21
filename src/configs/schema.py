@@ -216,26 +216,31 @@ class FinetuneConfig:
 
     Attributes:
         batch_size: How many tiles one training batch holds, each cut to the budget.
-        epochs: How many epochs the head trains for over every training tile, kept
-            at its best validation R2.
-        warmup_epochs: How many epochs the rate climbs before the cosine decay.
-        fraction_steps: How many steps the head trains for over each share of the
-            tiles, the smallest first, warmed up in the same proportion.
+        passes: How many passes over a share of the tiles the head trains for, its
+            steps kept within min_steps and max_steps.
+        min_steps: The fewest steps a share of the tiles trains for.
+        max_steps: The most steps a share of the tiles trains for.
+        warmup_share: The share of a schedule's steps the rate climbs for before
+            the cosine decay.
         validations_per_share: How many times a share of the tiles is validated,
             evenly apart, kept at its best R2.
         head_learning_rate: The head's peak learning rate.
         encoder_learning_rate: The encoders' peak learning rate when fine-tuned.
+        checkpointing: Whether the fine-tuned encoders recompute their activations
+            in the backward pass, less memory for slower steps.
         weight_decay: The AdamW weight decay.
         max_grad_norm: The norm every step's gradient is clipped to.
     """
 
     batch_size: int
-    epochs: int
-    warmup_epochs: int
-    fraction_steps: list[int]
+    passes: int
+    min_steps: int
+    max_steps: int
+    warmup_share: float
     validations_per_share: int
     head_learning_rate: float
     encoder_learning_rate: float
+    checkpointing: bool
     weight_decay: float
     max_grad_norm: float
 
@@ -266,9 +271,10 @@ class BenchmarkConfig:
             testing, the second validating and the rest training.
         block_deg: How wide a square of the map is, in degrees, each one dealt whole.
         fractions: The shares of the training tiles each protocol is trained on.
+        budget_scale: The most a training batch's budget is multiplied by.
         probe_depth: How many cross-attention blocks the attentive probe stacks.
         batch_size: How many tiles one validation or test batch holds, each read
-            whole.
+            as the budget crops covering SWIM's points.
         validation_sample_size: How many tiles of the k-fold validation fold every
             validation reads, the first of one draw.
         finetune: How the head is trained.
@@ -280,6 +286,7 @@ class BenchmarkConfig:
     folds: int
     block_deg: float
     fractions: list[float]
+    budget_scale: float
     probe_depth: int
     batch_size: int
     validation_sample_size: int

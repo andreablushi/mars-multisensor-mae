@@ -12,10 +12,13 @@ block_deg: 10.0
 # Shares of the training tiles each protocol is trained on, each on its own.
 fractions: [0.01, 0.05, 0.1, 0.5]
 
+# Largest budget multiplier drawn per training batch, 1 reading crops as the test.
+budget_scale: 1
+
 # Cross-attention blocks the attentive probe's points read the tokens through.
 probe_depth: 1
 
-# Tiles per batch in validation and test, each read whole.
+# Tiles per batch in validation and test, each read as its covering budget crops.
 batch_size: 8
 
 # Tiles of the k-fold validation fold every validation reads, the first of one
@@ -26,18 +29,21 @@ validation_sample_size: 1000
 finetune:
   # Tiles per training batch, each cut to the budget around one centre.
   batch_size: 48
-  # Epochs of the schedule over every training tile, kept at its best validation R2.
-  epochs: 20
-  # Epochs of warmup before the cosine decay.
-  warmup_epochs: 2
-  # Steps of the schedule over each share of the tiles, the smallest first, warmed
-  # up in the same proportion.
-  fraction_steps: [1000, 2000, 3000, 4000]
+  # Passes over a share of the tiles, its steps kept within min_steps and max_steps.
+  passes: 30
+  # Fewest steps a share of the tiles trains for.
+  min_steps: 1000
+  # Most steps a share of the tiles trains for.
+  max_steps: 8000
+  # Share of each schedule's steps the rate warms up for before the cosine decay.
+  warmup_share: 0.1
   # Validations of each share of the tiles, evenly apart, kept at its best R2.
-  validations_per_share: 4
+  validations_per_share: 8
   head_learning_rate: 0.001
   # Fine-tuning trains the encoders and the cross-sensor encoder whole.
   encoder_learning_rate: 0.0001
+  # Whether the fine-tuned encoders recompute activations, less memory, slower steps.
+  checkpointing: false
   weight_decay: 0.05
   # Norm every step's gradient is clipped to.
   max_grad_norm: 1.0

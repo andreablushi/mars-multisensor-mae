@@ -23,6 +23,8 @@ class Encoder(nn.Module):
         acquisition: What tells a token how its patch was acquired, or None.
         cls: The token that leads every sequence and gathers it. (D)
         blocks: The transformer.
+        checkpointed: Whether the blocks' activations are recomputed in the backward
+            pass instead of kept.
     """
 
     def __init__(
@@ -56,6 +58,7 @@ class Encoder(nn.Module):
             CluttergramConditioning(condition, dim) if condition else None
         )
         self.acquisition = AcquisitionConditioning(acquired, dim) if acquired else None
+        self.checkpointed = True
 
     def forward(self, patches: Tokens, readable: Tensor, position: Tensor) -> Tensor:
         """Return the encoded tokens.
@@ -84,6 +87,8 @@ class Encoder(nn.Module):
         )
         heard[1:, 0] = False
         reads = readable.unsqueeze(1) & heard  # (B, 1 + K, 1 + K)
+        if not self.checkpointed:
+            return self.blocks(keys, reads, position)  # (B, 1 + K, D)
         return checkpoint(
             self.blocks, keys, reads, position, use_reentrant=False
         )  # (B, 1 + K, D)

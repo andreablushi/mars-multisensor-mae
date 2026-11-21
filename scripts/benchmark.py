@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict
 
 import numpy as np
@@ -75,8 +76,17 @@ def run_benchmark(
         f"{round(100 * fraction)}pct": drawn[: round(fraction * len(training))]
         for fraction in sorted(config.benchmark.fractions)
     }
-    share_steps = dict(zip(shares, settings.fraction_steps, strict=True))
-    pass_steps = len(training) // settings.batch_size
+    # Each share trains for its passes, kept within the fewest and the most steps
+    share_steps = {
+        share: min(
+            max(
+                round(settings.passes * len(tiles) / settings.batch_size),
+                settings.min_steps,
+            ),
+            settings.max_steps,
+        )
+        for share, tiles in shares.items()
+    }
     # Every share is validated on the same first tiles of one draw
     checked = named_sample(
         validation,
@@ -99,8 +109,7 @@ def run_benchmark(
     if finetune or not evaluate:
         heads = {}
         for share, tiles in shares.items():
-            whole = len(tiles) == len(training)
-            num_steps = settings.epochs * pass_steps if whole else share_steps[share]
+            num_steps = share_steps[share]
             heads[share] = finetuning.finetune(
                 built_benchmark_model(config, mae, device),
                 build,
@@ -110,13 +119,13 @@ def run_benchmark(
                 spread,
                 layout.only(config.benchmark.instruments),
                 config.dataset.budget,
-                config.dataset.budget_scale,
+                config.benchmark.budget_scale,
                 settings.batch_size,
                 config.benchmark.batch_size,
                 workers,
                 num_steps,
-                round(num_steps * settings.warmup_epochs / settings.epochs),
-                pass_steps if whole else num_steps // settings.validations_per_share,
+                round(num_steps * settings.warmup_share),
+                math.ceil(num_steps / settings.validations_per_share),
                 settings.head_learning_rate,
                 settings.encoder_learning_rate,
                 settings.weight_decay,

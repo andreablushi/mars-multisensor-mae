@@ -75,6 +75,9 @@ def evaluate(
         share: {protocol: {} for protocol in held} for share, held in models.items()
     }
     still = next(protocol for protocol, tuned in PROTOCOLS.items() if not tuned)
+    for held in models.values():
+        for model in held.values():
+            model.eval()
     with torch.no_grad():
         for batch, identities, scored in loader:
             batch_predictions = crop_mean_predictions(
