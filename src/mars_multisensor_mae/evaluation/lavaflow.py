@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
 from dataclasses import replace
 
 import numpy as np
@@ -30,8 +29,7 @@ from mars_multisensor_mae.logs.images.lavaflow import lavaflow_image
 def evaluate_lavaflow(
     model: CrossSensorMAE,
     build: DatasetBuild,
-    size: Mapping[str, int],
-    shape: tuple[int, ...],
+    layout: PatchLayout,
     batch_size: int,
     queries: int,
     top_k: int,
@@ -46,8 +44,7 @@ def evaluate_lavaflow(
     Args:
         model: The model, on the device.
         build: The lava flow build, SHARAD crops and their verdicts.
-        size: How far a SHARAD patch runs along each axis it is cut on.
-        shape: The shape of one SHARAD patch as the model reads it.
+        layout: How SHARAD is cut into patches, and the shape the model reads one in.
         batch_size: How many crops one batch of the vector pass holds.
         queries: How many reflector crops are drawn beside what they retrieve.
         top_k: How many crops each drawn query shows it retrieved.
@@ -74,7 +71,7 @@ def evaluate_lavaflow(
         tile_loader(
             by_crop,
             rows,
-            PatchLayout({name: size}, {name: shape}),
+            layout,
             None,
             1.0,
             seed,
@@ -125,7 +122,7 @@ def evaluate_lavaflow(
         images.append(
             lavaflow_image(
                 [
-                    drawn_arrays(build, name, rows[crops[at].crop], size, shape)
+                    drawn_arrays(build, name, rows[crops[at].crop], layout)
                     for at in shown
                 ],
                 [crops[at].crop for at in shown],
