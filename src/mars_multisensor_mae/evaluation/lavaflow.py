@@ -13,7 +13,7 @@ from mars_multisensor_dataset.building.configs import sharad
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
-from mars_multisensor_mae.architecture.mae import CrossSensorMAE, global_tokens
+from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.configs.load import named_sample
 from mars_multisensor_mae.dataset.loader import tile_loader
@@ -166,14 +166,14 @@ def crop_vectors(
             tokens = tokens._replace(
                 position=torch.cat([ground - centre, tokens.position[..., 2:]], dim=-1)
             )
-            _, contexts = model.embed_tokens({name: tokens}, {name: present})
+            encoded = model.embed_tokens({name: tokens}, {name: present})
             delay = tokens.position[..., 2].masked_fill(~present, torch.inf)  # (B, K)
             surface = present & (delay == delay.min(dim=1, keepdim=True).values)
             pooled = {
-                Pooling.CLS: global_tokens(contexts, {name: present}, Pooling.CLS),
-                Pooling.GAP: global_tokens(contexts, {name: present}, Pooling.GAP),
-                Pooling.GAP_SURFACE: global_tokens(
-                    contexts, {name: surface}, Pooling.GAP
+                Pooling.CLS: encoded.pooled_tile_vectors(Pooling.CLS),
+                Pooling.GAP: encoded.pooled_tile_vectors(Pooling.GAP),
+                Pooling.GAP_SURFACE: encoded.pooled_tile_vectors(
+                    Pooling.GAP, {name: surface}
                 ),
             }
             for pooling, held in pooled.items():

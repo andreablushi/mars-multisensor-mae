@@ -64,21 +64,13 @@ class Decoder(nn.Module):
         nn.init.zeros_(self.predict.bias)
         self.acquisition = AcquisitionConditioning(acquired, dim) if acquired else None
 
-    def reconstructed_patches(
-        self,
-        context: Tensor,
-        context_position: Tensor,
-        context_readable: Tensor,
-        position: Tensor,
-        acquisition: Tensor,
-        hidden: Tensor,
+    def forward(
+        self, context: Context, position: Tensor, acquisition: Tensor, hidden: Tensor
     ) -> Tensor:
         """Return the hidden patches as read from one context.
 
         Args:
             context: The tokens the prediction reads. (B, S, D)
-            context_position: Each one's patch centre, in metres or rows. (B, S, 3)
-            context_readable: Which of them count. (B, S)
             position: Each asked patch's centre, in metres or rows. (B, K, 3)
             acquisition: Each asked patch's acquisition angles, in degrees. (B, K, A)
             hidden: Which of them to predict. (B, K)
@@ -90,53 +82,23 @@ class Decoder(nn.Module):
         queries = self.mask.expand(*hidden.shape, -1)  # (B, K, D')
         if self.acquisition is not None:
             queries = self.acquisition(queries, acquisition)
-        keys = torch.cat([self.expand(context), queries], dim=1)  # (B, S + K, D')
-        placed = torch.cat([context_position, position], dim=1)  # (B, S + K, 3)
+        keys = torch.cat(
+            [self.expand(context.tokens), queries], dim=1
+        )  # (B, S + K, D')
+        placed = torch.cat([context.position, position], dim=1)  # (B, S + K, 3)
         # The readable context and the hidden patches are read, nothing else
-        readable = torch.cat([context_readable, hidden], dim=1)  # (B, S + K)
+        readable = torch.cat([context.readable, hidden], dim=1)  # (B, S + K)
         # The context is only keys, only the patch slots ask as queries and are updated
-        keys = self.blocks(keys, readable.unsqueeze(1), placed, context.shape[1])
-        queries = keys[:, context.shape[1] :]  # (B, K, D')
+        # The blocks are recomputed on the way back, so only one pass is held at once
+        count = context.tokens.shape[1]
+        keys = checkpoint(
+            self.blocks,
+            keys,
+            readable.unsqueeze(1),
+            placed,
+            count,
+            use_reentrant=False,
+        )  # (B, S + K, D')
         # Write every sample of each patch slot from its query
-        written = self.predict(queries)  # (B, K, prod P)
+        written = self.predict(keys[:, count:])  # (B, K, prod P)
         return written.unflatten(-1, self.shape)  # (B, K, *P)
-
-    def forward(
-        self,
-        own: Context,
-        others: Context,
-        position: Tensor,
-        acquisition: Tensor,
-        hidden: Tensor,
-    ) -> tuple[Tensor, Tensor]:
-        """Return the instrument's hidden patches, from its own tokens and the others'.
-
-        Args:
-            own: The instrument's own tokens.
-            others: Every other instrument's tokens.
-            position: Each asked patch's centre, in metres or rows. (B, K, 3)
-            acquisition: Each asked patch's acquisition angles, in degrees. (B, K, A)
-            hidden: Which of them to predict. (B, K)
-
-        Returns:
-            umr: The patches read from the instrument's own tokens. (B, K, *P)
-            cmr: The same patches read from every other instrument's. (B, K, *P)
-        """
-        # Each pass is recomputed on the way back, so only one is held at once
-        umr = checkpoint(
-            self.reconstructed_patches,
-            *own,
-            position,
-            acquisition,
-            hidden,
-            use_reentrant=False,
-        )
-        cmr = checkpoint(
-            self.reconstructed_patches,
-            *others,
-            position,
-            acquisition,
-            hidden,
-            use_reentrant=False,
-        )
-        return umr, cmr

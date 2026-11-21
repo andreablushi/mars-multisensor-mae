@@ -67,22 +67,22 @@ class Tokens(NamedTuple):
             functional.pad(self.position, (0, 0, 1, 0)),
         )
 
-    def kept(self, keep: Tensor) -> tuple[Tokens, Tensor]:
-        """Return the kept slots alone, packed to the front and padded to one count.
+    def selected_slots_packed_to_front(self, selected: Tensor) -> tuple[Tokens, Tensor]:
+        """Return the selected slots alone, packed to the front and padded to one count.
 
         Args:
-            keep: Which slots are kept. (B, K)
+            selected: Which slots are selected. (B, K)
 
         Returns:
-            tokens: The kept patches, in their order. (B, K', *P)
-            kept: Which of the packed slots hold a kept patch. (B, K')
+            tokens: The selected patches, in their order. (B, K', *P)
+            filled: Which of the packed slots hold a selected patch. (B, K')
         """
-        order = keep.int().argsort(dim=1, descending=True, stable=True)
-        order = order[:, : int(keep.sum(1).max())]  # (B, K')
+        order = selected.int().argsort(dim=1, descending=True, stable=True)
+        order = order[:, : int(selected.sum(1).max())]  # (B, K')
         taken = (
             torch.take_along_dim(
                 one, order.view(*order.shape, *[1] * (one.dim() - 2)), 1
             )
             for one in self
         )
-        return Tokens(*taken), keep.gather(1, order)
+        return Tokens(*taken), selected.gather(1, order)
