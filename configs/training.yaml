@@ -7,22 +7,15 @@ learning_rate: 0.0001
 weight_decay: 0.05
 # A fifteenth of the steps in warmup before the cosine decay.
 warmup_steps: 1787
+# Norm every step's gradient is clipped to.
+max_grad_norm: 10.0
 
 
-# CSMAE's correspondence of hidden patches across instruments.
+# Patches hidden from each instrument's encoder, each drawn alone (CSMAE's random
+# correspondence).
 masking:
-  # random_correspondence or identical_correspondence.
-  strategy: random_correspondence
-  # Share of each instrument's patches hidden, of ground cells under identical correspondence.
+  # Share of each instrument's patches hidden.
   mask_ratio: 0.5
-  # Ground cell side identical correspondence hides whole, MOLA's patch, in metres.
-  cell_m: 926
-  # Instruments identical correspondence still draws patch by patch.
-  independent: []
-  # Whether each training tile draws each instrument's share, random correspondence only.
-  dynamic: false
-  # The range a dynamic share is drawn uniform from.
-  dynamic_range: [0.25, 0.75]
 
 # CSMAE's MIM between instruments, pooled by GAP or CLS; no instruments, no MIM.
 contrastive:
@@ -30,8 +23,10 @@ contrastive:
   instruments: ${model.instruments}
   temperature: 0.5
 
-# Whether the encoders and decoders read the acquisition angles the dataset lists.
+# Whether the decoders read the acquisition angles the dataset lists.
 acquisition: true
+# Whether the encoders read them too; false conditions the decoders alone, as AlphaEarth.
+acquisition_in_encoders: true
 
 # Checkpoint folder.
 checkpoints: checkpoints
