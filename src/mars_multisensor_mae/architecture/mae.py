@@ -91,20 +91,23 @@ class CrossSensorMAE(nn.Module):
                 )
 
     def embed_tokens(
-        self, batch: dict[str, Tokens], readable: dict[str, Tensor]
+        self, batch: dict[str, Tokens], readable: dict[str, Tensor] | None = None
     ) -> EncodedBatch:
         """Return the CLS of every instrument, and each one's tokens in shared space.
 
         Args:
             batch: Each instrument's patches over the batch.
-            readable: Which patches each encoder may read. (B, K)
+            readable: Which patches each encoder may read, every present one when
+                None. (B, K)
 
         Returns:
             encoded: The token read over every instrument together, and each one's
                 CLS token, then its tokens, meaningful where readable.
         """
         with_cls = {
-            name: one.readable_and_position_with_cls(readable[name])
+            name: one.readable_and_position_with_cls(
+                one.present if readable is None else readable[name]
+            )
             for name, one in batch.items()
         }
         cls, tokens = self.crossencoder(
