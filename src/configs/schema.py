@@ -100,9 +100,11 @@ class TrainingConfig:
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
-        masking: Which masking_* strategy hides the patches, and its settings.
+        masking: Which patches are hidden.
         contrastive: Whether MIM aligns instruments across tiles, and over what.
-        acquisition: Whether the encoders and decoders read the acquisition angles.
+        acquisition: Whether the decoders read the acquisition angles.
+        acquisition_in_encoders: Whether the encoders read them too, when the
+            decoders do.
         checkpoints: Where checkpoints are written, relative to the repository.
     """
 
@@ -115,6 +117,7 @@ class TrainingConfig:
     masking: MaskingConfig
     contrastive: ContrastiveConfig
     acquisition: bool
+    acquisition_in_encoders: bool
     checkpoints: str
 
 

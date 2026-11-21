@@ -87,6 +87,7 @@ class CrossSensorMAE(nn.Module):
         shapes: dict[str, tuple[int, ...]],
         conditions: dict[str, int],
         acquired: dict[str, int],
+        acquired_in_encoders: bool,
         encoder_dim: int,
         encoder_heads: int,
         encoder_depth: int,
@@ -102,8 +103,9 @@ class CrossSensorMAE(nn.Module):
             shapes: The shape of one patch of each instrument, keyed as ODE names it.
             conditions: How many values each instrument's encoder reads its patches
                 conditioned on.
-            acquired: How many acquisition angles each instrument's encoder and
-                decoder read each patch with.
+            acquired: How many acquisition angles each instrument's decoder reads
+                each patch with.
+            acquired_in_encoders: Whether each encoder reads them too.
             encoder_dim: How wide a token is everywhere but the decoders.
             encoder_heads: How many attention heads every encoder runs.
             encoder_depth: How many blocks each instrument encoder stacks.
@@ -129,7 +131,7 @@ class CrossSensorMAE(nn.Module):
                 self.encoders[name] = Encoder(
                     shape,
                     conditions[name],
-                    acquired[name],
+                    acquired[name] if acquired_in_encoders else 0,
                     encoder_dim,
                     encoder_heads,
                     encoder_depth,

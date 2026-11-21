@@ -21,8 +21,10 @@ contrastive:
   instruments: ${model.instruments}
   temperature: 0.5
 
-# Whether the encoders and decoders read the acquisition angles the dataset lists.
+# Whether the decoders read the acquisition angles the dataset lists.
 acquisition: true
+# Whether the encoders read them too; false conditions the decoders alone, as AlphaEarth.
+acquisition_in_encoders: true
 
 # Checkpoint folder.
 checkpoints: checkpoints

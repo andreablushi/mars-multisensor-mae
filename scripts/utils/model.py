@@ -47,6 +47,7 @@ def built_pretrained_model(
             for name, shape in shapes.items()
         },
         {name: len(build.acquisition[name]) for name in shapes},
+        config.training.acquisition_in_encoders,
         config.model.encoder_dim,
         config.model.encoder_heads,
         config.model.encoder_depth,
