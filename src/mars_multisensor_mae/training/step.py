@@ -1,0 +1,109 @@
+"""One step on the model device: patches hidden, then predicted."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
+import torch
+from torch import Tensor
+
+from mars_multisensor_mae.architecture.mae import CrossSensorMAE
+from mars_multisensor_mae.architecture.models.context import Pooling
+from mars_multisensor_mae.architecture.models.tokens import Tokens
+from mars_multisensor_mae.training.loss import (
+    mim,
+    patch_discrimination,
+    reconstruction_error,
+    total,
+)
+
+
+def autocast_dtype(device: torch.device) -> torch.dtype:
+    """Return the half precision autocast runs in on a device.
+
+    Args:
+        device: Where the model runs.
+
+    Returns:
+        dtype: bfloat16 on CPU and GPUs of capability 8.0 or above, float16 below.
+    """
+    native = device.type != "cuda" or torch.cuda.get_device_capability(device) >= (8, 0)
+    return torch.bfloat16 if native else torch.float16
+
+
+def masking_random_correspondence(
+    batch: dict[str, Tokens],
+    mask_ratio: float,
+    generators: Mapping[str, torch.Generator],
+) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
+    """Return which patches are read and which hidden, each instrument drawn alone.
+
+    Args:
+        batch: Each instrument's patches over the batch, on the device.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        generators: What fixes each instrument's mask, on the device.
+
+    Returns:
+        visible: Which patches each encoder reads, drawn for each on its own. (B, K)
+        hidden: Which patches are predicted, none of them padding. (B, K)
+    """
+    visible, hidden = {}, {}
+    for name, tokens in batch.items():
+        present = tokens.present  # (B, K)
+        noise = torch.rand(
+            present.shape, generator=generators[name], device=present.device
+        )
+        # Padding is given the highest noise, so only present patches are hidden.
+        order = noise.masked_fill(~present, 2.0).argsort(dim=1)  # (B, K)
+        rank = order.argsort(dim=1)  # (B, K)
+        drawn = rank < (mask_ratio * present.sum(1, keepdim=True)).floor()  # (B, K)
+        visible[name], hidden[name] = present & ~drawn, present & drawn
+    return visible, hidden
+
+
+def batch_step(
+    model: CrossSensorMAE,
+    batch: dict[str, Tokens],
+    mask_ratio: float,
+    aligned: Sequence[str],
+    pooling: Pooling,
+    temperature: float,
+    latent_temperature: float,
+    generators: Mapping[str, torch.Generator],
+    device: torch.device,
+) -> dict[str, Tensor]:
+    """Return one batch's loss terms, its patches hidden and predicted.
+
+    Args:
+        model: The model, on the device.
+        batch: Each instrument's patches over the batch, as the loader hands it.
+        mask_ratio: The share of each instrument's patches hidden from its encoder.
+        aligned: The instruments MIM aligns, none for no MIM.
+        pooling: What MIM aligns of each instrument, its GAP or its CLS.
+        temperature: What MIM divides every cosine by.
+        latent_temperature: What latent UMR and CMR divide every cosine by.
+        generators: What fixes each instrument's masks, on the device.
+        device: Where the model runs.
+
+    Returns:
+        terms: Every loss term over the batch, and the loss.
+    """
+    batch = {name: tokens.to(device) for name, tokens in batch.items()}
+    visible, hidden = masking_random_correspondence(batch, mask_ratio, generators)
+    with torch.autocast(device.type, dtype=autocast_dtype(device)):
+        predictions, pooled = model(batch, visible, hidden, pooling)
+    targets = model.target_latents(batch)
+    terms = {
+        f"{kind}/{name}": patch_discrimination(
+            predictions[kind][name], targets[name], hidden[name], latent_temperature
+        )
+        for kind in ("latent_umr", "latent_cmr")
+        for name in targets
+    } | {
+        f"{kind}/{name}": reconstruction_error(
+            predictions[kind][name], batch[name], hidden[name]
+        )
+        for kind in ("umr", "cmr")
+        for name in batch
+    }
+    return total(terms, mim(pooled, aligned, temperature))

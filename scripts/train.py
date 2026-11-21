@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 from dataclasses import asdict
 
-from benchmark import run_benchmark
 from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
@@ -13,10 +12,15 @@ from evaluate import run_evaluation
 from torch.utils.data import random_split
 from utils.model import built_pretrained_model
 
-from architecture.models.context import Pooling
-from configs.load import load_config, named_generator
-from logs.tracker import TRAINING, console_logger, log_checkpoint, start_logging
-from training.train import train
+from mars_multisensor_mae.architecture.models.context import Pooling
+from mars_multisensor_mae.configs.load import load_config, named_generator
+from mars_multisensor_mae.logs.tracker import (
+    TRAINING,
+    console_logger,
+    log_checkpoint,
+    start_logging,
+)
+from mars_multisensor_mae.training.train import train
 
 log = console_logger(__name__)
 
@@ -26,16 +30,14 @@ def run_training(
     run_name: str,
     overrides: list[str] | None = None,
     evaluate: bool = False,
-    benchmark: bool = False,
 ) -> None:
-    """Train one run, log its last checkpoint, then evaluate or benchmark it if asked.
+    """Train one run, log its last checkpoint, then evaluate it if asked.
 
     Args:
         run_name: What the run is called, which names the model it saves and the
             tracked run it logs to, the part before a slash grouping it.
         overrides: What to change in the configs, as dotted keys.
         evaluate: Whether to evaluate the checkpoint once trained.
-        benchmark: Whether to benchmark the checkpoint once trained.
     """
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.dataset.build)
@@ -75,12 +77,7 @@ def run_training(
         config.training.learning_rate,
         config.training.weight_decay,
         config.training.warmup_steps,
-        config.training.masking.strategy,
-        config.training.masking.cell_m,
-        config.training.masking.independent,
-        config.training.masking.dynamic_range
-        if config.training.masking.dynamic
-        else None,
+        config.training.max_grad_norm,
         config.training.masking.mask_ratio,
         config.training.contrastive.instruments,
         Pooling(config.training.contrastive.pooling),
@@ -97,8 +94,6 @@ def run_training(
     shutil.rmtree(build.root / "ready", ignore_errors=True)
     if evaluate:
         run_evaluation.__wrapped__(run_name, overrides)
-    if benchmark:
-        run_benchmark.__wrapped__(run_name, overrides)
 
 
 if __name__ == "__main__":
@@ -106,8 +101,5 @@ if __name__ == "__main__":
         TRAINING,
         run_training,
         __doc__,
-        {
-            "evaluate": "evaluate the model once trained",
-            "benchmark": "benchmark the model once trained",
-        },
+        {"evaluate": "evaluate the model once trained"},
     )
