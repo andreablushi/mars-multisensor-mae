@@ -80,26 +80,13 @@ class ContrastiveConfig:
 
 @dataclass
 class MaskingConfig:
-    """Which patches are hidden, by CSMAE's correspondence across instruments.
+    """Which patches are hidden, each instrument drawn alone (random correspondence).
 
     Attributes:
-        strategy: The masking_* strategy, random_correspondence or
-            identical_correspondence.
-        mask_ratio: The share of each instrument's patches hidden, of each tile's
-            ground cells under identical correspondence.
-        cell_m: The side of one ground cell identical correspondence hides whole.
-        independent: The instruments identical correspondence draws patch by patch.
-        dynamic: Whether each training tile draws each instrument's share, random
-            correspondence only.
-        dynamic_range: The range a dynamic share is drawn uniform from.
+        mask_ratio: The share of each instrument's patches hidden.
     """
 
-    strategy: str
     mask_ratio: float
-    cell_m: float
-    independent: list[str]
-    dynamic: bool
-    dynamic_range: list[float]
 
 
 @dataclass

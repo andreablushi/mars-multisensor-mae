@@ -21,7 +21,7 @@ from dataset.models.patch import PatchLayout
 from dataset.store import DatasetBuild
 from logs.tracker import TRAIN, VALIDATION, console_logger, log_terms
 from training.optimizer import pretraining_optimizer_and_schedule
-from training.step import autocast_dtype, batch_step, selected_masking
+from training.step import autocast_dtype, batch_step
 from training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -42,10 +42,6 @@ def train(
     learning_rate: float,
     weight_decay: float,
     warmup_steps: int,
-    masking: str,
-    masking_cell_m: float,
-    masking_independent: Sequence[str],
-    masking_dynamic_range: Sequence[float] | None,
     mask_ratio: float,
     aligned: Sequence[str],
     pooling: Pooling,
@@ -74,14 +70,7 @@ def train(
         learning_rate: The peak learning rate, reached after the warmup.
         weight_decay: The AdamW weight decay.
         warmup_steps: How many steps the rate climbs before the cosine decay.
-        masking: The masking_* strategy, as CSMAE names its correspondence.
-        masking_cell_m: The side of one ground cell identical correspondence hides.
-        masking_independent: The instruments identical correspondence draws patch
-            by patch.
-        masking_dynamic_range: The range each training tile draws each instrument's
-            share from, or none for mask_ratio; validation keeps mask_ratio.
-        mask_ratio: The share of each instrument's patches hidden, of each tile's ground
-            cells under identical correspondence.
+        mask_ratio: The share of each instrument's patches hidden.
         aligned: The instruments MIM aligns, none for no MIM.
         pooling: What MIM aligns of each instrument, its GAP or its CLS.
         temperature: What MIM divides every cosine by.
@@ -118,18 +107,11 @@ def train(
     step_terms = partial(
         batch_step,
         model,
-        masking=selected_masking(masking, masking_cell_m, masking_independent),
         mask_ratio=mask_ratio,
         aligned=aligned,
         pooling=pooling,
         temperature=temperature,
         device=device,
-    )
-    training_terms = partial(
-        step_terms,
-        masking=selected_masking(
-            masking, masking_cell_m, masking_independent, masking_dynamic_range
-        ),
     )
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
@@ -141,7 +123,7 @@ def train(
         ):
             batch, identities = next(batches)
             optimizer.zero_grad()
-            terms = training_terms(batch, generators=generators)
+            terms = step_terms(batch, generators=generators)
             scaler.scale(terms["loss"]).backward()
             scaler.unscale_(optimizer)
             # Stabilize training against exploding gradients

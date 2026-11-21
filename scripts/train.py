@@ -75,12 +75,6 @@ def run_training(
         config.training.learning_rate,
         config.training.weight_decay,
         config.training.warmup_steps,
-        config.training.masking.strategy,
-        config.training.masking.cell_m,
-        config.training.masking.independent,
-        config.training.masking.dynamic_range
-        if config.training.masking.dynamic
-        else None,
         config.training.masking.mask_ratio,
         config.training.contrastive.instruments,
         Pooling(config.training.contrastive.pooling),
