@@ -15,9 +15,9 @@ from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.training.loss import (
     latent_error,
-    mim,
+    mutual_information_maximization_losses,
     reconstruction_error,
-    total,
+    terms_with_total_loss,
 )
 
 
@@ -308,4 +308,6 @@ def batch_step(
         for kind in ("umr", "cmr")
         for name in batch
     }
-    return total(terms, mim(pooled, aligned, temperature))
+    return terms_with_total_loss(
+        terms, mutual_information_maximization_losses(pooled, aligned, temperature)
+    )

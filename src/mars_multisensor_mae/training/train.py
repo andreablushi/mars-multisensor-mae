@@ -27,7 +27,7 @@ from mars_multisensor_mae.logs.tracker import (
 )
 from mars_multisensor_mae.training.optimizer import (
     ema_momentum,
-    pretraining_optimizer_and_schedule,
+    optimizer_and_schedule,
     update_target_encoder,
 )
 from mars_multisensor_mae.training.step import (
@@ -132,7 +132,7 @@ def train(
         for tiles, shuffled in ((training, True), (validation, False))
     )
     num_steps = num_epochs * steps_per_epoch
-    optimizer, scheduler = pretraining_optimizer_and_schedule(
+    optimizer, scheduler = optimizer_and_schedule(
         model, learning_rate, weight_decay, warmup_steps, num_steps
     )
     scaler = torch.amp.GradScaler(

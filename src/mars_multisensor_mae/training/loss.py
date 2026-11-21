@@ -48,10 +48,10 @@ def latent_error(prediction: Tensor, target: Tensor, scored: Tensor) -> Tensor:
     return ((prediction.float() - target) ** 2).mean(-1)[scored].mean()
 
 
-def mim(
+def mutual_information_maximization_losses(
     pooled: Mapping[str, Tensor], aligned: Sequence[str], temperature: float
 ) -> dict[str, Tensor]:
-    """Return CSMAE's NT-Xent of every pair of aligned instruments.
+    """Return CSMAE's mutual information maximization loss, an NT-Xent, of every pair.
 
     Args:
         pooled: Each instrument's tile vector as one unit vector. (B, D)
@@ -74,24 +74,25 @@ def mim(
     return errors
 
 
-def total(
-    terms: Mapping[str, Tensor], mim_errors: Mapping[str, Tensor]
+def terms_with_total_loss(
+    terms: Mapping[str, Tensor], mutual_information: Mapping[str, Tensor]
 ) -> dict[str, Tensor]:
     """Return every term and the loss, the latent and pixel sums plus the mean MIM.
 
     Args:
         terms: Each latent and pixel term, keyed "<term>/<instrument>", the pixel
             ones training their heads alone. ()
-        mim_errors: Each aligned pair's MIM error, none when nothing is aligned. ()
+        mutual_information: Each aligned pair's MIM loss, none when nothing is
+            aligned. ()
 
     Returns:
         terms: The same terms, "mim/<pair>" for every MIM term, and "loss". ()
     """
     loss = sum(terms.values())
-    if mim_errors:
-        loss = loss + sum(mim_errors.values()) / len(mim_errors)
+    if mutual_information:
+        loss = loss + sum(mutual_information.values()) / len(mutual_information)
     return (
         dict(terms)
-        | {f"mim/{pair}": error for pair, error in mim_errors.items()}
+        | {f"mim/{pair}": error for pair, error in mutual_information.items()}
         | {"loss": loss}
     )

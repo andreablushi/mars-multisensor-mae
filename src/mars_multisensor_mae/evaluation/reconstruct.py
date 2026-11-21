@@ -132,13 +132,13 @@ def reconstruction_and_attention(
     masked = masked_reconstruction(model, alone, masking, mask_ratio, seed, device)
     # The query's shown observation hidden whole, every source's all read whole
     attention = {
-        query: cmr_attention(
+        query: cross_modal_reconstruction_attention(
             model, every | {query: alone[query] | masked[query]}, query, device
         )
         for query in layout.sizes
     }
     ranged = {
-        query: cmr_attention(
+        query: cross_modal_reconstruction_attention(
             model,
             {
                 name: (alone if name == query else every)[name]
@@ -208,7 +208,7 @@ def masked_reconstruction(
     }
 
 
-def cmr_attention(
+def cross_modal_reconstruction_attention(
     model: CrossSensorMAE,
     sample: Mapping[str, Mapping[str, np.ndarray]],
     query: str,

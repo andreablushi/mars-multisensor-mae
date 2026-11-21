@@ -29,7 +29,7 @@ def cosine_warmup_share(step: int, warmup_steps: int, num_steps: int) -> float:
     return 0.5 * (1 + math.cos(math.pi * progress))
 
 
-def pretraining_optimizer_and_schedule(
+def optimizer_and_schedule(
     model: CrossSensorMAE,
     learning_rate: float,
     weight_decay: float,
