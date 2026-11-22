@@ -87,6 +87,19 @@ class EncodedBatch(NamedTuple):
             [held for other, held in self.instruments.items() if other != name]
         )
 
+    def patch_tokens_context(self) -> Context:
+        """Return every instrument's tokens side by side, without their CLS.
+
+        Returns:
+            context: Each instrument's context after its CLS, in their order.
+        """
+        return Context.joined(
+            [
+                Context(*(part[:, 1:] for part in held))
+                for held in self.instruments.values()
+            ]
+        )
+
     def pooled_tile_vectors(
         self,
         pooling: Pooling,
