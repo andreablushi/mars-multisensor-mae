@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
+import tempfile
 from dataclasses import replace
+from pathlib import Path
 from urllib.parse import urlparse
 
 import digitalhub as dh
@@ -14,6 +17,7 @@ from mars_multisensor_mae.configs.schema import Config
 from mars_multisensor_mae.dataset.store import DatasetBuild
 
 BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
+REFRESH_LOCK = Path(tempfile.gettempdir()) / "dhcore-refresh.lock"
 
 
 def published_dataset_build(config: Config, build: str) -> DatasetBuild:
@@ -65,8 +69,10 @@ def published_build(config: Config, name: str, subfolder: str = "") -> DatasetBu
             return client.get_object(Bucket=bucket, Key=key)["Body"].read()
         except BROKEN_READS:
             # The store's credentials lapse and its streams break mid run.
-            dh.refresh_token()
-            client = dh.get_s3_client()
+            with REFRESH_LOCK.open("w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                dh.refresh_token()
+                client = dh.get_s3_client()
             try:
                 return client.get_object(Bucket=bucket, Key=key)["Body"].read()
             except BROKEN_READS as refused:
