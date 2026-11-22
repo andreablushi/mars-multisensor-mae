@@ -18,19 +18,6 @@ from mars_multisensor_mae.training.loss import (
 )
 
 
-def autocast_dtype(device: torch.device) -> torch.dtype:
-    """Return the half precision autocast runs in on a device.
-
-    Args:
-        device: Where the model runs.
-
-    Returns:
-        dtype: bfloat16 on CPU and GPUs of capability 8.0 or above, float16 below.
-    """
-    native = device.type != "cuda" or torch.cuda.get_device_capability(device) >= (8, 0)
-    return torch.bfloat16 if native else torch.float16
-
-
 def masking_random_correspondence(
     batch: dict[str, Tokens],
     mask_ratio: float,
@@ -90,7 +77,7 @@ def batch_step(
     """
     batch = {name: tokens.to(device) for name, tokens in batch.items()}
     visible, hidden = masking_random_correspondence(batch, mask_ratio, generators)
-    with torch.autocast(device.type, dtype=autocast_dtype(device)):
+    with torch.autocast(device.type, dtype=torch.float16):
         predictions, pooled = model(batch, visible, hidden, pooling)
     terms = {
         f"{kind}/{name}": reconstruction_error(

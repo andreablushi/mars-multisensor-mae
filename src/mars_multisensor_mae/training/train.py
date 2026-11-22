@@ -25,7 +25,7 @@ from mars_multisensor_mae.logs.tracker import (
     log_terms,
 )
 from mars_multisensor_mae.training.optimizer import optimizer_and_schedule
-from mars_multisensor_mae.training.step import autocast_dtype, batch_step
+from mars_multisensor_mae.training.step import batch_step
 from mars_multisensor_mae.training.validate import validation_terms
 
 log = console_logger(__name__)
@@ -109,9 +109,7 @@ def train(
     optimizer, scheduler = optimizer_and_schedule(
         model, learning_rate, weight_decay, warmup_steps, num_steps
     )
-    scaler = torch.amp.GradScaler(
-        device.type, enabled=autocast_dtype(device) == torch.float16
-    )
+    scaler = torch.amp.GradScaler(device.type)
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
     batches = chain.from_iterable(repeat(training))
