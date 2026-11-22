@@ -31,7 +31,6 @@ from mars_multisensor_mae.training.optimizer import (
     update_target_encoder,
 )
 from mars_multisensor_mae.training.step import (
-    autocast_dtype,
     batch_step,
     selected_masking,
 )
@@ -135,9 +134,7 @@ def train(
     optimizer, scheduler = optimizer_and_schedule(
         model, learning_rate, weight_decay, warmup_steps, num_steps
     )
-    scaler = torch.amp.GradScaler(
-        device.type, enabled=autocast_dtype(device) == torch.float16
-    )
+    scaler = torch.amp.GradScaler(device.type)
     target = model.without_decoders().requires_grad_(False)
     blocks = (masking_blocks, masking_block_scale, masking_aspect_range)
     step_terms = partial(
