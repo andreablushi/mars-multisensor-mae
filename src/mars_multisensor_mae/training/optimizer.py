@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 
 import torch
+from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 
 from mars_multisensor_mae.architecture.mae import CrossSensorMAE
@@ -28,6 +30,65 @@ def cosine_warmup_share(step: int, warmup_steps: int, num_steps: int) -> float:
     return 0.5 * (1 + math.cos(math.pi * progress))
 
 
+def decayed_parameter_groups(
+    parameters: Iterable[nn.Parameter], learning_rate: float, weight_decay: float
+) -> list[dict[str, object]]:
+    """Return AdamW's groups over some parameters at one rate, matrices alone decayed.
+
+    Args:
+        parameters: The parameters trained at this rate.
+        learning_rate: Their peak learning rate.
+        weight_decay: The AdamW weight decay of every matrix.
+
+    Returns:
+        groups: The matrices and the rest, each a group when it holds a parameter.
+    """
+    # Biases, norms and learned vectors are not decayed, as MAE leaves them
+    held = list(parameters)
+    groups = [
+        {
+            "params": [one for one in held if one.ndim > 1],
+            "lr": learning_rate,
+            "weight_decay": weight_decay,
+        },
+        {
+            "params": [one for one in held if one.ndim <= 1],
+            "lr": learning_rate,
+            "weight_decay": 0.0,
+        },
+    ]
+    return [group for group in groups if group["params"]]
+
+
+def grouped_optimizer_and_schedule(
+    groups: Sequence[Mapping[str, object]],
+    betas: tuple[float, float],
+    fused: bool | None,
+    warmup_steps: int,
+    num_steps: int,
+) -> tuple[torch.optim.AdamW, LambdaLR]:
+    """Return AdamW over some parameter groups, and the schedule all their rates follow.
+
+    Args:
+        groups: Each group's parameters, peak learning rate and weight decay.
+        betas: AdamW's moment decays.
+        fused: Whether AdamW runs its fused kernel, or None for torch's choice.
+        warmup_steps: How many steps the rate climbs before the cosine decay.
+        num_steps: How many steps the schedule runs for.
+
+    Returns:
+        optimizer: AdamW over the groups.
+        scheduler: The warmup and cosine decay every group's rate follows.
+    """
+    optimizer = torch.optim.AdamW(
+        [dict(group) for group in groups], betas=betas, fused=fused
+    )
+    return optimizer, LambdaLR(
+        optimizer,
+        partial(cosine_warmup_share, warmup_steps=warmup_steps, num_steps=num_steps),
+    )
+
+
 def optimizer_and_schedule(
     model: CrossSensorMAE,
     learning_rate: float,
@@ -48,17 +109,10 @@ def optimizer_and_schedule(
         optimizer: AdamW with MAE's betas, matrices decayed and the rest not.
         scheduler: The warmup and cosine decay the optimizer's rate follows.
     """
-    # Biases, norms and learned vectors are not decayed, as MAE leaves them
-    decayed = [one for one in model.parameters() if one.ndim > 1]
-    kept = [one for one in model.parameters() if one.ndim <= 1]
-    optimizer = torch.optim.AdamW(
-        [{"params": decayed}, {"params": kept, "weight_decay": 0.0}],
-        lr=learning_rate,
-        weight_decay=weight_decay,
-        betas=(0.9, 0.95),
-        fused=True,
-    )
-    return optimizer, LambdaLR(
-        optimizer,
-        partial(cosine_warmup_share, warmup_steps=warmup_steps, num_steps=num_steps),
+    return grouped_optimizer_and_schedule(
+        decayed_parameter_groups(model.parameters(), learning_rate, weight_decay),
+        (0.9, 0.95),
+        True,
+        warmup_steps,
+        num_steps,
     )
