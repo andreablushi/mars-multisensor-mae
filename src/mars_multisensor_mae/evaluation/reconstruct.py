@@ -12,13 +12,14 @@ from torch.nn import functional
 from wandb.sdk.wandb_run import Run
 
 from mars_multisensor_mae.architecture.components.decoder import Decoder
-from mars_multisensor_mae.architecture.mae import CrossSensorMAE, cmr_context
+from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Context
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import mask_generators
 from mars_multisensor_mae.configs.schema import DrawnTile
-from mars_multisensor_mae.dataset.loader import padded_tokens
-from mars_multisensor_mae.dataset.models.patch import PatchLayout
+from mars_multisensor_mae.dataset.models.patch import (
+    PatchLayout,
+)
 from mars_multisensor_mae.dataset.patches import drawn_arrays
 from mars_multisensor_mae.dataset.store import DatasetBuild
 from mars_multisensor_mae.evaluation.results import write_reconstructions
@@ -117,24 +118,20 @@ def reconstruction_and_attention(
     alone, every = {}, {}
     for name in layout.sizes:
         (row,) = (one for one in rows[name] if one.identifier == shown[name])
-        alone[name] = drawn_arrays(
-            build, name, [row], layout.sizes[name], layout.shapes[name]
-        )
+        alone[name] = drawn_arrays(build, name, [row], layout)
         # Every observation least measured first, so the most measured is laid last
         held = sorted(rows[name], key=lambda one: one.valid_count)
-        every[name] = drawn_arrays(
-            build, name, held, layout.sizes[name], layout.shapes[name]
-        )
+        every[name] = drawn_arrays(build, name, held, layout)
     masked = masked_reconstruction(model, alone, mask_ratio, seed, device)
     # The query's shown observation hidden whole, every source's all read whole
     attention = {
-        query: cmr_attention(
+        query: cross_modal_reconstruction_attention(
             model, every | {query: alone[query] | masked[query]}, query, device
         )
         for query in layout.sizes
     }
     ranged = {
-        query: cmr_attention(
+        query: cross_modal_reconstruction_attention(
             model,
             {
                 name: (alone if name == query else every)[name]
@@ -147,21 +144,6 @@ def reconstruction_and_attention(
         for query, other in zip(ranging, ranging[::-1], strict=True)
     }
     return attention, ranged
-
-
-def batch_on_device(
-    sample: Mapping[str, Mapping[str, np.ndarray]], device: torch.device
-) -> dict[str, Tokens]:
-    """Return one tile's arrays as a batch of one, on the device.
-
-    Args:
-        sample: Each instrument's arrays, as drawn_arrays names them.
-        device: Where the model runs.
-
-    Returns:
-        batch: Each instrument's patches, a batch of one.
-    """
-    return {name: one.to(device) for name, one in padded_tokens([sample]).items()}
 
 
 def masked_reconstruction(
@@ -183,7 +165,12 @@ def masked_reconstruction(
     Returns:
         masked: Each instrument's "hidden" patches, and those rebuilt under "umr".
     """
-    batch = batch_on_device(sample, device)
+    batch = {
+        name: Tokens(*(torch.as_tensor(held[key])[None] for key in Tokens._fields)).to(
+            device
+        )
+        for name, held in sample.items()
+    }
     visible, hidden = masking_random_correspondence(
         batch, mask_ratio, mask_generators(batch, seed, device)
     )
@@ -198,7 +185,7 @@ def masked_reconstruction(
     }
 
 
-def cmr_attention(
+def cross_modal_reconstruction_attention(
     model: CrossSensorMAE,
     sample: Mapping[str, Mapping[str, np.ndarray]],
     query: str,
@@ -217,23 +204,27 @@ def cmr_attention(
         attended: The query's arrays plus "cmr", every other's plus rolled_attention's
             drawn and near over uniform as "overall" and "attention", "share", "cls".
     """
-    batch = batch_on_device(sample, device)
-    present = {name: one.present for name, one in batch.items()}
+    batch = {
+        name: Tokens(*(torch.as_tensor(held[key])[None] for key in Tokens._fields)).to(
+            device
+        )
+        for name, held in sample.items()
+    }
     with torch.no_grad():
-        _, contexts = model.embed_tokens(batch, present)
+        encoded = model.embed_tokens(batch)
     sources = [name for name in sample if name != query]
     # CMR reads the others without the CLS of every instrument
-    context = cmr_context(contexts, query)
+    context = encoded.cross_modal_reconstruction_context(query)
     cmr, drawn, near = rolled_attention(
         model.decoders[query],
         context,
         batch[query].position,
         batch[query].acquisition,
-        present[query],
+        batch[query].present,
     )
     readable = int(context.readable.sum())
     # Each instrument's CLS, then its tokens
-    lengths = [contexts[name].tokens.shape[1] for name in sources]
+    lengths = [encoded.instruments[name].tokens.shape[1] for name in sources]
     ends = np.cumsum(lengths)[:-1]
     split = zip(
         sources,
@@ -280,15 +271,13 @@ def rolled_attention(
     weights = []
     hooks = [
         block.register_forward_hook(
-            lambda block, args, _: weights.append(block.attention_weights(*args))
+            lambda block, args, _: weights.append(block.head_averaged_attention(*args))
         )
         for block in decoder.blocks.blocks
     ]
     # The pass itself, the asked patches reading the context
     with torch.no_grad():
-        _, prediction = decoder.latents_and_patches(
-            *context, position, acquisition, hidden
-        )
+        _, prediction = decoder(context, position, acquisition, hidden)
     for hook in hooks:
         hook.remove()
     # Roll out: half of each block passes on what the queries it read had gathered

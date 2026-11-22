@@ -43,13 +43,9 @@ class Tokens(NamedTuple):
             device: Where they are moved.
 
         Returns:
-            tokens: The patches, every array on the device, half precision read
-                there in single.
+            tokens: The patches, every array on the device.
         """
-        moved = (one.to(device, non_blocking=True) for one in self)
-        return Tokens(
-            *(one.float() if one.dtype == torch.float16 else one for one in moved)
-        )
+        return Tokens(*(one.to(device, non_blocking=True) for one in self))
 
     def readable_and_position_with_cls(self, readable: Tensor) -> tuple[Tensor, Tensor]:
         """Return which slots count and where they sit, a CLS slot leading them.
@@ -67,22 +63,22 @@ class Tokens(NamedTuple):
             functional.pad(self.position, (0, 0, 1, 0)),
         )
 
-    def kept(self, keep: Tensor) -> tuple[Tokens, Tensor]:
-        """Return the kept slots alone, packed to the front and padded to one count.
+    def selected_slots_packed_to_front(self, selected: Tensor) -> tuple[Tokens, Tensor]:
+        """Return the selected slots alone, packed to the front and padded to one count.
 
         Args:
-            keep: Which slots are kept. (B, K)
+            selected: Which slots are selected. (B, K)
 
         Returns:
-            tokens: The kept patches, in their order. (B, K', *P)
-            kept: Which of the packed slots hold a kept patch. (B, K')
+            tokens: The selected patches, in their order. (B, K', *P)
+            filled: Which of the packed slots hold a selected patch. (B, K')
         """
-        order = keep.int().argsort(dim=1, descending=True, stable=True)
-        order = order[:, : int(keep.sum(1).max())]  # (B, K')
+        order = selected.int().argsort(dim=1, descending=True, stable=True)
+        order = order[:, : int(selected.sum(1).max())]  # (B, K')
         taken = (
             torch.take_along_dim(
                 one, order.view(*order.shape, *[1] * (one.dim() - 2)), 1
             )
             for one in self
         )
-        return Tokens(*taken), keep.gather(1, order)
+        return Tokens(*taken), selected.gather(1, order)

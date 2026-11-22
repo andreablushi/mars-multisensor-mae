@@ -11,7 +11,7 @@ from torch.nn import functional
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
-from mars_multisensor_mae.architecture.mae import CrossSensorMAE, global_tokens
+from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.dataset.loader import tile_loader
 from mars_multisensor_mae.dataset.models.patch import PatchLayout
@@ -121,36 +121,22 @@ def tile_vectors(
         for batch, identities in loader:
             tiles.extend(identities)
             batch = {name: tokens.to(device) for name, tokens in batch.items()}
-            present = {name: tokens.present for name, tokens in batch.items()}
-            cls, contexts = model.embed_tokens(batch, present)
-            if raw:
-                pooled = {
-                    Pooling.CLS: {
-                        name: held.tokens[:, 0] for name, held in contexts.items()
-                    },
-                    Pooling.GAP: {
-                        name: (held.tokens[:, 1:] * present[name].unsqueeze(-1)).sum(1)
-                        / present[name].sum(1, keepdim=True).clamp(min=1)
-                        for name, held in contexts.items()
-                    },
-                }
+            encoded = model.embed_tokens(batch)
+            pooled = {
+                pooling: encoded.pooled_tile_vectors(pooling, unit=not raw)
+                for pooling in (Pooling.CLS, Pooling.GAP)
+            }
+            gap = list(pooled[Pooling.GAP].values())
+            overall = {
+                Pooling.CLS: encoded.cls,
+                Pooling.GAP: torch.stack(gap).mean(0)
+                if raw
+                else torch.stack(gap, dim=1).sum(1),
+            }
+            if not raw:
                 overall = {
-                    Pooling.CLS: cls,
-                    Pooling.GAP: torch.stack(list(pooled[Pooling.GAP].values())).mean(
-                        0
-                    ),
-                }
-            else:
-                pooled = {
-                    pooling: global_tokens(contexts, present, pooling)
-                    for pooling in (Pooling.CLS, Pooling.GAP)
-                }
-                overall = {
-                    Pooling.CLS: functional.normalize(cls, dim=-1),
-                    Pooling.GAP: functional.normalize(
-                        torch.stack(list(pooled[Pooling.GAP].values()), dim=1).sum(1),
-                        dim=-1,
-                    ),
+                    key: functional.normalize(held, dim=-1)
+                    for key, held in overall.items()
                 }
             for pooling, by_name in pooled.items():
                 for name, held in by_name.items():

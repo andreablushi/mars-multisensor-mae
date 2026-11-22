@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
 from dataclasses import replace
 
 import numpy as np
@@ -13,7 +12,7 @@ from mars_multisensor_dataset.building.configs import sharad
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
 
-from mars_multisensor_mae.architecture.mae import CrossSensorMAE, global_tokens
+from mars_multisensor_mae.architecture.mae import CrossSensorMAE
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.configs.load import named_sample
 from mars_multisensor_mae.dataset.loader import tile_loader
@@ -30,8 +29,7 @@ from mars_multisensor_mae.logs.images.lavaflow import lavaflow_image
 def evaluate_lavaflow(
     model: CrossSensorMAE,
     build: DatasetBuild,
-    size: Mapping[str, int],
-    shape: tuple[int, ...],
+    layout: PatchLayout,
     batch_size: int,
     queries: int,
     top_k: int,
@@ -46,8 +44,7 @@ def evaluate_lavaflow(
     Args:
         model: The model, on the device.
         build: The lava flow build, SHARAD crops and their verdicts.
-        size: How far a SHARAD patch runs along each axis it is cut on.
-        shape: The shape of one SHARAD patch as the model reads it.
+        layout: How SHARAD is cut into patches, and the shape the model reads one in.
         batch_size: How many crops one batch of the vector pass holds.
         queries: How many reflector crops are drawn beside what they retrieve.
         top_k: How many crops each drawn query shows it retrieved.
@@ -74,7 +71,7 @@ def evaluate_lavaflow(
         tile_loader(
             by_crop,
             rows,
-            PatchLayout({name: size}, {name: shape}),
+            layout,
             None,
             1.0,
             seed,
@@ -125,7 +122,7 @@ def evaluate_lavaflow(
         images.append(
             lavaflow_image(
                 [
-                    drawn_arrays(build, name, rows[crops[at].crop], size, shape)
+                    drawn_arrays(build, name, rows[crops[at].crop], layout)
                     for at in shown
                 ],
                 [crops[at].crop for at in shown],
@@ -166,14 +163,14 @@ def crop_vectors(
             tokens = tokens._replace(
                 position=torch.cat([ground - centre, tokens.position[..., 2:]], dim=-1)
             )
-            _, contexts = model.embed_tokens({name: tokens}, {name: present})
+            encoded = model.embed_tokens({name: tokens})
             delay = tokens.position[..., 2].masked_fill(~present, torch.inf)  # (B, K)
             surface = present & (delay == delay.min(dim=1, keepdim=True).values)
             pooled = {
-                Pooling.CLS: global_tokens(contexts, {name: present}, Pooling.CLS),
-                Pooling.GAP: global_tokens(contexts, {name: present}, Pooling.GAP),
-                Pooling.GAP_SURFACE: global_tokens(
-                    contexts, {name: surface}, Pooling.GAP
+                Pooling.CLS: encoded.pooled_tile_vectors(Pooling.CLS),
+                Pooling.GAP: encoded.pooled_tile_vectors(Pooling.GAP),
+                Pooling.GAP_SURFACE: encoded.pooled_tile_vectors(
+                    Pooling.GAP, {name: surface}
                 ),
             }
             for pooling, held in pooled.items():

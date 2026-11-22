@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping, Sequence
-from functools import partial
 from itertools import chain, repeat
 from pathlib import Path
 
@@ -25,7 +24,7 @@ from mars_multisensor_mae.logs.tracker import (
     console_logger,
     log_terms,
 )
-from mars_multisensor_mae.training.optimizer import pretraining_optimizer_and_schedule
+from mars_multisensor_mae.training.optimizer import optimizer_and_schedule
 from mars_multisensor_mae.training.step import autocast_dtype, batch_step
 from mars_multisensor_mae.training.validate import validation_terms
 
@@ -107,21 +106,11 @@ def train(
         for tiles, shuffled in ((training, True), (validation, False))
     )
     num_steps = num_epochs * steps_per_epoch
-    optimizer, scheduler = pretraining_optimizer_and_schedule(
+    optimizer, scheduler = optimizer_and_schedule(
         model, learning_rate, weight_decay, warmup_steps, num_steps
     )
     scaler = torch.amp.GradScaler(
         device.type, enabled=autocast_dtype(device) == torch.float16
-    )
-    step_terms = partial(
-        batch_step,
-        model,
-        mask_ratio=mask_ratio,
-        aligned=aligned,
-        pooling=pooling,
-        temperature=temperature,
-        latent_temperature=latent_temperature,
-        device=device,
     )
     generators = mask_generators(model.encoders, seed, device)
     started = time.perf_counter()
@@ -133,7 +122,17 @@ def train(
         ):
             batch, identities = next(batches)
             optimizer.zero_grad()
-            terms = step_terms(batch, generators=generators)
+            terms = batch_step(
+                model,
+                batch,
+                mask_ratio,
+                aligned,
+                pooling,
+                temperature,
+                latent_temperature,
+                generators,
+                device,
+            )
             scaler.scale(terms["loss"]).backward()
             scaler.unscale_(optimizer)
             # Stabilize training against exploding gradients
@@ -148,7 +147,15 @@ def train(
             log_terms(run, step, TRAIN, terms | {"grad_norm": norm})
         model.eval()
         metrics = validation_terms(
-            validation, step_terms, mask_generators(model.encoders, seed, device)
+            model,
+            validation,
+            mask_ratio,
+            aligned,
+            pooling,
+            temperature,
+            latent_temperature,
+            mask_generators(model.encoders, seed, device),
+            device,
         )
         log_terms(run, step, VALIDATION, metrics)
         log.info("step %d validation loss %.4f", step, metrics["loss"])

@@ -10,8 +10,8 @@ from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
 from utils.model import built_pretrained_model
 
+from mars_multisensor_mae.architecture.load import cross_sensor_mae_with_logged_weights
 from mars_multisensor_mae.architecture.models.context import Pooling
-from mars_multisensor_mae.architecture.pretrained import trained_model
 from mars_multisensor_mae.configs.load import load_config, named_sample
 from mars_multisensor_mae.configs.paths import ARTIFACTS_ROOT, results_directory
 from mars_multisensor_mae.evaluation.evaluate import evaluate
@@ -83,7 +83,9 @@ def run_evaluation(
         spared=old and old.id,
     )
     log.info("evaluating %s on %s", run_name, device)
-    model = trained_model(model, run, run_name, ARTIFACTS_ROOT).eval()
+    model = cross_sensor_mae_with_logged_weights(
+        model, run, run_name, ARTIFACTS_ROOT
+    ).eval()
     if EVALUATION in kept:
         log_kept_part(run, *kept[EVALUATION], PART_STEPS[EVALUATION])
     if whole:
@@ -134,8 +136,7 @@ def run_evaluation(
             published_build(
                 config, f"{config.dataset.version}-{settings.build}", "dataset"
             ),
-            layout.sizes[name],
-            layout.shapes[name],
+            layout.only([name]),
             config.evaluation.batch_size,
             settings.qualitative.queries,
             settings.qualitative.top_k,
