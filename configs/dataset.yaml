@@ -4,6 +4,10 @@ version: halfplanet
 # Build read by training.
 build: training
 
+# Build some instruments are read from instead, a window around each centre at a
+# time, such as {CTX: training-ctx6}.
+builds: {}
+
 # Version whose training build sets the normalising constants, the model's own.
 stats_version: ${dataset.version}
 

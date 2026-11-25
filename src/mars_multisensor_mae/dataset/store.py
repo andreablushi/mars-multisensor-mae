@@ -6,7 +6,7 @@ import io
 import json
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -40,9 +40,10 @@ from mars_multisensor_dataset.building.preprocessing.sharad.window import (
     rows_below_atmosphere,
 )
 from mars_multisensor_dataset.common.disk import parquet
+from mars_multisensor_dataset.common.disk.blocks import BLOCKS, OFFSETS, decoded_window
 from mars_multisensor_dataset.common.disk.files import atomic_path
 
-from mars_multisensor_mae.dataset.models.observation import Observation
+from mars_multisensor_mae.dataset.models.observation import Observation, Window
 from mars_multisensor_mae.dataset.models.patch import TileSample
 
 
@@ -63,6 +64,10 @@ class DatasetBuild:
             None.
         stats: The constants of each instrument, once the manifest is read, else
             None.
+        windowed: The build some instruments are read from instead, a window
+            around each centre at a time, keyed by instrument.
+        keep_fetched: Whether an object fetched is written onto the root, so the
+            next read finds it there.
     """
 
     root: Path
@@ -72,6 +77,8 @@ class DatasetBuild:
     acquisition: Mapping[str, Sequence[str]]
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
     stats: dict[str, dict[str, Any]] | None = None
+    windowed: dict[str, DatasetBuild] = field(default_factory=dict)
+    keep_fetched: bool = False
 
     def local_root(self, *names: str) -> Path:
         """Return the build root, the named objects fetched onto it where missing.
@@ -95,14 +102,23 @@ class DatasetBuild:
         """Return the observations of each tile, by the instrument that took them.
 
         Returns:
-            records: The rows of each sensor of each tile, keyed by tile.
+            records: The rows of each sensor of each tile, keyed by tile, a windowed
+                instrument's from its own build and a tile it lacks left out.
         """
         if self.records is None:
             root = self.local_root(built.OBSERVATION_METADATA_NAME)
             standing = defaultdict(lambda: defaultdict(list))
             for one in read_observation_metadata(root):
                 standing[one.tile][one.instrument].append(one)
-            self.records = {tile: dict(rows) for tile, rows in standing.items()}
+            records = {tile: dict(rows) for tile, rows in standing.items()}
+            for name, other in self.windowed.items():
+                held = other.read_observation_metadata()
+                records = {
+                    tile: rows | {name: held[tile][name]}
+                    for tile, rows in records.items()
+                    if name in held.get(tile, {})
+                }
+            self.records = records
         return self.records
 
     def read_stats(self) -> dict[str, dict[str, Any]]:
@@ -115,7 +131,9 @@ class DatasetBuild:
             self.stats = read_normalization(
                 self.local_root(built.DATASET_MANIFEST_NAME)
             )
-        return self.stats
+        return self.stats | {
+            name: other.read_stats()[name] for name, other in self.windowed.items()
+        }
 
     def read_label_by_tile(self) -> dict[str, str]:
         """Return the class the feature catalogue gave every tile the draw took.
@@ -134,27 +152,52 @@ class DatasetBuild:
         """
         return read_lavaflow_labels(self.local_root(LAVAFLOW_LABELS_NAME))
 
-    def read_observation(self, path: str) -> Observation:
+    def read_observation(self, path: str, window: Window | None = None) -> Observation:
         """Return one stored observation, read out of the object it was written as.
 
         Args:
             path: Where that object sits, as the index names it.
+            window: The part of an observation stored as WebP blocks to decode, or
+                None for all of it.
 
         Returns:
             observation: Values and cluttergram as stored, CRISM gaps unmeasured,
-                SHARAD's atmosphere cropped if asked.
+                SHARAD's atmosphere cropped if asked, an encoded image decoded.
         """
         stored = self.root / path
-        data = stored.read_bytes() if stored.is_file() else self.fetch(path)
+        if stored.is_file():
+            data = stored.read_bytes()
+        else:
+            data = self.fetch(path)
+            if self.keep_fetched:
+                with atomic_path(stored) as written:
+                    written.write_bytes(data)
         with np.load(io.BytesIO(data)) as held:
             # What the observation is, is stored beside its arrays as one json string.
             described = json.loads(str(held[META]))
             instrument = described["instrument"]
             sounder = instrument == sharad.LAYOUT.instrument
+            encoding = described.get("encoding")
             # Only these are read, so what is not asked for stays packed.
-            values, measured, north, east = (
-                held[name] for name in (described["measurement"], MEASURED, NORTH, EAST)
-            )
+            measured, north, east = (held[name] for name in (MEASURED, NORTH, EAST))
+            if encoding is None:
+                values = held[described["measurement"]]
+            else:
+                lines, samples = (
+                    (slice(0, size) for size in measured.shape)
+                    if window is None
+                    else window.slices(described, north, east, measured.shape)
+                )
+                values = decoded_window(
+                    {name: held[name] for name in (BLOCKS, OFFSETS)},
+                    encoding,
+                    (lines, samples),
+                )
+                measured, north, east = (
+                    measured[lines, samples],
+                    north[lines],
+                    east[samples],
+                )
             clutter = held[sharad.Kind.CLUTTER] if sounder else None
         axes = tuple(described["axes"])
         first_row = 0

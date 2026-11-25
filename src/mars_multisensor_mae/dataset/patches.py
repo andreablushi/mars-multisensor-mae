@@ -10,6 +10,7 @@ from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.configs import sharad
 from mars_multisensor_dataset.building.metadata.observation import ObservationMetadata
 
+from mars_multisensor_mae.dataset.models.observation import Window
 from mars_multisensor_mae.dataset.models.patch import (
     InstrumentPatches,
     Patch,
@@ -23,14 +24,18 @@ def cut_tile_patches(
     rows: Mapping[str, Sequence[ObservationMetadata]],
     build: DatasetBuild,
     layout: PatchLayout,
+    windows: Mapping[str, Window] | None = None,
 ) -> dict[str, list[Patch]]:
     """Return every whole patch of every observation one tile holds, by instrument.
 
     Args:
         rows: The tile's index rows of each instrument, keyed as ODE names it.
-        build: The published build the observations are read from.
+        build: The published build the observations are read from, a windowed
+            instrument from its own.
         layout: How each instrument is cut into patches, a patch's shape its length
             along each axis.
+        windows: The part of a windowed instrument's observations read, keyed by
+            instrument, the rest read whole.
 
     Returns:
         read: The patches of each instrument measuring anything, in the order the
@@ -40,7 +45,9 @@ def cut_tile_patches(
     for name, lengths in layout.shapes.items():
         held: list[Patch] = []
         for record in rows[name]:
-            observation = build.read_observation(record.path)
+            observation = build.windowed.get(name, build).read_observation(
+                record.path, (windows or {}).get(name)
+            )
             axes = observation.axes
             angles = np.array(
                 [getattr(record.acquisition, one) for one in build.acquisition[name]],

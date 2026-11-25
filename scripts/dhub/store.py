@@ -28,9 +28,18 @@ def published_dataset_build(config: Config, build: str) -> DatasetBuild:
         build: The build to read, published as <version>-dataset-<build>.
 
     Returns:
-        build: The build, off disk where already fetched and from the store otherwise.
+        build: The build, off disk where already fetched and from the store otherwise,
+            each instrument `dataset.builds` names read from its own build.
     """
-    return published_build(config, f"{config.dataset.version}-dataset-{build}")
+    held = published_build(config, f"{config.dataset.version}-dataset-{build}")
+    own = replace(
+        config, dataset=replace(config.dataset, stats_version=config.dataset.version)
+    )
+    for name, other in config.dataset.builds.items():
+        windowed = published_build(own, f"{config.dataset.version}-dataset-{other}")
+        windowed.keep_fetched = True
+        held.windowed[name] = windowed
+    return held
 
 
 def published_build(config: Config, name: str, subfolder: str = "") -> DatasetBuild:

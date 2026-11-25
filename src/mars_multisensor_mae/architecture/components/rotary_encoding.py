@@ -9,7 +9,7 @@ from mars_multisensor_dataset.building.configs import sharad
 from mars_multisensor_dataset.common.maths import physics
 from torch import Tensor, nn
 
-SHORTEST_M = 1280.0
+SHORTEST_M = 160.0
 
 LONGEST_M = 64_000.0
 

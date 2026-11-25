@@ -12,6 +12,8 @@ class DatasetConfig:
     Attributes:
         version: The dataset version every build is read from.
         build: The build to read, published as <version>-dataset-<build>.
+        builds: The build some instruments are read from instead, a window around
+            each centre at a time, keyed by instrument.
         stats_version: The version whose training build sets the normalising constants.
         root: Where every build sits on this machine, under a directory of its own name.
         clip: The low and high each instrument's values are clipped to, None for open.
@@ -26,6 +28,7 @@ class DatasetConfig:
 
     version: str
     build: str
+    builds: dict[str, str]
     stats_version: str
     root: str
     clip: dict[str, list[float | None]]

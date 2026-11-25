@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import named_generator
 from mars_multisensor_mae.configs.paths import ready_array_path
+from mars_multisensor_mae.dataset.models.observation import Window
 from mars_multisensor_mae.dataset.models.patch import (
     InstrumentPatches,
     PatchLayout,
@@ -126,6 +127,43 @@ def read_cached_tile(
     return TileSample(loaded)
 
 
+def read_windowed_patches(
+    build: DatasetBuild,
+    identity: str,
+    layout: PatchLayout,
+    budget: Mapping[str, int],
+    centre: np.ndarray,
+) -> dict[str, InstrumentPatches]:
+    """Return the patches of each windowed instrument in a window around one spot.
+
+    Args:
+        build: The build the tile is read from, each instrument from its own.
+        identity: The tile.
+        layout: How each windowed instrument is cut into patches.
+        budget: How many patches of each instrument the read keeps.
+        centre: East and north of the spot every instrument is cut around, in
+            metres. (2,)
+
+    Returns:
+        patches: Each instrument's patches in its window, as stored.
+    """
+    rows = build.read_observation_metadata()[identity]
+    windows = {
+        name: Window.for_budget(centre, budget[name], max(shape))
+        for name, shape in layout.shapes.items()
+    }
+    return {
+        name: InstrumentPatches.stacked(
+            patches,
+            name,
+            layout.shapes[name],
+            rows[name][0].axes,
+            build.acquisition[name],
+        )
+        for name, patches in cut_tile_patches(rows, build, layout, windows).items()
+    }
+
+
 def read_cached_batch(
     identities: Sequence[str],
     build: DatasetBuild,
@@ -152,12 +190,15 @@ def read_cached_batch(
         batch: Each instrument's patches over the batch, keyed as ODE names it.
         identities: The tile each read belongs to, in the batch's own order.
     """
+    windowed = []
     if budget is not None:
         factor = random.uniform(1.0, scale)
         budget = {name: round(count * factor) for name, count in budget.items()}
+        windowed = [name for name in layout.sizes if name in build.windowed]
+    cached = layout.only(name for name in layout.sizes if name not in windowed)
     samples = []
     for identity in identities:
-        sample = read_cached_tile(build, identity, layout, cache)
+        sample = read_cached_tile(build, identity, cached, cache)
         if budget is not None:
             draw = random.Random(
                 random.random() if seed is None else f"{seed}/{identity}"
@@ -165,6 +206,16 @@ def read_cached_batch(
             # One patch spot of any instrument is the centre all are cut around
             grounds = sample.ground_spots
             centre = grounds[draw.randrange(len(grounds))]
+            if windowed:
+                sample = TileSample(
+                    sample.instruments
+                    | read_windowed_patches(
+                        build, identity, layout.only(windowed), budget, centre
+                    )
+                )
+                sample = TileSample(
+                    {name: sample.instruments[name] for name in layout.sizes}
+                )
             sample = sample.budget_cut(budget, centre)
         samples.append(build.normalised_sample(sample))
     return padded_tokens(samples), list(identities)

@@ -113,7 +113,7 @@ markupsafe==3.0.3
     # via jinja2
 mars-multisensor-benchmark @ https://github.com/andreablushi/mars-multisensor-benchmark/archive/refs/heads/main.tar.gz
     # via mars-multisensor-mae
-mars-multisensor-dataset @ https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/main.tar.gz
+mars-multisensor-dataset @ https://github.com/andreablushi/mars-multisensor-dataset/archive/refs/heads/ctx-6.tar.gz
     # via mars-multisensor-mae
 matplotlib==3.11.2
     # via mars-multisensor-mae
