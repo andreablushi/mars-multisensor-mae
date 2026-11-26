@@ -9,6 +9,7 @@
 set -euo pipefail
 export UV_PYTHON=3.13 UV_CACHE_DIR=$WORK/uv/cache UV_PYTHON_INSTALL_DIR=$WORK/uv/python
 export VIRTUAL_ENV=$UV_PROJECT_ENVIRONMENT
-uv venv --allow-existing "$VIRTUAL_ENV"
-uv pip sync requirements.txt
+rm -rf "$VIRTUAL_ENV"
+uv venv "$VIRTUAL_ENV"
+uv pip install -r requirements.txt
 uv pip install --no-deps -e . -e ../mars-multisensor-dataset -e ../mars-multisensor-benchmark
