@@ -6,18 +6,23 @@ import gc
 import random
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import partial
+from pathlib import Path, PurePosixPath
 
 import numpy as np
 import torch
 from mars_multisensor_dataset.building.common.layout import Axis
 from mars_multisensor_dataset.building.configs import sharad
-from mars_multisensor_dataset.common.disk.files import atomic_path
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
 from mars_multisensor_mae.architecture.models.tokens import Tokens
 from mars_multisensor_mae.configs.load import named_generator
-from mars_multisensor_mae.configs.paths import ready_array_path
+from mars_multisensor_mae.configs.paths import (
+    READY_MARKER,
+    READY_ROOT_NAME,
+    READY_TILE_FILE,
+    ready_setup_folder,
+)
 from mars_multisensor_mae.dataset.models.patch import (
     InstrumentPatches,
     PatchLayout,
@@ -54,46 +59,69 @@ def padded_tokens(samples: Sequence[TileSample]) -> dict[str, Tokens]:
     return batch
 
 
-def read_cached_tile(
-    build: DatasetBuild,
-    identity: str,
-    layout: PatchLayout,
-    cache: bool = True,
+def ready_setup_folders(build: DatasetBuild, layout: PatchLayout) -> dict[str, Path]:
+    """Return the folder each instrument's tiles of a build are cut into.
+
+    Args:
+        build: The build the tiles are read from.
+        layout: How each instrument is cut into patches, which names its folder.
+
+    Returns:
+        folders: The folder of each instrument's cut tiles, keyed as ODE names it.
+    """
+    held = build.ready_root or build.root / READY_ROOT_NAME
+    return {
+        name: held
+        / ready_setup_folder(
+            name,
+            (
+                sorted(size.items()),
+                build.acquisition[name],
+                build.sharad_atmosphere_cropping and name == sharad.LAYOUT.instrument,
+            ),
+        )
+        for name, size in layout.sizes.items()
+    }
+
+
+def ready_tile_paths(
+    build: DatasetBuild, identity: str, layout: PatchLayout
+) -> dict[str, Path]:
+    """Return where each instrument's cut patches of one tile are kept.
+
+    Args:
+        build: The build the tile is read from.
+        identity: The tile.
+        layout: How each instrument is cut into patches, which names its folder.
+
+    Returns:
+        paths: One uncompressed npz per instrument, in the band its crops sit in.
+    """
+    rows = build.read_observation_metadata()[identity]
+    return {
+        name: folder
+        / READY_TILE_FILE.format(PurePosixPath(rows[name][0].path).parts[0], identity)
+        for name, folder in ready_setup_folders(build, layout).items()
+    }
+
+
+def cut_tile_sample(
+    build: DatasetBuild, identity: str, layout: PatchLayout
 ) -> TileSample:
-    """Return one tile's patches from the run's cache, cut into it when missing.
+    """Return one tile's patches, cut from its observations as stored.
 
     Args:
         build: The build the tile is read from.
         identity: The tile.
         layout: How each instrument is cut into patches, and the shape the model
             reads one in.
-        cache: Whether a tile missing from the cache is kept there once cut, or cut
-            in memory alone.
 
     Returns:
-        sample: Each instrument's patches as stored, read lazily off the cache.
+        sample: Each instrument's patches as stored, in memory.
     """
-    paths = {
-        name: {
-            key: build.root
-            / ready_array_path(
-                identity,
-                name,
-                (
-                    sorted(size.items()),
-                    build.acquisition[name],
-                    build.sharad_atmosphere_cropping
-                    and name == sharad.LAYOUT.instrument,
-                ),
-                key,
-            )
-            for key in InstrumentPatches._fields
-        }
-        for name, size in layout.sizes.items()
-    }
     rows = build.read_observation_metadata()[identity]
-    if not all(path.is_file() for held in paths.values() for path in held.values()):
-        cut = {
+    return TileSample(
+        {
             name: InstrumentPatches.stacked(
                 patches,
                 name,
@@ -103,20 +131,109 @@ def read_cached_tile(
             )
             for name, patches in cut_tile_patches(rows, build, layout).items()
         }
+    )
+
+
+def write_cut_tile(sample: TileSample, paths: Mapping[str, Path]) -> None:
+    """Write each instrument's patches of one tile to its own file, renamed whole.
+
+    Args:
+        sample: Each instrument's patches as stored.
+        paths: Where each instrument's patches are written, keyed as ODE names it.
+    """
+    for name, held in sample.instruments.items():
+        arrays = held._asdict()
+        arrays["measured"] = np.packbits(arrays["measured"], axis=-1)
+        path = paths[name]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        unfinished = path.with_name(f"{path.name}.partial")
+        with unfinished.open("wb") as file:
+            np.savez(file, **arrays)
+        unfinished.replace(path)
+
+
+def cut_missing_tiles(
+    identities: Sequence[str], build: DatasetBuild, layout: PatchLayout
+) -> int:
+    """Return how many of some tiles were cut, each one missing cut and written.
+
+    Args:
+        identities: The tiles.
+        build: The build the tiles are read from.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
+
+    Returns:
+        cut: How many of the tiles were missing and are now cut.
+    """
+    cut = 0
+    for identity in identities:
+        paths = ready_tile_paths(build, identity, layout)
+        if not all(path.is_file() for path in paths.values()):
+            write_cut_tile(cut_tile_sample(build, identity, layout), paths)
+            cut += 1
+    return cut
+
+
+def check_complete_cut(build: DatasetBuild, layout: PatchLayout) -> None:
+    """Check that a build which never cuts holds a complete cut of each instrument.
+
+    Args:
+        build: The build the tiles are read from.
+        layout: How each instrument is cut into patches, which names its folder.
+
+    Raises:
+        FileNotFoundError: When the cut of an instrument was never completed.
+    """
+    if build.cuts:
+        return
+    missing = [
+        str(folder)
+        for folder in ready_setup_folders(build, layout).values()
+        if not (folder / READY_MARKER).is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"no complete cut in {', '.join(missing)}: cut it with "
+            "`scripts/leonardo/submit.sh cut` and the stage's own overrides"
+        )
+
+
+def read_cached_tile(
+    build: DatasetBuild,
+    identity: str,
+    layout: PatchLayout,
+    cache: bool = True,
+) -> TileSample:
+    """Return one tile's patches from the cut tiles, cut into them when missing.
+
+    Args:
+        build: The build the tile is read from.
+        identity: The tile.
+        layout: How each instrument is cut into patches, and the shape the model
+            reads one in.
+        cache: Whether a tile missing from the cut tiles is kept there once cut, or
+            cut in memory alone.
+
+    Returns:
+        sample: Each instrument's patches as stored, read off the cut tiles.
+
+    Raises:
+        FileNotFoundError: When the tile is missing and the build never cuts.
+    """
+    paths = ready_tile_paths(build, identity, layout)
+    if not all(path.is_file() for path in paths.values()):
+        if not build.cuts:
+            raise FileNotFoundError(f"{identity} is not cut: {sorted(paths.values())}")
+        sample = cut_tile_sample(build, identity, layout)
         if not cache:
-            return TileSample(cut)
-        for name, held in cut.items():
-            for key, array in held._asdict().items():
-                if key == "measured":
-                    array = np.packbits(array, axis=-1)
-                with (
-                    atomic_path(paths[name][key]) as written,
-                    written.open("wb") as file,
-                ):
-                    np.save(file, array)
+            return sample
+        write_cut_tile(sample, paths)
+    rows = build.read_observation_metadata()[identity]
     loaded = {}
-    for name, held in paths.items():
-        arrays = {key: np.load(path, mmap_mode="c") for key, path in held.items()}
+    for name, path in paths.items():
+        with np.load(path) as held:
+            arrays = {key: held[key] for key in InstrumentPatches._fields}
         # What is measured is kept a bit a sample, along the last axis it runs on
         last = layout.shapes[name][-1] if rows[name][0].axes[-1] == Axis.GROUND else 1
         arrays["measured"] = np.unpackbits(

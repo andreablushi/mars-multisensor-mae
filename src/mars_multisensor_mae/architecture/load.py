@@ -81,6 +81,18 @@ def built_cross_sensor_mae(
     return model, device, layout
 
 
+def trained_run(run_name: str) -> bool:
+    """Return whether a run name stands for trained weights, not the seed's own.
+
+    Args:
+        run_name: What the run is called, a last part of "random" for the seed's own.
+
+    Returns:
+        trained: Whether a logged checkpoint holds its weights.
+    """
+    return run_name.split("/")[-1] != "random"
+
+
 def cross_sensor_mae_with_logged_weights(
     model: CrossSensorMAE, run: Run, run_name: str, artifacts_root: Path
 ) -> CrossSensorMAE:
@@ -96,7 +108,7 @@ def cross_sensor_mae_with_logged_weights(
     Returns:
         model: The same model, its weights loaded.
     """
-    if run_name.split("/")[-1] != "random":
+    if trained_run(run_name):
         path = logged_checkpoint(run, run_name, artifacts_root)
         held = torch.load(path, map_location="cpu")
         model.load_state_dict(held["model"])

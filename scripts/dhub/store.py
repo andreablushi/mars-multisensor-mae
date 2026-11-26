@@ -1,10 +1,10 @@
-"""What a run reads from DigitalHub: the published builds."""
+"""What a run reads from DigitalHub: the objects of the published builds."""
 
 from __future__ import annotations
 
 import fcntl
 import tempfile
-from dataclasses import replace
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -12,29 +12,16 @@ import digitalhub as dh
 from botocore.exceptions import ClientError, ResponseStreamingError
 from urllib3.exceptions import SSLError
 
-from mars_multisensor_mae.configs.paths import build_root
 from mars_multisensor_mae.configs.schema import Config
-from mars_multisensor_mae.dataset.store import DatasetBuild
 
 BROKEN_READS = (ClientError, ResponseStreamingError, SSLError)
 REFRESH_LOCK = Path(tempfile.gettempdir()) / "dhcore-refresh.lock"
 
 
-def published_dataset_build(config: Config, build: str) -> DatasetBuild:
-    """Return one published build of the dataset, read from the platform's store.
-
-    Args:
-        config: The run's config.
-        build: The build to read, published as <version>-dataset-<build>.
-
-    Returns:
-        build: The build, off disk where already fetched and from the store otherwise.
-    """
-    return published_build(config, f"{config.dataset.version}-dataset-{build}")
-
-
-def published_build(config: Config, name: str, subfolder: str = "") -> DatasetBuild:
-    """Return one published build, read from a folder of the platform's store.
+def published_fetch(
+    config: Config, name: str, subfolder: str = ""
+) -> Callable[[str], bytes]:
+    """Return how one object of a published build is read from the platform's store.
 
     Args:
         config: The run's config.
@@ -42,7 +29,7 @@ def published_build(config: Config, name: str, subfolder: str = "") -> DatasetBu
         subfolder: The folder of the artifact the build sits in, or "" for its top.
 
     Returns:
-        build: The build, off disk where already fetched and from the store otherwise.
+        fetch: What reads one object, by its path relative to the build.
     """
     project = dh.get_or_create_project(config.digitalhub.project)
     published = urlparse(project.get_artifact(name).spec.path)
@@ -78,20 +65,4 @@ def published_build(config: Config, name: str, subfolder: str = "") -> DatasetBu
             except BROKEN_READS as refused:
                 raise RuntimeError(f"{key}: {refused}") from None
 
-    held = DatasetBuild(
-        root=build_root(name, config.dataset.root) / subfolder,
-        fetch=fetch,
-        clips=config.dataset.clip,
-        sharad_atmosphere_cropping=config.dataset.sharad_atmosphere_cropping,
-        acquisition={
-            name: tuple(fields) if config.training.acquisition else ()
-            for name, fields in config.dataset.acquisition.items()
-        },
-    )
-    if config.dataset.stats_version != config.dataset.version:
-        trained = replace(
-            config,
-            dataset=replace(config.dataset, version=config.dataset.stats_version),
-        )
-        held.stats = published_dataset_build(trained, config.dataset.build).read_stats()
-    return held
+    return fetch

@@ -5,15 +5,17 @@ from __future__ import annotations
 import shutil
 from dataclasses import asdict
 
-from dhub.store import published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
-from evaluate import run_evaluation
+from evaluate import checked_evaluation_parts, run_evaluation
 from torch.utils.data import random_split
+from utils.build import DIGITALHUB, published_dataset_build
 from utils.model import built_pretrained_model
 
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.configs.load import load_config, named_generator
+from mars_multisensor_mae.configs.paths import READY_ROOT_NAME
+from mars_multisensor_mae.dataset.loader import check_complete_cut
 from mars_multisensor_mae.logs.tracker import (
     TRAINING,
     console_logger,
@@ -42,6 +44,9 @@ def run_training(
     config = load_config(overrides or [])
     build = published_dataset_build(config, config.dataset.build)
     model, device, layout = built_pretrained_model(config, build)
+    check_complete_cut(build, layout)
+    if evaluate:
+        checked_evaluation_parts(config, layout)
     workers = requested_read_workers(config, TRAINING)
     qualitative_tiles = {
         drawn.tile for drawn in config.evaluation.reconstruction.tiles.values()
@@ -90,7 +95,8 @@ def run_training(
     )
     log_checkpoint(run, last, run_name)
     run.finish()
-    shutil.rmtree(build.root / "ready", ignore_errors=True)
+    if config.dataset.store == DIGITALHUB:
+        shutil.rmtree(build.root / READY_ROOT_NAME, ignore_errors=True)
     if evaluate:
         run_evaluation.__wrapped__(run_name, overrides)
 

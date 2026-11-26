@@ -59,6 +59,9 @@ class DatasetBuild:
             atmosphere before it is patched.
         acquisition: The acquisition angles each instrument's patches carry, as the
             index names them, none when the run reads no angles.
+        ready_root: Where its cut tiles sit, or None for a folder under the root.
+        cuts: Whether a tile missing from the cut tiles is cut into them on its
+            first read, else its read fails.
         records: The rows of each sensor of each tile, once the index is read, else
             None.
         stats: The constants of each instrument, once the manifest is read, else
@@ -70,6 +73,8 @@ class DatasetBuild:
     clips: Mapping[str, Sequence[float | None]]
     sharad_atmosphere_cropping: bool
     acquisition: Mapping[str, Sequence[str]]
+    ready_root: Path | None = None
+    cuts: bool = True
     records: dict[str, dict[str, list[ObservationMetadata]]] | None = None
     stats: dict[str, dict[str, Any]] | None = None
 
@@ -85,8 +90,9 @@ class DatasetBuild:
         for name in names:
             held = self.root / name
             if not held.is_file():
+                data = self.fetch(name)
                 with atomic_path(held) as written:
-                    written.write_bytes(self.fetch(name))
+                    written.write_bytes(data)
         return self.root
 
     def read_observation_metadata(

@@ -18,7 +18,12 @@ from mars_multisensor_mae.logs.images.attention import attention_image
 from mars_multisensor_mae.logs.images.modality_gap import modality_gap_image
 from mars_multisensor_mae.logs.images.panels import DrawnImage
 from mars_multisensor_mae.logs.images.ranging import ranging_image
-from mars_multisensor_mae.logs.tracker import RESULTS_STEP, artifact_name
+from mars_multisensor_mae.logs.tracker import (
+    RESULTS_STEP,
+    artifact_name,
+    offline_tracking,
+    tracked_run,
+)
 
 EVALUATION = "evaluation"
 
@@ -27,6 +32,8 @@ RECONSTRUCTION = "reconstruction"
 LAVAFLOW = "lavaflow"
 
 PART_STEPS = {EVALUATION: 0, RECONSTRUCTION: 0, LAVAFLOW: RESULTS_STEP}
+
+KEPT_FILE = "kept.json"
 
 
 def log_evaluation(
@@ -176,21 +183,26 @@ def evaluation_part(key: str) -> str:
     return EVALUATION
 
 
-def kept_evaluation_values(
-    old: TrackedRun, asked: Sequence[str], directory: Path
-) -> dict[str, tuple[dict[str, object], dict[str, object]]]:
-    """Return what every part not asked logged in an evaluation run, ready to log again.
+def kept_evaluation_run(
+    run_name: str, asked: Sequence[str], directory: Path
+) -> TrackedRun | None:
+    """Return the evaluation run a part asked alone replaces, the rest downloaded.
 
     Args:
-        old: The evaluation run whose parts are kept.
+        run_name: What the run is called.
         asked: The parts logged anew, left out.
-        directory: Where the kept images and tables are downloaded, emptied first.
+        directory: Where the kept parts' last values, images and tables are downloaded,
+            emptied first; offline nothing is read, the prepare step having done it.
 
     Returns:
-        kept: Each kept part's last value of every history key and its summary
-            scalars, keyed by part.
+        old: The run, or None offline or when no evaluation run of the name is tracked.
     """
+    if offline_tracking():
+        return None
     shutil.rmtree(directory, ignore_errors=True)
+    old = tracked_run(run_name, EVALUATION)
+    if old is None:
+        return None
     history = {}
     for row in old.scan_history():
         history |= {
@@ -205,12 +217,7 @@ def kept_evaluation_values(
             continue
         if isinstance(value, dict) and "path" in value:
             with old.file(value["path"]).download(str(directory), replace=True) as file:
-                path = file.name
-            value = (
-                wandb.Table(**json.loads(Path(path).read_text()))
-                if value.get("_type") == "table-file"
-                else wandb.Image(path, caption=value.get("caption"))
-            )
+                value = value | {"path": file.name}
         kept[part][0][key] = value
     for key, value in old.summary.items():
         part = evaluation_part(key)
@@ -221,7 +228,42 @@ def kept_evaluation_values(
             and isinstance(value, (int, float, str))
         ):
             kept[part][1][key] = value
-    return kept
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / KEPT_FILE).write_text(json.dumps(kept))
+    return old
+
+
+def kept_evaluation_values(
+    directory: Path,
+) -> dict[str, tuple[dict[str, object], dict[str, object]]]:
+    """Return what every part not asked logged in the replaced run, ready to log again.
+
+    Args:
+        directory: Where `kept_evaluation_run` downloaded the kept parts.
+
+    Returns:
+        kept: Each kept part's last history values, images and tables read back, and
+            its summary scalars, keyed by part; none when nothing was downloaded.
+    """
+    path = directory / KEPT_FILE
+    if not path.exists():
+        return {}
+    return {
+        part: (
+            {
+                key: (
+                    wandb.Table(**json.loads(Path(value["path"]).read_text()))
+                    if value.get("_type") == "table-file"
+                    else wandb.Image(value["path"], caption=value.get("caption"))
+                )
+                if isinstance(value, dict) and "path" in value
+                else value
+                for key, value in history.items()
+            },
+            summary,
+        )
+        for part, (history, summary) in json.loads(path.read_text()).items()
+    }
 
 
 def log_kept_part(
@@ -238,17 +280,3 @@ def log_kept_part(
     run.summary.update(dict(summary))
     if history:
         run.log(dict(history), step=step)
-
-
-def retire_evaluation_run(old: TrackedRun, asked: Sequence[str]) -> None:
-    """Delete a replaced evaluation run, keeping the artifacts of the parts not asked.
-
-    Args:
-        old: The evaluation run replaced.
-        asked: The parts logged anew, whose old artifacts are deleted too unless
-            still the latest, as when the new content matched and W&B kept them.
-    """
-    for artifact in old.logged_artifacts():
-        if artifact.type in asked and "latest" not in artifact.aliases:
-            artifact.delete(delete_aliases=True)
-    old.delete(delete_artifacts=False)

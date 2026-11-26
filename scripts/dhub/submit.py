@@ -43,9 +43,10 @@ def requested_read_workers(config: Config, stage: str) -> int:
         stage: Which stage, as `configs/digitalhub.yaml` names it.
 
     Returns:
-        workers: Twice the cores the stage is given.
+        workers: Twice the cores the stage is given, SLURM's in a SLURM job.
     """
-    return 2 * int(config.digitalhub.stages[stage].resources["cpu"])
+    cores = os.environ.get("SLURM_CPUS_PER_TASK")
+    return 2 * int(cores or config.digitalhub.stages[stage].resources["cpu"])
 
 
 def run_stage(

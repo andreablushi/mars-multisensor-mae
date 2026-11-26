@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import replace
 
 import numpy as np
 import torch
 from lavaflow.configs import REFLECTOR
+from lavaflow.models import LavaFlowLabel
 from mars_multisensor_dataset.building.configs import sharad
 from torch.utils.data import DataLoader
 from wandb.sdk.wandb_run import Run
@@ -56,21 +58,12 @@ def evaluate_lavaflow(
     """
     name = sharad.LAYOUT.instrument
     crops = build.read_lavaflow_crops()
-    by_tile = build.read_observation_metadata()
-    rows = {
-        one.crop: [
-            row for row in by_tile[one.tile][name] if row.identifier == one.track
-        ]
-        for one in crops
-    }
-    by_crop = replace(
-        build, records={crop: {name: held} for crop, held in rows.items()}
-    )
+    by_crop = lavaflow_crop_build(build, crops)
     vectors = crop_vectors(
         model,
         tile_loader(
             by_crop,
-            rows,
+            by_crop.records,
             layout,
             None,
             1.0,
@@ -122,7 +115,9 @@ def evaluate_lavaflow(
         images.append(
             lavaflow_image(
                 [
-                    drawn_arrays(build, name, rows[crops[at].crop], layout)
+                    drawn_arrays(
+                        build, name, by_crop.records[crops[at].crop][name], layout
+                    )
                     for at in shown
                 ],
                 [crops[at].crop for at in shown],
@@ -131,6 +126,35 @@ def evaluate_lavaflow(
             )
         )
     log_lavaflow(run, scores, images)
+
+
+def lavaflow_crop_build(
+    build: DatasetBuild, crops: Sequence[LavaFlowLabel]
+) -> DatasetBuild:
+    """Return a lava flow build read by crop, each the SHARAD rows of its track.
+
+    Args:
+        build: The lava flow build, SHARAD crops and their verdicts.
+        crops: Its crops, as the verdicts list them.
+
+    Returns:
+        build: The same build, its index keyed by crop in the crops' order.
+    """
+    name = sharad.LAYOUT.instrument
+    by_tile = build.read_observation_metadata()
+    return replace(
+        build,
+        records={
+            one.crop: {
+                name: [
+                    row
+                    for row in by_tile[one.tile][name]
+                    if row.identifier == one.track
+                ]
+            }
+            for one in crops
+        },
+    )
 
 
 def crop_vectors(

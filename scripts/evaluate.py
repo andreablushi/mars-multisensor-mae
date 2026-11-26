@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from dhub.store import published_build, published_dataset_build
 from dhub.submit import requested_read_workers, run_stage
 from digitalhub_runtime_python import handler
 from mars_multisensor_dataset.building.configs import sharad
+from utils.build import published_dataset_build, published_lavaflow_build
 from utils.model import built_pretrained_model
 
 from mars_multisensor_mae.architecture.load import cross_sensor_mae_with_logged_weights
 from mars_multisensor_mae.architecture.models.context import Pooling
 from mars_multisensor_mae.configs.load import load_config, named_sample
 from mars_multisensor_mae.configs.paths import ARTIFACTS_ROOT, results_directory
+from mars_multisensor_mae.configs.schema import Config
+from mars_multisensor_mae.dataset.loader import check_complete_cut
+from mars_multisensor_mae.dataset.models.patch import PatchLayout
 from mars_multisensor_mae.evaluation.evaluate import evaluate
 from mars_multisensor_mae.evaluation.lavaflow import evaluate_lavaflow
 from mars_multisensor_mae.evaluation.reconstruct import evaluate_reconstruction
@@ -22,13 +25,60 @@ from mars_multisensor_mae.logs.evaluation import (
     LAVAFLOW,
     PART_STEPS,
     RECONSTRUCTION,
+    kept_evaluation_run,
     kept_evaluation_values,
     log_kept_part,
-    retire_evaluation_run,
 )
-from mars_multisensor_mae.logs.tracker import console_logger, start_logging, tracked_run
+from mars_multisensor_mae.logs.tracker import console_logger, retire_run, start_logging
 
 log = console_logger(__name__)
+
+
+def checked_evaluation_parts(
+    config: Config,
+    layout: PatchLayout,
+    reconstruction: bool = False,
+    lavaflow: bool = False,
+) -> list[str]:
+    """Return the parts an evaluation runs, each build they read checked for its cut.
+
+    Args:
+        config: The run's config.
+        layout: How each instrument is cut into patches, which names its cut's folder.
+        reconstruction: Whether the reconstruction is asked alone.
+        lavaflow: Whether the lava flow retrieval is asked alone.
+
+    Returns:
+        asked: The parts run, every part when no part is asked alone.
+
+    Raises:
+        ValueError: When the lava flow retrieval is asked with no build or no SHARAD.
+    """
+    whole = not (reconstruction or lavaflow)
+    name = sharad.LAYOUT.instrument
+    retrieved = (
+        config.evaluation.lavaflow.build is not None
+        and name in config.model.instruments
+    )
+    if lavaflow and not retrieved:
+        raise ValueError("the lava flow retrieval needs a build and SHARAD")
+    asked = [
+        part
+        for part, on in (
+            (EVALUATION, whole),
+            (RECONSTRUCTION, whole or reconstruction),
+            (LAVAFLOW, (whole or lavaflow) and retrieved),
+        )
+        if on
+    ]
+    check_complete_cut(published_dataset_build(config, config.evaluation.build), layout)
+    if whole:
+        check_complete_cut(
+            published_dataset_build(config, config.dataset.build), layout
+        )
+    if LAVAFLOW in asked:
+        check_complete_cut(published_lavaflow_build(config), layout.only([name]))
+    return asked
 
 
 @handler()
@@ -54,27 +104,13 @@ def run_evaluation(
     whole = not (reconstruction or lavaflow)
     settings = config.evaluation.lavaflow
     name = sharad.LAYOUT.instrument
-    retrieved = settings.build is not None and name in config.model.instruments
-    if lavaflow and not retrieved:
-        raise ValueError("the lava flow retrieval needs a build and SHARAD")
     build = published_dataset_build(config, config.evaluation.build)
     model, device, layout = built_pretrained_model(config, build)
     workers = requested_read_workers(config, EVALUATION)
-    asked = [
-        part
-        for part, on in (
-            (EVALUATION, whole),
-            (RECONSTRUCTION, whole or reconstruction),
-            (LAVAFLOW, (whole or lavaflow) and retrieved),
-        )
-        if on
-    ]
-    old = None if whole else tracked_run(run_name, EVALUATION)
-    kept = (
-        {}
-        if old is None
-        else kept_evaluation_values(old, asked, results_directory(run_name, "kept"))
-    )
+    asked = checked_evaluation_parts(config, layout, reconstruction, lavaflow)
+    directory = results_directory(run_name, "kept")
+    old = None if whole else kept_evaluation_run(run_name, asked, directory)
+    kept = {} if whole else kept_evaluation_values(directory)
     run = start_logging(
         asdict(config),
         run_name,
@@ -133,9 +169,7 @@ def run_evaluation(
     if LAVAFLOW in asked:
         evaluate_lavaflow(
             model,
-            published_build(
-                config, f"{config.dataset.version}-{settings.build}", "dataset"
-            ),
+            published_lavaflow_build(config),
             layout.only([name]),
             config.evaluation.batch_size,
             settings.qualitative.queries,
@@ -148,7 +182,7 @@ def run_evaluation(
         )
     run.finish()
     if old is not None:
-        retire_evaluation_run(old, asked)
+        retire_run(old, asked)
 
 
 if __name__ == "__main__":

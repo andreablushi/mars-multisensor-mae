@@ -10,6 +10,14 @@ stats_version: ${dataset.version}
 # Local folder holding the builds.
 root: data/dataset
 
+# Where a build object missing from root comes from: digitalhub fetches it from the
+# platform and cuts each tile on its first read; disk fails, never reaches the
+# platform and reads only the tiles a cut job cut.
+store: digitalhub
+
+# Folder holding every build's cut tiles, null for a folder in each build's root.
+ready_root: null
+
 # Clip range of each instrument's z-scores, null for an open side.
 clip:
   CTX: [null, null]
